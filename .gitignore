@@ -1,0 +1,6 @@
+.stignore
+bin
+build
+install
+Makefile
+data
