@@ -2,8 +2,9 @@ package geocoder
 
 import (
 	"math"
-	"rgeocache/geomodel"
-	"rgeocache/kdbush"
+
+	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/kdbush"
 )
 
 type RGeoCoder struct {

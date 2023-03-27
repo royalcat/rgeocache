@@ -2,10 +2,11 @@ package geoparser
 
 import (
 	"path"
-	"rgeocache/geomodel"
-	"rgeocache/kdbush"
-	"rgeocache/kv"
 	"sync"
+
+	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/kdbush"
+	"github.com/royalcat/rgeocache/kv"
 
 	"github.com/sirupsen/logrus"
 	"github.com/syndtr/goleveldb/leveldb"

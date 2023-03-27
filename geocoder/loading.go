@@ -4,9 +4,10 @@ import (
 	"encoding/gob"
 	"io"
 	"os"
-	"rgeocache/geomodel"
-	"rgeocache/kdbush"
 	"strings"
+
+	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/kdbush"
 
 	"github.com/klauspost/compress/zstd"
 )

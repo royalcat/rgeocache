@@ -7,12 +7,13 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"rgeocache/geocoder"
-	"rgeocache/geomodel"
-	"rgeocache/geoparser"
 	"runtime"
 	"strconv"
 	"time"
+
+	"github.com/royalcat/rgeocache/geocoder"
+	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/geoparser"
 
 	"github.com/fasthttp/router"
 	"github.com/paulmach/orb"
