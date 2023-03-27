@@ -1,4 +1,4 @@
-module rgeocache
+module github.com/royalcat/rgeocache
 
 go 1.19
 
