@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/alitto/pond v1.8.2
-	github.com/klauspost/compress v1.15.12
 	github.com/paulmach/osm v0.7.1
 	github.com/royalcat/btrgo v0.0.0-20221123124121-5f6e060559d4
 	github.com/syndtr/goleveldb v1.0.0
@@ -20,6 +19,7 @@ require (
 	github.com/fatih/color v1.10.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
+	github.com/klauspost/compress v1.15.12 // indirect
 	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
@@ -45,7 +45,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/puzpuzpuz/xsync v1.5.2
 	github.com/sirupsen/logrus v1.9.0
-	github.com/urfave/cli/v3 v3.0.0-alpha
+	github.com/urfave/cli/v3 v3.0.0-alpha2
 	go.uber.org/automaxprocs v1.5.1
 	google.golang.org/protobuf v1.28.1 // indirect
 )

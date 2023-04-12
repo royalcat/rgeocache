@@ -1,0 +1,19 @@
+name: Build points cache
+on: [push]
+jobs:
+  Build-Points:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          cache-dependency-path: go.sum
+      - name: Run generator
+        run: mkdir -p build && cd build && ../generate_scripts/post-cis.sh
+        shell: bash
+      - uses: actions/upload-artifact@v3
+        with:
+          name: post-cis_points.gob
+          path: build/post-cis_points.gob

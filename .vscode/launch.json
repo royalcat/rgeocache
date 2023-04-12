@@ -33,6 +33,6 @@
                 "--points",
                 "${workspaceFolder}/bin/points_data.gob",
             ]
-        }
+        },
     ]
 }
