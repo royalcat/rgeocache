@@ -42,9 +42,9 @@ func NewGeoGen(cachePath string, needToGenCache bool, threads int) (*GeoGen, err
 	}
 
 	logrus.Info("Opening cache database")
-	f.OpenCache()
+	err := f.OpenCache()
 
-	return f, nil
+	return f, err
 }
 
 func (f *GeoGen) OpenCache() error {

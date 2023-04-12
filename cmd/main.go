@@ -72,8 +72,9 @@ func main() {
 						DefaultText: "memory",
 					},
 					&cli.StringSliceFlag{
-						Name:    "input",
-						Aliases: []string{"i"},
+						Name:      "input",
+						Aliases:   []string{"i"},
+						TakesFile: true,
 					},
 					&cli.IntFlag{
 						Name:        "threads",
@@ -110,12 +111,22 @@ func generate(ctx *cli.Context) error {
 
 	inputs := ctx.StringSlice("input")
 	for _, v := range inputs {
-		geoGen.ParseOSMFile(v)
-		geoGen.OpenCache() // flushing memory cache
+		err := geoGen.ParseOSMFile(v)
+		if err != nil {
+			return fmt.Errorf("error parsing input: %s with error: %s", v, err.Error())
+		}
+		err = geoGen.OpenCache() // flushing memory cache
+		if err != nil {
+			return fmt.Errorf("error flushing memory cache: %s", err.Error())
+		}
 	}
 
 	fmt.Println("generatating complete, saving...")
-	geoGen.SavePointsToFile(ctx.Path("points"))
+	err = geoGen.SavePointsToFile(ctx.Path("points"))
+	if err != nil {
+		return fmt.Errorf("failed to save points to file: %s", err.Error())
+	}
+
 	return nil
 }
 

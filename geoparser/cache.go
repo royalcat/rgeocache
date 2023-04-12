@@ -39,7 +39,7 @@ func (f *GeoGen) fillCache(base string) error {
 
 		switch o := scanner.Object().(type) {
 		case *osm.Node:
-			f.nodeCache.Set(int64(o.ID), cachePoint{o.Lat, o.Lon})
+			f.cacheNode(o)
 
 		case *osm.Way:
 			f.cacheWay(o)

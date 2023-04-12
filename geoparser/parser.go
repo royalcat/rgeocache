@@ -3,10 +3,11 @@ package geoparser
 import (
 	"context"
 	"os"
-	"rgeocache/geomodel"
-	"rgeocache/kdbush"
 	"strings"
 	"time"
+
+	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/kdbush"
 
 	"github.com/alitto/pond"
 	"github.com/cheggaaa/pb/v3"
