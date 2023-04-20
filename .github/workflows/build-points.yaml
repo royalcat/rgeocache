@@ -1,5 +1,9 @@
 name: Build points cache
-on: [push]
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  push:
+
 jobs:
   Build-Points:
     runs-on: ubuntu-latest
@@ -10,6 +14,12 @@ jobs:
         uses: actions/setup-go@v4
         with:
           cache-dependency-path: go.sum
+      - name: Cache Maps
+        id: cache-maps
+        uses: actions/cache@v3
+        with:
+          path: cache_build/maps
+          key: maps
       - name: Run generator
         run: mkdir -p build && cd build && ../generate_scripts/post-cis.sh
         shell: bash

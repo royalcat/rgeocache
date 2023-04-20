@@ -1,5 +1,5 @@
 BUILD_DIR="cache_build"
-RGEO_BIN="go run ../cmd/main.go"
+RGEO_BIN="go run ../cmd"
 
 function generate_cache {
     if [ $# -eq 0 ] || [ $# -gt 2 ]; then
