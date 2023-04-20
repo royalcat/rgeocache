@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: |
           source ./generate_scripts/generate.sh
-          download_map $NAME $MAPS
+          download_maps $NAME $MAPS
 
       - name: Run generator
         shell: bash
