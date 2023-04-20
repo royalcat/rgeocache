@@ -6,6 +6,15 @@ on:
 
 jobs:
   Build-Points:
+    strategy:
+      matrix:
+        include:
+          - name: "russia"
+            maps: "russia"
+
+    env:
+      MAPS: ${{ matrix.maps }}
+      NAME: ${{ matrix.name }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
@@ -14,15 +23,31 @@ jobs:
         uses: actions/setup-go@v4
         with:
           cache-dependency-path: go.sum
-      - name: Cache Maps
+      - name: Cache maps
         id: cache-maps
         uses: actions/cache@v3
         with:
-          path: cache_build/maps
+          path: ./cache_build/maps
           key: maps
-      - name: Run generator
-        run: mkdir -p build && cd build && ../generate_scripts/post-cis.sh
+          enableCrossOsArchive: true
+
+      - name: Update maps cache
         shell: bash
+        run: |
+          source ./generate_scripts/download.sh
+          download_map $NAME $MAPS
+
+      - name: Run generator
+        shell: bash
+        run: |
+          MAPS_FILES=()
+          export IFS=","
+          for map in $MAPS; do
+              MAPS_FILES+="-i maps/${map}-latest.osm.pbf "
+          done
+          unset IFS
+          go run ./cmd generate -p ${NAME}_points ${MAPS_FILES}
+
       - uses: actions/upload-artifact@v3
         with:
           name: post-cis_points.gob

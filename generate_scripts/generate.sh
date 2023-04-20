@@ -1,7 +1,6 @@
 BUILD_DIR="cache_build"
-RGEO_BIN="go run ../cmd"
 
-function generate_cache {
+function download_maps {
     if [ $# -eq 0 ] || [ $# -gt 2 ]; then
         return
     fi
@@ -27,14 +26,14 @@ function generate_cache {
             done
         popd
 
-        MAPS_FILES=()
-        export IFS=","
-        for map in $MAPS; do
-            MAPS_FILES+="-i maps/${map}-latest.osm.pbf "
-        done
-        unset IFS
-
-        mydir="${0%/*}"
-        $RGEO_BIN generate -p ${NAME}_points ${MAPS_FILES}
+       
     popd
 }
+
+# MAPS_FILES=()
+# export IFS=","
+# for map in $MAPS; do
+#     MAPS_FILES+="-i maps/${map}-latest.osm.pbf "
+# done
+# unset IFS
+# go run ./cmd generate -p ${NAME}_points ${MAPS_FILES}
