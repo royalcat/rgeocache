@@ -39,6 +39,7 @@ jobs:
 
       - name: Run generator
         shell: bash
+        working-directory: cache_build
         run: |
           MAPS_FILES=()
           export IFS=","
