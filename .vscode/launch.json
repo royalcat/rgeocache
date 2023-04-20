@@ -31,7 +31,7 @@
             "args": [
                 "serve",
                 "--points",
-                "${workspaceFolder}/bin/points_data.gob",
+                "${workspaceFolder}/cache_build/points_data.gob",
             ]
         },
     ]
