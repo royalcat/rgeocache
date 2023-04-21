@@ -11,6 +11,8 @@ jobs:
         include:
           - name: "russia"
             maps: "russia"
+          - name: "post-cis"
+            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia"
 
     env:
       MAPS: ${{ matrix.maps }}
@@ -20,7 +22,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v3
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v3
         with:
           cache-dependency-path: go.sum
       - name: Cache maps
