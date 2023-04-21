@@ -1,22 +1,15 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
 
-	"github.com/fasthttp/router"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
-	"github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttpadaptor"
 	_ "go.uber.org/automaxprocs"
 )
 
@@ -41,6 +34,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:      "points",
+						Aliases:   []string{"p"},
 						Required:  true,
 						TakesFile: true,
 					},
@@ -139,30 +133,5 @@ func serve(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-
-	r := router.New()
-	r.GET("/rgeocode/address/{lat}/{lon}", srv.RGeoCodeHandler)
-	r.GET("/rgeocode/multiaddress", srv.RGeoMultipleCodeHandler)
-	r.Handle(http.MethodGet, "/metrics", fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler()))
-
-	server := &fasthttp.Server{
-		GetOnly:     true,
-		ReadTimeout: time.Second,
-		Handler:     r.Handler,
-	}
-	go func() {
-		address := ctx.String("listen")
-		log.Infof("Server listening on: %s", address)
-		if err := server.ListenAndServe(address); err != http.ErrServerClosed {
-			log.Fatalf("ListenAndServe(): %v", err)
-		}
-	}()
-	logrus.Info("Server started")
-
-	// wait cancel
-	<-ctx.Done()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	server.ShutdownWithContext(shutdownCtx)
-	return nil
+	return srv.ListenAndServe(ctx.Context, ctx.String("listen"))
 }

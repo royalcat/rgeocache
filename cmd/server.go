@@ -1,20 +1,56 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/fasthttp/router"
 	"github.com/paulmach/orb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/sirupsen/logrus"
 	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
 type Server struct {
 	rgeo *geocoder.RGeoCoder
+}
+
+func (s *Server) ListenAndServe(ctx context.Context, address string) error {
+	log := logrus.New()
+
+	r := router.New()
+	r.GET("/rgeocode/address/{lat}/{lon}", s.RGeoCodeHandler)
+	r.GET("/rgeocode/multiaddress", s.RGeoMultipleCodeHandler)
+	r.Handle(http.MethodGet, "/metrics", fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler()))
+
+	server := &fasthttp.Server{
+		GetOnly:     true,
+		ReadTimeout: time.Second,
+		Handler:     r.Handler,
+	}
+	go func() {
+		log.Infof("Server listening on: %s", address)
+		if err := server.ListenAndServe(address); err != http.ErrServerClosed {
+			log.Fatalf("ListenAndServe(): %v", err)
+		}
+	}()
+	logrus.Info("Server started")
+
+	// wait cancel
+	<-ctx.Done()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	server.ShutdownWithContext(shutdownCtx)
+	return nil
+
 }
 
 func (s *Server) RGeoCodeHandler(ctx *fasthttp.RequestCtx) {
