@@ -1,19 +1,67 @@
 name: Build points cache
-on: [push]
+on:
+  schedule:
+    - cron: "0 0 * * 0"
+  push:
+    branches:
+      - "master"
+      - "github-workflow"
+    paths:
+      - ".github/workflows/build-points.yaml"
+      - "generate_scripts/generate.sh"
+      - "geomodel/**"
+      - "geoparser/**"
+
 jobs:
   Build-Points:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: "russia"
+            maps: "russia"
+          - name: "post-cis"
+            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia"
+
+    env:
+      MAPS: ${{ matrix.maps }}
+      NAME: ${{ matrix.name }}
+    runs-on: self-hosted
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v3
         with:
+          go-version: "1.20"
+          check-latest: true
           cache-dependency-path: go.sum
-      - name: Run generator
-        run: mkdir -p build && cd build && ../generate_scripts/post-cis.sh
+      - name: Cache maps
+        id: cache-maps
+        uses: actions/cache@v3
+        with:
+          path: ./cache_build/maps
+          key: maps
+          enableCrossOsArchive: true
+
+      - name: Update maps cache
         shell: bash
+        run: |
+          source ./generate_scripts/generate.sh
+          download_maps $NAME $MAPS
+
+      - name: Run generator
+        shell: bash
+        working-directory: cache_build
+        run: |
+          MAPS_FILES=()
+          export IFS=","
+          for map in $MAPS; do
+              MAPS_FILES+="-i maps/${map}-latest.osm.pbf "
+          done
+          unset IFS
+          go run ../cmd generate -p ${NAME}_points ${MAPS_FILES}
+
       - uses: actions/upload-artifact@v3
         with:
-          name: post-cis_points.gob
-          path: build/post-cis_points.gob
+          name: ${{ matrix.name }}_points
+          path: ${{ matrix.name }}_points.gob

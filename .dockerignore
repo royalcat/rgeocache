@@ -1,7 +1,4 @@
-bin
-build
-install
-Makefile
-.gitignore
-.git
-.vscode
+**
+!go.mod
+!go.sum
+!**.go
