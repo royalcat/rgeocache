@@ -5,6 +5,12 @@ on:
   push:
     branches:
       - "master"
+      - "github-workflow"
+    paths:
+      - ".github/workflows/build-points.yaml"
+      - "generate_scripts/generate.sh"
+      - "geomodel/**"
+      - "geoparser/**"
 
 jobs:
   Build-Points:
@@ -57,5 +63,5 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: post-cis_points.gob
-          path: build/post-cis_points.gob
+          name: ${{ matrix.name }}_points
+          path: ${{ matrix.name }}_points.gob
