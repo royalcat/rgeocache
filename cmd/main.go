@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
@@ -115,6 +116,10 @@ func generate(ctx *cli.Context) error {
 	}
 
 	saveFile := ctx.String("points")
+	if !strings.HasSuffix(saveFile, ".gob") {
+		saveFile = saveFile + ".gob"
+	}
+
 	fmt.Printf("Generataion complete\n")
 	fmt.Printf("Saving to file: %s\n", saveFile)
 	err = geoGen.SavePointsToFile(saveFile)

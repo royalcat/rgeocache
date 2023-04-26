@@ -6,6 +6,7 @@ import (
 	"os"
 )
 
+// TODO
 // https://download.geofabrik.de/russia-latest.osm.pbf
 func DownloadOsm(ctx context.Context, name string) {
 
@@ -15,7 +16,7 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	f.pointsMutex.Lock()
 	defer f.pointsMutex.Unlock()
 
-	dataFile, err := os.Create(file + ".gob")
+	dataFile, err := os.Create(file)
 
 	if err != nil {
 		return err
@@ -26,6 +27,5 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	if err != nil {
 		return err
 	}
-	dataFile.Close()
-	return nil
+	return dataFile.Close()
 }
