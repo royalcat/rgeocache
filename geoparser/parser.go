@@ -20,8 +20,10 @@ import (
 )
 
 func (f *GeoGen) ParseOSMFile(base string) error {
-
-	f.fillCache(base)
+	err := f.fillCache(base)
+	if err != nil {
+		return err
+	}
 
 	file, err := os.Open(base)
 	if err != nil {

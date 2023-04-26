@@ -114,11 +114,15 @@ func generate(ctx *cli.Context) error {
 		}
 	}
 
-	fmt.Println("generatating complete, saving...")
-	err = geoGen.SavePointsToFile(ctx.String("points"))
+	saveFile := ctx.String("points")
+	fmt.Printf("Generataion complete\n")
+	fmt.Printf("Saving to file: %s\n", saveFile)
+	err = geoGen.SavePointsToFile(saveFile)
 	if err != nil {
 		return fmt.Errorf("failed to save points to file: %s", err.Error())
 	}
+
+	fmt.Printf("Complete")
 
 	return nil
 }

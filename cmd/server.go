@@ -48,9 +48,7 @@ func (s *Server) ListenAndServe(ctx context.Context, address string) error {
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	server.ShutdownWithContext(shutdownCtx)
-	return nil
-
+	return server.ShutdownWithContext(shutdownCtx)
 }
 
 func (s *Server) RGeoCodeHandler(ctx *fasthttp.RequestCtx) {
@@ -119,7 +117,7 @@ var (
 		prometheus.CounterOpts{
 			Namespace: "rgeocode",
 			Subsystem: "http_address",
-			Name:      "call_count",
+			Name:      "call_count_total",
 			Help:      "count of address interactions",
 		},
 	)
@@ -127,7 +125,7 @@ var (
 		prometheus.CounterOpts{
 			Namespace: "rgeocode",
 			Subsystem: "http_multi_address",
-			Name:      "call_count",
+			Name:      "call_count_total",
 			Help:      "count of address interactions",
 		},
 	)

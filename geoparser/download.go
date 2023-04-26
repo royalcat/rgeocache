@@ -22,7 +22,10 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	}
 	// serialize the data
 	dataEncoder := gob.NewEncoder(dataFile)
-	dataEncoder.Encode(f.points)
+	err = dataEncoder.Encode(f.points)
+	if err != nil {
+		return err
+	}
 	dataFile.Close()
 	return nil
 }
