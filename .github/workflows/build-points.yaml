@@ -11,6 +11,7 @@ on:
       - "generate_scripts/generate.sh"
       - "geomodel/**"
       - "geoparser/**"
+  workflow_dispatch:
 
 jobs:
   Build-Points:
