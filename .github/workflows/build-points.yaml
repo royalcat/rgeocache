@@ -36,13 +36,13 @@ jobs:
           go-version: "1.20"
           check-latest: true
           cache-dependency-path: go.sum
-      - name: Cache maps
-        id: cache-maps
-        uses: actions/cache@v3
-        with:
-          path: ./cache_build/maps
-          key: maps
-          enableCrossOsArchive: true
+      # - name: Cache maps
+      #   id: cache-maps
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: ./cache_build/maps
+      #     key: maps
+      #     enableCrossOsArchive: true
 
       - name: Update maps cache
         shell: bash
