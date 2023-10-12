@@ -21,7 +21,7 @@ jobs:
           - name: "russia"
             maps: "russia"
           - name: "post-cis"
-            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia"
+            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongoliaasia/armenia"
 
     env:
       MAPS: ${{ matrix.maps }}
