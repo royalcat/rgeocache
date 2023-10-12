@@ -33,7 +33,6 @@ func (s *Server) ListenAndServe(ctx context.Context, address string) error {
 	r.Handle(http.MethodGet, "/metrics", fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler()))
 
 	server := &fasthttp.Server{
-		GetOnly:     true,
 		ReadTimeout: time.Second,
 		Handler:     r.Handler,
 	}
