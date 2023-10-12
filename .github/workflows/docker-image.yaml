@@ -9,6 +9,9 @@ on:
 
 jobs:
   build-and-push-image:
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
