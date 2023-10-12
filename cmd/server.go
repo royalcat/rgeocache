@@ -28,7 +28,8 @@ func (s *Server) ListenAndServe(ctx context.Context, address string) error {
 
 	r := router.New()
 	r.GET("/rgeocode/address/{lat}/{lon}", s.RGeoCodeHandler)
-	r.GET("/rgeocode/multiaddress", s.RGeoMultipleCodeHandler)
+	r.GET("/rgeocode/multiaddress", s.RGeoMultipleCodeHandler) // DEPRECATED use post endpoint
+	r.POST("/rgeocode/multiaddress", s.RGeoMultipleCodeHandler)
 	r.Handle(http.MethodGet, "/metrics", fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler()))
 
 	server := &fasthttp.Server{
