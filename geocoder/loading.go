@@ -25,6 +25,7 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 		if err != nil {
 			return err
 		}
+		defer dec.Close()
 		reader = dec
 	} else {
 		reader = dataFile
