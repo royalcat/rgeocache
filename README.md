@@ -1,48 +1,50 @@
 # rgeocache
 
-Модуль реверс-геокодинга с прегенирируемым кешем.
+A reverse geocoding module with a pre-generated cache.
 
-Кеш строится на основе карт OpenStreetMaps в формате pbf,
-скачать их можно с <http://download.geofabrik.de/>
+The cache is built based on OpenStreetMaps in pbf format,
+you can download them from <http://download.geofabrik.de/>
 
-## Использование CLI
+## CLI Usage
 
-Основные варианты использования реализованные в cmd/main.go как cli,
-список возможных параметров можно получить вызвав его без пераметров.
+The main usage scenarios are implemented in cmd/main.go as cli,
+you can get a list of possible parameters by calling it without parameters.
 
-Примеры использования:
+Usage examples:
 
-* ### Генерация кеша
+- ### Cache generation
 
 ```bash
 go run cmd/main.go generate --input russia.osm.pbf --input ./europe/belarus.osm.pbf --points cis_points
 ```
 
-где russia_points - название файла кеша (будет сохранен с постфиксом .gob)  
-russia.osm.pbf и ./europe/belarus.osm.pbf - входные файлы  
+where russia_points is the name of the cache file (will be saved with the .gob postfix)  
+russia.osm.pbf and ./europe/belarus.osm.pbf are input files
 
-Генерация кеша росcии занимет около ~50Гб оперативки. Есть возможнозность пренести нагрузку из памяти на диск указав параметр --cache /tmp/rgeo_cache (в качестве пути можно указать любую директорию), в этом случае процесс геренерации может значительно замедлится
+Generating a cache of Russia will take about ~50GB of RAM. There is a possibility to shift the load from memory to disk by specifying the parameter --cache /tmp/rgeo_cache (you can specify any directory as the path), in this case, the generation process may significantly slow down
 
-* ### HTTP Api
+- ### HTTP Api
 
 ```bash
 go run cmd/main.go serve --points cis_points
 ```
 
-Запускает http сервер с простым api для реверс-геокодинга на основе заданного кеша.  
-Документация к api описана в формате openapi в файле docs/api.yaml  
-Пример простейшего запроса:
+Starts an http server with a simple api for reverse geocoding based on the specified cache.  
+The api documentation is described in the openapi format in the docs/api.yaml file  
+An example of a simple request:
 
 ```bash
 curl -X GET 'localhost:8080/rgeocode/address/59.9176846/30.3930866'
-{"name":"","street":"набережная Обводного канала","house_number":"5 литА","city":"Санкт-Петербург"}
+{"name":"","street":"Obvodny Canal embankment","house_number":"5 litA","city":"Saint Petersburg"}
 ```
 
-## Использование как go модуля
+## Usage as a go module
 
-Для go программ можно избежать http прослойки и использовать геокодер напрямую  
-Для этого неообходимо подулючить модуль github.com/royalcat/rgeocache/geocoder
-Пример использования:
+For go programs, you can avoid the http layer and use the geocoder directly using a module github.com/royalcat/rgeocache/geocoder
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/royalcat/rgeocache/geocoder.svg)](https://pkg.go.dev/github.com/royalcat/rgeocache/geocoder)
+
+Example:
 
 ```go
 geocache := &geocoder.RGeoCoder{}
@@ -51,10 +53,10 @@ loc, ok := rgeocoder.Find(lat, lon)
 fmt.Printf("%s %s %s", loc.City, loc.Street, loc.HouseNumber)
 ```
 
-## Скрипты для удобства
+## Convenience Scripts
 
-В generate_scripts есть скрипты для автоматического скачивания карт и генерации кеша.  
-Скрипты разделены по регионам
+In generate_scripts, there are scripts for automatic map downloading and cache generation.  
+Scripts are divided by regions
 
-* post-cis - страны постсоветского пространства и бывшего снг
-* russia
+- post-cis - countries of the post-Soviet space and former CIS
+- russia
