@@ -12,7 +12,7 @@ type RGeoCoder struct {
 }
 
 const defaultRadius float64 = 0.01
-const thesholdDist float64 = 1e-5
+const thesholdDist float64 = 1e-7
 
 type InfoModel struct {
 	geomodel.Info
