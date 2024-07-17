@@ -13,13 +13,6 @@ jobs:
       contents: read
       packages: write
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - linux/amd64
-          - linux/arm64
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -59,7 +52,7 @@ jobs:
           context: .
           push: true
           pull: true
-          platforms: ${{ matrix.platform }}
+          platforms: linux/amd64, linux/arm64, linux/riscv64
           labels: ${{ steps.meta.outputs.labels }}
           sbom: true
           provenance: true
