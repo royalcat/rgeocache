@@ -6,6 +6,11 @@ on:
       - master
     tags:
       - "v*.*.*"
+    paths-ignore:
+      - ".github/**"
+      - "docs/**"
+      - "generate_scripts/**"
+      - "README**"
 
 jobs:
   build-and-push-image:
