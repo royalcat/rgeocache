@@ -82,6 +82,7 @@ func main() {
 						Name:        "preferred-localization",
 						Aliases:     []string{"l"},
 						DefaultText: "official",
+						Value:       "official",
 					},
 					&cli.BoolFlag{
 						Name:        "pprof",
@@ -109,6 +110,9 @@ func generate(ctx *cli.Context) error {
 		threads = runtime.GOMAXPROCS(0)
 	}
 	preferredLocalization := ctx.String("preferred-localization")
+	if preferredLocalization == "official" {
+		preferredLocalization = ""
+	}
 
 	if ctx.Bool("pprof") {
 		go func() {
