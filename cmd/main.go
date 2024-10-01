@@ -22,6 +22,8 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 
+	_ "net/http/pprof"
+
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	_ "go.uber.org/automaxprocs"
@@ -76,6 +78,15 @@ func main() {
 						Aliases:     []string{"t"},
 						DefaultText: "max",
 					},
+					&cli.StringFlag{
+						Name:        "preferred-localization",
+						Aliases:     []string{"l"},
+						DefaultText: "official",
+					},
+					&cli.BoolFlag{
+						Name:        "pprof",
+						DefaultText: "false",
+					},
 				},
 				Action: generate,
 			},
@@ -97,8 +108,16 @@ func generate(ctx *cli.Context) error {
 	if threads == 0 {
 		threads = runtime.GOMAXPROCS(0)
 	}
+	preferredLocalization := ctx.String("preferred-localization")
 
-	geoGen, err := geoparser.NewGeoGen(cache, true, threads)
+	if ctx.Bool("pprof") {
+		go func() {
+			logrus.Info("Starting pprof server")
+			logrus.Error(http.ListenAndServe("localhost:6060", nil))
+		}()
+	}
+
+	geoGen, err := geoparser.NewGeoGen(cache, threads, preferredLocalization)
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
@@ -108,14 +127,14 @@ func generate(ctx *cli.Context) error {
 	fmt.Printf("Input maps: %v\n", inputs)
 	for _, v := range inputs {
 		fmt.Printf("Generating database for map: %s\n", v)
-		err := geoGen.ParseOSMFile(v)
+		err := geoGen.ParseOSMFile(ctx.Context, v)
 		if err != nil {
 			return fmt.Errorf("error parsing input: %s with error: %s", v, err.Error())
 		}
-		err = geoGen.OpenCache() // flushing memory cache
-		if err != nil {
-			return fmt.Errorf("error flushing memory cache: %s", err.Error())
-		}
+		// err = geoGen.OpenCache() // flushing memory cache
+		// if err != nil {
+		// 	return fmt.Errorf("error flushing memory cache: %s", err.Error())
+		// }
 	}
 
 	saveFile := ctx.String("points")

@@ -14,7 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func (f *GeoGen) fillCache(base string) error {
+func (f *GeoGen) fillCache(ctx context.Context, base string) error {
 	file, err := os.Open(base)
 	if err != nil {
 		return err
@@ -23,7 +23,7 @@ func (f *GeoGen) fillCache(base string) error {
 	stat, _ := file.Stat()
 
 	// The third parameter is the number of parallel decoders to use.
-	scanner := osmpbf.New(context.Background(), file, runtime.GOMAXPROCS(-1)-1)
+	scanner := osmpbf.New(ctx, file, runtime.GOMAXPROCS(-1)-1)
 	defer scanner.Close()
 
 	bar := pb.Start64(stat.Size())
@@ -64,31 +64,60 @@ func (f *GeoGen) cacheNode(node *osm.Node) {
 func (f *GeoGen) cacheWay(way *osm.Way) {
 	ls := cacheWay(f.makeLineString(way.Nodes))
 	f.wayCache.Set(int64(way.ID), ls)
+
+	if highway := way.Tags.Find("highway"); highway != "" {
+		f.cacheHighway(way)
+	}
 }
 
-var goodPlaces = []string{"city", "town", "village", "hamlet", "isolated_dwelling", "farm"}
+func (f *GeoGen) cacheHighway(way *osm.Way) {
+	tags := way.TagMap()
+	f.highwayCache.Set(int64(way.ID), cacheHighway{
+		Name:          tags[nameKey],
+		LocalizedName: f.localizedName(way.Tags),
+	})
+}
+
+var cachablePlaces = []string{"city", "town", "village", "hamlet", "isolated_dwelling", "farm"}
 
 func (f *GeoGen) cacheRel(rel *osm.Relation) {
-	log := logrus.WithField("id", rel.ID).WithField("name", rel.Tags.Find("name"))
+	name := rel.Tags.Find(nameKey)
+
+	_ = name
+
+	if btrgo.InSlice(cachablePlaces, rel.Tags.Find("place")) {
+		f.cacheRelPlace(rel)
+	}
+}
+
+func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
+	name := rel.Tags.Find(nameKey)
+
+	log := logrus.WithField("id", rel.ID).WithField("name", name)
 
 	tags := rel.TagMap()
-	place := tags["place"]
+	if tags["type"] == "multipolygon" || tags["type"] == "boundary" {
 
-	if btrgo.InSlice(goodPlaces, place) && (tags["type"] == "multipolygon" || tags["type"] == "boundary") {
 		mpoly, err := f.buildPolygon(rel.Members)
 		if err != nil {
-			log.Errorf("Error building polygon: %s", err.Error())
-			return
-		}
-		if mpoly.Bound().IsZero() || len(mpoly) == 0 {
-			log.Warnf("Zero bound city: %s", tags["name"])
+			log.Errorf("Error building polygon for %s: %s", name, err.Error())
 			return
 		}
 
-		f.cityCache.Set(int64(rel.ID), cacheCity{
-			Name:         tags["name"],
-			Bound:        mpoly.Bound(),
-			MultiPolygon: mpoly,
+		if mpoly.Bound().IsZero() || len(mpoly) == 0 {
+			log.Warnf("Zero bound place: %s", name)
+			return
+		}
+
+		if name == "" {
+			return
+		}
+
+		f.placeCache.Set(int64(rel.ID), cachePlace{
+			Name:          name,
+			LocalizedName: f.localizedName(rel.Tags),
+			Bound:         mpoly.Bound(),
+			MultiPolygon:  mpoly,
 		})
 	}
 }

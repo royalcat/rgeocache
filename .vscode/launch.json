@@ -13,12 +13,19 @@
             "cwd": "${workspaceFolder}/bin",
             "args": [
                 "generate",
+                "--pprof",
+                "-l",
+                "ru",
+                "--cache",
+                "memory",
+                // "--cache",
+                // "/tmp/rgeocache",
+                // "-i",
+                // "cache_build/maps/europe/ukraine-latest.osm.pbf",
+                "-i",
+                "cache_build/maps/asia/armenia-latest.osm.pbf",
                 "--points",
-                "${workspaceFolder}/bin/points_data.gob",
-                "-i",
-                "${workspaceFolder}/bin/northwestern-fed-district-latest.osm.pbf",
-                "-i",
-                "${workspaceFolder}/bin/central-fed-district-latest.osm.pbf"
+                "points_data.gob",
             ]
         },
         {
@@ -31,7 +38,8 @@
             "args": [
                 "serve",
                 "--points",
-                "${workspaceFolder}/cache_build/points_data.gob",
+                // "${workspaceFolder}/cache_build/points_data.gob",
+                "points_data.gob",
             ]
         },
     ]

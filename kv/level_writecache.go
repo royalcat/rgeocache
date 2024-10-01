@@ -6,13 +6,13 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-type val[V Byter] struct {
+type val struct {
 	Key   int64
-	Value V
+	Value []byte
 }
 
-type writeCache[V Byter] struct {
-	in         chan val[V]
+type writeCache struct {
+	in         chan val
 	db         *leveldb.DB
 	batchMutex sync.Mutex
 	batch      *leveldb.Batch
@@ -21,9 +21,9 @@ type writeCache[V Byter] struct {
 
 const defaultWriteCacheSize = 1024 * 1024
 
-func newWriteCache[V Byter](db *leveldb.DB) *writeCache[V] {
-	w := &writeCache[V]{
-		in:    make(chan val[V], defaultWriteCacheSize),
+func newWriteCache(db *leveldb.DB) *writeCache {
+	w := &writeCache{
+		in:    make(chan val, defaultWriteCacheSize),
 		db:    db,
 		batch: &leveldb.Batch{},
 		Buf:   defaultWriteCacheSize,
@@ -32,11 +32,11 @@ func newWriteCache[V Byter](db *leveldb.DB) *writeCache[V] {
 	return w
 }
 
-func (w *writeCache[V]) Run() {
+func (w *writeCache) Run() {
 	go func() {
 		for p := range w.in {
 			w.batchMutex.Lock()
-			w.batch.Put(keyBytes(p.Key), p.Value.ToBytes())
+			w.batch.Put(keyBytes(p.Key), p.Value)
 			w.batchMutex.Unlock()
 			if w.batch.Len() > w.Buf {
 				w.Flush()
@@ -46,7 +46,7 @@ func (w *writeCache[V]) Run() {
 	}()
 }
 
-func (w *writeCache[V]) Flush() {
+func (w *writeCache) Flush() {
 	if w.batch.Len() > 0 {
 		w.batchMutex.Lock()
 		w.db.Write(w.batch, nil)
@@ -55,10 +55,10 @@ func (w *writeCache[V]) Flush() {
 	}
 }
 
-func (w *writeCache[V]) Put(key int64, value V) {
-	w.in <- val[V]{key, value}
+func (w *writeCache) Put(key int64, value []byte) {
+	w.in <- val{key, value}
 }
 
-func (w *writeCache[V]) Close() {
+func (w *writeCache) Close() {
 	close(w.in)
 }

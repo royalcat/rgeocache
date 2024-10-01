@@ -1,6 +1,7 @@
 package geoparser
 
 import (
+	"context"
 	"path"
 	"sync"
 
@@ -16,27 +17,27 @@ import (
 type GeoGen struct {
 	CachePath string
 
-	cityCache kv.KVS[int64, cacheCity]
-
 	nodeCache kv.KVS[int64, cachePoint]
 	wayCache  kv.KVS[int64, cacheWay]
 
-	genNodeCache bool
+	placeCache   kv.KVS[int64, cachePlace]
+	highwayCache kv.KVS[int64, cacheHighway]
 
 	points      []kdbush.Point[geomodel.Info]
 	pointsMutex sync.Mutex
 
-	threads int
+	threads               int
+	preferredLocalization string
 
 	log *logrus.Logger
 }
 
-func NewGeoGen(cachePath string, needToGenCache bool, threads int) (*GeoGen, error) {
+func NewGeoGen(cachePath string, threads int, preferredLocalization string) (*GeoGen, error) {
 	f := &GeoGen{
-		CachePath:    cachePath,
-		genNodeCache: needToGenCache,
+		CachePath: cachePath,
 
-		threads: threads,
+		threads:               threads,
+		preferredLocalization: preferredLocalization,
 
 		log: logrus.New(),
 	}
@@ -57,18 +58,42 @@ func (f *GeoGen) OpenCache() error {
 	if err != nil {
 		return err
 	}
-	f.cityCache = kv.NewMap[int64, cacheCity]()
+	f.placeCache = kv.NewMap[int64, cachePlace]()
+	f.highwayCache = kv.NewMap[int64, cacheHighway]()
 	return err
 }
 
+func (f *GeoGen) ParseOSMFile(ctx context.Context, base string) error {
+	err := f.fillCache(ctx, base)
+	if err != nil {
+		return err
+	}
+
+	err = f.parse(ctx, base)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (f *GeoGen) Close() {
-	f.nodeCache.Close()
-	f.cityCache.Close()
-	f.wayCache.Close()
+	if f.nodeCache != nil {
+		f.nodeCache.Close()
+	}
+	if f.wayCache != nil {
+		f.wayCache.Close()
+	}
+
+	if f.placeCache != nil {
+		f.placeCache.Close()
+	}
+	if f.highwayCache != nil {
+		f.placeCache.Close()
+	}
 }
 
 func newCache[V kv.ValueBytes[V]](base, name string) (kv.KVS[int64, V], error) {
-
 	if base == "memory" {
 		return kv.NewMap[int64, V](), nil
 	} else {
@@ -82,7 +107,7 @@ func newCache[V kv.ValueBytes[V]](base, name string) (kv.KVS[int64, V], error) {
 		if err != nil {
 			return nil, err
 		}
-		return kv.NewLevelDbKV[int64, V](cacheDb), nil
+		return kv.NewLevelDbKV[V](cacheDb), nil
 	}
 
 }
