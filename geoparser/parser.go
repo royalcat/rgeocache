@@ -1,83 +1,41 @@
 package geoparser
 
 import (
-	"context"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 
-	"github.com/alitto/pond"
-	"github.com/cheggaaa/pb/v3"
-	"github.com/cheggaaa/pb/v3/termutil"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/planar"
 	"github.com/paulmach/osm"
-	"github.com/paulmach/osm/osmpbf"
 	"github.com/sirupsen/logrus"
 )
 
-func (f *GeoGen) parse(ctx context.Context, base string) error {
-	file, err := os.Open(base)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	stat, _ := file.Stat()
+func (f *GeoGen) parseObject(o osm.Object) {
+	switch obj := o.(type) {
+	case *osm.Node:
+		if point, ok := f.parseNode(obj); ok {
+			f.pointsMutex.Lock()
+			f.points = append(f.points, point)
+			f.pointsMutex.Unlock()
+		}
 
-	// The third parameter is the number of parallel decoders to use.
-	scanner := osmpbf.New(ctx, file, f.threads)
-	defer scanner.Close()
+	case *osm.Way:
+		if point, ok := f.parseWay(obj); ok {
+			f.pointsMutex.Lock()
+			f.points = append(f.points, point)
+			f.pointsMutex.Unlock()
+		}
 
-	bar := pb.Start64(stat.Size())
-	bar.Set("prefix", "2/2 generating database")
-	bar.Set(pb.Bytes, true)
-	bar.SetRefreshRate(time.Second)
-	if w, err := termutil.TerminalWidth(); w == 0 || err != nil {
-		bar.SetTemplateString(`{{with string . "prefix"}}{{.}} {{end}}{{counters . }} {{bar . }} {{percent . }} {{speed . }} {{rtime . "ETA %s"}}{{with string . "suffix"}} {{.}}{{end}}` + "\n")
-	}
-
-	pool := pond.New(f.threads, f.threads*2, pond.Strategy(pond.Lazy()))
-
-	for scanner.Scan() {
-		bar.SetCurrent(scanner.FullyScannedBytes())
-
-		switch o := scanner.Object().(type) {
-		case *osm.Node:
-			if point, ok := f.parseNode(o); ok {
-				f.pointsMutex.Lock()
-				f.points = append(f.points, point)
-				f.pointsMutex.Unlock()
-			}
-
-		case *osm.Way:
-			if point, ok := f.parseWay(o); ok {
-				f.pointsMutex.Lock()
-				f.points = append(f.points, point)
-				f.pointsMutex.Unlock()
-			}
-
-		case *osm.Relation:
-			if points := f.parseRelation(o); len(points) > 0 {
-				f.pointsMutex.Lock()
-				f.points = append(f.points, points...)
-				f.pointsMutex.Unlock()
-			}
-
+	case *osm.Relation:
+		if points := f.parseRelation(obj); len(points) > 0 {
+			f.pointsMutex.Lock()
+			f.points = append(f.points, points...)
+			f.pointsMutex.Unlock()
 		}
 	}
-	pool.StopAndWait()
-	bar.Finish()
-
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-
-	return nil
 }
-
 func (f *GeoGen) parseNode(node *osm.Node) (kdbush.Point[geomodel.Info], bool) {
 	street := node.Tags.Find("addr:street")
 	housenumber := node.Tags.Find("addr:housenumber")

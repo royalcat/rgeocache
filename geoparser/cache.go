@@ -1,60 +1,20 @@
 package geoparser
 
 import (
-	"context"
-	"os"
-	"runtime"
-	"time"
-
-	"github.com/cheggaaa/pb/v3"
-	"github.com/cheggaaa/pb/v3/termutil"
 	"github.com/paulmach/osm"
-	"github.com/paulmach/osm/osmpbf"
 	"github.com/royalcat/btrgo"
 	"github.com/sirupsen/logrus"
 )
 
-func (f *GeoGen) fillCache(ctx context.Context, base string) error {
-	file, err := os.Open(base)
-	if err != nil {
-		return err
+func (f *GeoGen) cacheObject(o osm.Object) {
+	switch obj := o.(type) {
+	case *osm.Node:
+		f.cacheNode(obj)
+	case *osm.Way:
+		f.cacheWay(obj)
+	case *osm.Relation:
+		f.cacheRel(obj)
 	}
-	defer file.Close()
-	stat, _ := file.Stat()
-
-	// The third parameter is the number of parallel decoders to use.
-	scanner := osmpbf.New(ctx, file, runtime.GOMAXPROCS(-1)-1)
-	defer scanner.Close()
-
-	bar := pb.Start64(stat.Size())
-	bar.Set("prefix", "1/2 filling cache")
-	bar.Set(pb.Bytes, true)
-	bar.SetRefreshRate(time.Second)
-	if w, err := termutil.TerminalWidth(); w == 0 || err != nil {
-		bar.SetTemplateString(`{{with string . "prefix"}}{{.}} {{end}}{{counters . }} {{bar . }} {{percent . }} {{speed . }} {{rtime . "ETA %s"}}{{with string . "suffix"}} {{.}}{{end}}` + "\n")
-	}
-
-	for scanner.Scan() {
-		bar.SetCurrent(scanner.FullyScannedBytes())
-
-		switch o := scanner.Object().(type) {
-		case *osm.Node:
-			f.cacheNode(o)
-
-		case *osm.Way:
-			f.cacheWay(o)
-
-		case *osm.Relation:
-			f.cacheRel(o)
-		}
-	}
-	bar.Finish()
-
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (f *GeoGen) cacheNode(node *osm.Node) {
