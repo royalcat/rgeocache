@@ -17,6 +17,8 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 
+	"github.com/sourcegraph/conc/pool"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -136,12 +138,14 @@ func (f *GeoGen) parseDatabase(ctx context.Context, base string) error {
 		bar.SetTemplateString(`{{with string . "prefix"}}{{.}} {{end}}{{counters . }} {{bar . }} {{percent . }} {{speed . }} {{rtime . "ETA %s"}}{{with string . "suffix"}} {{.}}{{end}}` + "\n")
 	}
 
+	pool := pool.New().WithMaxGoroutines(f.threads)
 	for scanner.Scan() {
 		bar.SetCurrent(scanner.FullyScannedBytes())
-		f.parseObject(scanner.Object())
+		f.parseObject(pool, scanner.Object())
 	}
-	bar.Finish()
+	pool.Wait()
 
+	bar.Finish()
 	if err := scanner.Err(); err != nil {
 		return err
 	}

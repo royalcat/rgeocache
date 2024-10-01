@@ -5,6 +5,7 @@ import (
 
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
+	"github.com/sourcegraph/conc/pool"
 
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/planar"
@@ -12,28 +13,34 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func (f *GeoGen) parseObject(o osm.Object) {
+func (f *GeoGen) parseObject(pool *pool.Pool, o osm.Object) {
 	switch obj := o.(type) {
 	case *osm.Node:
-		if point, ok := f.parseNode(obj); ok {
-			f.pointsMutex.Lock()
-			f.points = append(f.points, point)
-			f.pointsMutex.Unlock()
-		}
+		pool.Go(func() {
+			if point, ok := f.parseNode(obj); ok {
+				f.pointsMutex.Lock()
+				f.points = append(f.points, point)
+				f.pointsMutex.Unlock()
+			}
+		})
 
 	case *osm.Way:
-		if point, ok := f.parseWay(obj); ok {
-			f.pointsMutex.Lock()
-			f.points = append(f.points, point)
-			f.pointsMutex.Unlock()
-		}
+		pool.Go(func() {
+			if point, ok := f.parseWay(obj); ok {
+				f.pointsMutex.Lock()
+				f.points = append(f.points, point)
+				f.pointsMutex.Unlock()
+			}
+		})
 
 	case *osm.Relation:
-		if points := f.parseRelation(obj); len(points) > 0 {
-			f.pointsMutex.Lock()
-			f.points = append(f.points, points...)
-			f.pointsMutex.Unlock()
-		}
+		pool.Go(func() {
+			if points := f.parseRelation(obj); len(points) > 0 {
+				f.pointsMutex.Lock()
+				f.points = append(f.points, points...)
+				f.pointsMutex.Unlock()
+			}
+		})
 	}
 }
 func (f *GeoGen) parseNode(node *osm.Node) (kdbush.Point[geomodel.Info], bool) {
