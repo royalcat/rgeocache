@@ -3,7 +3,6 @@ module github.com/royalcat/rgeocache
 go 1.19
 
 require (
-	github.com/alitto/pond v1.8.3
 	github.com/klauspost/compress v1.16.5
 	github.com/paulmach/osm v0.7.1
 	github.com/royalcat/btrgo v0.0.0-20230407142105-78d8f468c39d

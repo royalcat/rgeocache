@@ -65,7 +65,7 @@ jobs:
               MAPS_FILES+="-i maps/${map}-latest.osm.pbf "
           done
           unset IFS
-          go run ../cmd generate -l ${{ matrix.locale }} -p ${NAME}_points ${MAPS_FILES}
+          go run ../cmd generate -l ${{ matrix.locale }} -p ${{ matrix.name }}_points ${MAPS_FILES}
 
       - uses: actions/upload-artifact@v4
         with:
