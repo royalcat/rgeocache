@@ -131,10 +131,10 @@ func generate(ctx *cli.Context) error {
 		if err != nil {
 			return fmt.Errorf("error parsing input: %s with error: %s", v, err.Error())
 		}
-		// err = geoGen.OpenCache() // flushing memory cache
-		// if err != nil {
-		// 	return fmt.Errorf("error flushing memory cache: %s", err.Error())
-		// }
+		err = geoGen.OpenCache() // flushing memory cache
+		if err != nil {
+			return fmt.Errorf("error flushing memory cache: %s", err.Error())
+		}
 	}
 
 	saveFile := ctx.String("points")
