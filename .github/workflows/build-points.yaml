@@ -3,14 +3,14 @@ on:
   schedule:
     - cron: "0 12 * * 1"
   push:
-    branches:
-      - "master"
-      - "github-workflow"
     paths:
       - ".github/workflows/build-points.yaml"
-      - "generate_scripts/generate.sh"
+      - "generate_scripts/**"
       - "geomodel/**"
       - "geoparser/**"
+      - "cmd/**"
+      - "kv/**"
+      - "go.*"
   workflow_dispatch:
 
 jobs:
