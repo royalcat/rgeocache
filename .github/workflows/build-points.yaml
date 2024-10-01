@@ -21,12 +21,16 @@ jobs:
         include:
           - name: "russia"
             maps: "russia"
+            locale: "offical"
           - name: "post-cis"
             maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia,asia/armenia"
+            locale: "offical"
+          - name: "post-cis_ru"
+            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia,asia/armenia"
+            locale: "ru"
 
     env:
       MAPS: ${{ matrix.maps }}
-      NAME: ${{ matrix.name }}
     runs-on: self-hosted
     steps:
       - name: Check out repository code
@@ -49,7 +53,7 @@ jobs:
         shell: bash
         run: |
           source ./generate_scripts/generate.sh
-          download_maps $NAME $MAPS
+          download_maps $MAPS
 
       - name: Run generator
         shell: bash
@@ -61,7 +65,7 @@ jobs:
               MAPS_FILES+="-i maps/${map}-latest.osm.pbf "
           done
           unset IFS
-          go run ../cmd generate -p ${NAME}_points ${MAPS_FILES}
+          go run ../cmd generate -l ${{ matrix.locale }} -p ${NAME}_points ${MAPS_FILES}
 
       - uses: actions/upload-artifact@v4
         with:

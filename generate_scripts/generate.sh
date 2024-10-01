@@ -1,12 +1,11 @@
 BUILD_DIR="cache_build"
 
 function download_maps {
-    if [ $# -eq 0 ] || [ $# -gt 2 ]; then
+    if [ $# -eq 0 ] || [ $# -gt 1 ]; then
         return
     fi
 
-    NAME=$1
-    MAPS=$2 
+    MAPS=$1
 
     mkdir $BUILD_DIR
     pushd $BUILD_DIR
