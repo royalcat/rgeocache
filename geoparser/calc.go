@@ -7,20 +7,19 @@ import (
 )
 
 // FIXME it takes ALOT of time, optimize
-func (f *GeoGen) calcCity(lat, lon float64) string {
-	cityName := ""
-	point := orb.Point{lat, lon}
-	f.cityCache.Range(func(_ int64, city cacheCity) bool {
-		if city.Bound.Contains(point) {
-			if planar.MultiPolygonContains(city.MultiPolygon, point) {
-				cityName = city.Name
+func (f *GeoGen) calcPlace(point orb.Point) cachePlace {
+	var foundPlace cachePlace
+	f.placeCache.Range(func(_ int64, place cachePlace) bool {
+		if place.Bound.Contains(point) {
+			if planar.MultiPolygonContains(place.MultiPolygon, point) {
+				foundPlace = place
 				return false
 			}
 		}
 
 		return true
 	})
-	return cityName
+	return foundPlace
 }
 
 func (f *GeoGen) calcWayCenter(way *osm.Way) (lat, lon float64) {

@@ -2,13 +2,15 @@ package kv
 
 import "sync"
 
+func NewMap[K comparable, V any]() *MutexMap[K, V] {
+	return &MutexMap[K, V]{m: make(map[K]V)}
+}
+
+var _ KVS[string, any] = (*MutexMap[string, any])(nil)
+
 type MutexMap[K comparable, V any] struct {
 	mu sync.RWMutex
 	m  map[K]V
-}
-
-func NewMutexMap[K comparable, V any]() *MutexMap[K, V] {
-	return &MutexMap[K, V]{m: make(map[K]V)}
 }
 
 var _ KVS[string, any] = (*MutexMap[string, any])(nil)
