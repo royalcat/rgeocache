@@ -4,15 +4,19 @@ import (
 	"github.com/puzpuzpuz/xsync"
 )
 
-type XMap[K xsync.IntegerConstraint, V any] struct {
+type XMap[K comparable, V any] struct {
 	m *xsync.MapOf[K, V]
 }
 
-func NewXMap[K xsync.IntegerConstraint, V any]() *XMap[K, V] {
+func NewStringXMap[V any]() *XMap[string, V] {
+	return &XMap[string, V]{m: xsync.NewMapOf[V]()}
+}
+
+func NewIntXMap[K xsync.IntegerConstraint, V any]() *XMap[K, V] {
 	return &XMap[K, V]{m: xsync.NewIntegerMapOf[K, V]()}
 }
 
-var _ KVS[int, any] = (*XMap[int, any])(nil)
+var _ KVS[string, any] = (*XMap[string, any])(nil)
 
 // Get implements KVS
 func (m *XMap[K, V]) Get(key K) (V, bool) {

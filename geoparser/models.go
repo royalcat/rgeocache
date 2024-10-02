@@ -10,29 +10,9 @@ import (
 )
 
 type cachePlace struct {
-	Name          string
-	LocalizedName string
-	Bound         orb.Bound
-	MultiPolygon  orb.MultiPolygon
-}
-
-func (c cachePlace) BestName() string {
-	if c.LocalizedName != "" {
-		return c.LocalizedName
-	}
-	return c.Name
-}
-
-type cacheHighway struct {
-	Name          string
-	LocalizedName string
-}
-
-func (c cacheHighway) BestName() string {
-	if c.LocalizedName != "" {
-		return c.LocalizedName
-	}
-	return c.Name
+	Name         string
+	Bound        orb.Bound
+	MultiPolygon orb.MultiPolygon
 }
 
 type cachePoint orb.Point

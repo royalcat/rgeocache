@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
@@ -84,9 +85,10 @@ func main() {
 						DefaultText: "official",
 						Value:       "official",
 					},
-					&cli.BoolFlag{
+					&cli.StringFlag{
 						Name:        "pprof",
-						DefaultText: "false",
+						DefaultText: "",
+						Value:       "",
 					},
 				},
 				Action: generate,
@@ -114,11 +116,20 @@ func generate(ctx *cli.Context) error {
 		preferredLocalization = ""
 	}
 
-	if ctx.Bool("pprof") {
-		go func() {
-			logrus.Info("Starting pprof server")
-			logrus.Error(http.ListenAndServe("localhost:6060", nil))
-		}()
+	if profileName := ctx.String("pprof"); profileName != "" {
+		// go func() {
+		// 	logrus.Info("Starting pprof server")
+		// 	logrus.Error(http.ListenAndServe("localhost:6060", nil))
+		// }()
+		f, err := os.OpenFile(profileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return fmt.Errorf("error creating pprof file: %w", err)
+		}
+		err = pprof.StartCPUProfile(f)
+		if err != nil {
+			return fmt.Errorf("error starting pprof: %w", err)
+		}
+		defer pprof.StopCPUProfile()
 	}
 
 	geoGen, err := geoparser.NewGeoGen(cache, threads, preferredLocalization)
