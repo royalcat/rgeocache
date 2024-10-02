@@ -2,7 +2,7 @@ package kv
 
 import "sync"
 
-func NewMap[K comparable, V any]() *MutexMap[K, V] {
+func NewMutexMap[K comparable, V any]() *MutexMap[K, V] {
 	return &MutexMap[K, V]{m: make(map[K]V)}
 }
 

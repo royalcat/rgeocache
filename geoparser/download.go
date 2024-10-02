@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/gob"
 	"os"
+
+	"github.com/paulmach/orb"
+	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/kdbush"
 )
 
 // TODO
@@ -13,9 +17,6 @@ func DownloadOsm(ctx context.Context, name string) {
 }
 
 func (f *GeoGen) SavePointsToFile(file string) error {
-	f.pointsMutex.Lock()
-	defer f.pointsMutex.Unlock()
-
 	dataFile, err := os.Create(file)
 
 	if err != nil {
@@ -23,7 +24,18 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	}
 	// serialize the data
 	dataEncoder := gob.NewEncoder(dataFile)
-	err = dataEncoder.Encode(f.points)
+
+	points := make([]kdbush.Point[geomodel.Info], 0) // TODO preallocate
+	f.points.Range(func(point orb.Point, info geomodel.Info) bool {
+		points = append(points, kdbush.Point[geomodel.Info]{
+			X:    point[0],
+			Y:    point[1],
+			Data: info,
+		})
+		return true
+	})
+
+	err = dataEncoder.Encode(points)
 	if err != nil {
 		return err
 	}
