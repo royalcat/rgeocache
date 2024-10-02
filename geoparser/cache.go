@@ -31,11 +31,7 @@ func (f *GeoGen) cacheWay(way *osm.Way) {
 }
 
 func (f *GeoGen) cacheHighway(way *osm.Way) {
-	tags := way.TagMap()
-	f.highwayCache.Set(int64(way.ID), cacheHighway{
-		Name:          tags[nameKey],
-		LocalizedName: f.localizedName(way.Tags),
-	})
+	f.highwayLocalizationCache.Set(way.Tags.Find(nameKey), f.localizedName(way.Tags))
 }
 
 var cachablePlaces = []string{"city", "town", "village", "hamlet", "isolated_dwelling", "farm"}
@@ -73,11 +69,11 @@ func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 			return
 		}
 
+		f.placeLocalizationCache.Set(name, f.localizedName(rel.Tags))
 		f.placeCache.Set(int64(rel.ID), cachePlace{
-			Name:          name,
-			LocalizedName: f.localizedName(rel.Tags),
-			Bound:         mpoly.Bound(),
-			MultiPolygon:  mpoly,
+			Name:         name,
+			Bound:        mpoly.Bound(),
+			MultiPolygon: mpoly,
 		})
 	}
 }

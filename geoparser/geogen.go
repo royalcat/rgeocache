@@ -28,8 +28,9 @@ type GeoGen struct {
 	nodeCache kv.KVS[int64, cachePoint]
 	wayCache  kv.KVS[int64, cacheWay]
 
-	placeCache   kv.KVS[int64, cachePlace]
-	highwayCache kv.KVS[int64, cacheHighway]
+	placeCache               kv.KVS[int64, cachePlace]
+	placeLocalizationCache   kv.KVS[string, string]
+	highwayLocalizationCache kv.KVS[string, string]
 
 	points      []kdbush.Point[geomodel.Info]
 	pointsMutex sync.Mutex
@@ -66,8 +67,9 @@ func (f *GeoGen) OpenCache() error {
 	if err != nil {
 		return err
 	}
-	f.placeCache = kv.NewMap[int64, cachePlace]()
-	f.highwayCache = kv.NewMap[int64, cacheHighway]()
+	f.placeCache = kv.NewIntXMap[int64, cachePlace]()
+	f.placeLocalizationCache = kv.NewStringXMap[string]()
+	f.highwayLocalizationCache = kv.NewStringXMap[string]()
 	return err
 }
 
@@ -164,14 +166,18 @@ func (f *GeoGen) Close() {
 	if f.placeCache != nil {
 		f.placeCache.Close()
 	}
-	if f.highwayCache != nil {
-		f.placeCache.Close()
+
+	if f.placeLocalizationCache != nil {
+		f.placeLocalizationCache.Close()
+	}
+	if f.highwayLocalizationCache != nil {
+		f.highwayLocalizationCache.Close()
 	}
 }
 
 func newCache[V kv.ValueBytes[V]](base, name string) (kv.KVS[int64, V], error) {
 	if base == "memory" {
-		return kv.NewMap[int64, V](), nil
+		return kv.NewIntXMap[int64, V](), nil
 	} else {
 		var cacheDb *leveldb.DB
 		var err error

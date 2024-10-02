@@ -20,10 +20,9 @@ func (f *GeoGen) localizedName(tags osm.Tags) string {
 const cityAddrKey = "addr:city"
 
 func (f *GeoGen) localizeCityAddr(tags osm.Tags, point orb.Point) string {
-	cityAddr := tags.Find(cityAddrKey)
+	name := tags.Find(cityAddrKey)
 
 	if f.preferredLocalization == "" {
-		name := tags.Find(cityAddrKey)
 		if name != "" {
 			return name
 		}
@@ -34,49 +33,36 @@ func (f *GeoGen) localizeCityAddr(tags osm.Tags, point orb.Point) string {
 		return localizedName
 	}
 
-	found := false
-	f.placeCache.Range(func(key int64, value cachePlace) bool {
-		if value.Name == cityAddr {
-			found = true
-			cityAddr = value.LocalizedName
-			return false
-		}
-		return true
-	})
-	if found {
-		return cityAddr
-	}
-
-	if calcCityName := f.calcPlace(point).BestName(); calcCityName != "" {
-		return calcCityName
-	}
-
-	return cityAddr
-}
-
-const streetKey = "addr:street"
-
-func (f *GeoGen) localizedStreetName(tags osm.Tags) string {
-	if f.preferredLocalization == "" {
-		return tags.Find(streetKey)
-	}
-
-	if localizedName := tags.Find(streetKey + ":" + f.preferredLocalization); localizedName != "" {
+	if localizedName, ok := f.placeLocalizationCache.Get(name); ok {
 		return localizedName
 	}
 
-	name := tags.Find(streetKey)
-	found := false
-	f.highwayCache.Range(func(key int64, value cacheHighway) bool {
-		if value.Name == name {
-			found = true
-			name = value.LocalizedName
-			return false
+	if calcPlaceName := f.calcPlace(point).Name; calcPlaceName != "" {
+		if localizedName, ok := f.placeLocalizationCache.Get(calcPlaceName); ok {
+			return localizedName
 		}
-		return true
-	})
-	if found {
+
+		return calcPlaceName
+	}
+
+	return name
+}
+
+const addrStreetKey = "addr:street"
+
+func (f *GeoGen) localizedStreetName(tags osm.Tags) string {
+	name := tags.Find(addrStreetKey)
+
+	if f.preferredLocalization == "" {
 		return name
+	}
+
+	if localizedName := tags.Find(addrStreetKey + ":" + f.preferredLocalization); localizedName != "" {
+		return localizedName
+	}
+
+	if localizedName, ok := f.highwayLocalizationCache.Get(name); ok {
+		return localizedName
 	}
 
 	return name
