@@ -13,8 +13,10 @@
             "cwd": "${workspaceFolder}/bin",
             "args": [
                 "generate",
-                "--pprof",
-                "profile.pprof",
+                "--pprof.profile",
+                "--pprof.heap",
+                "--pprof.listen",
+                ":8080",
                 "-l",
                 "ru",
                 "--cache",
@@ -24,7 +26,7 @@
                 // "-i",
                 // "cache_build/maps/europe/ukraine-latest.osm.pbf",
                 "-i",
-                "cache_build/maps/asia/armenia-latest.osm.pbf",
+                "cache_build/maps/asia/azerbaijan-latest.osm.pbf",
                 "--points",
                 "points_data.gob",
             ]

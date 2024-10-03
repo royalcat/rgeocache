@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
@@ -86,9 +87,16 @@ func main() {
 						Value:       "official",
 					},
 					&cli.StringFlag{
-						Name:        "pprof",
+						Name:        "pprof.listen",
 						DefaultText: "",
-						Value:       "",
+					},
+					&cli.BoolFlag{
+						Name:        "pprof.profile",
+						DefaultText: "",
+					},
+					&cli.BoolFlag{
+						Name:        "pprof.heap",
+						DefaultText: "",
 					},
 				},
 				Action: generate,
@@ -116,12 +124,17 @@ func generate(ctx *cli.Context) error {
 		preferredLocalization = ""
 	}
 
-	if profileName := ctx.String("pprof"); profileName != "" {
-		// go func() {
-		// 	logrus.Info("Starting pprof server")
-		// 	logrus.Error(http.ListenAndServe("localhost:6060", nil))
-		// }()
-		f, err := os.OpenFile(profileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
+		go func() {
+			logrus.Info("Starting pprof server")
+			logrus.Error(http.ListenAndServe(pprofListen, nil))
+		}()
+	}
+
+	pprofHeap := ctx.Bool("pprof.heap")
+
+	if ctx.Bool("pprof.profile") {
+		f, err := os.OpenFile("profile.pprof", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			return fmt.Errorf("error creating pprof file: %w", err)
 		}
@@ -140,12 +153,20 @@ func generate(ctx *cli.Context) error {
 
 	inputs := ctx.StringSlice("input")
 	fmt.Printf("Input maps: %v\n", inputs)
-	for _, v := range inputs {
-		fmt.Printf("Generating database for map: %s\n", v)
-		err := geoGen.ParseOSMFile(ctx.Context, v)
+	for _, input := range inputs {
+		fmt.Printf("Generating database for map: %s\n", input)
+		err := geoGen.ParseOSMFile(ctx.Context, input)
 		if err != nil {
-			return fmt.Errorf("error parsing input: %s with error: %s", v, err.Error())
+			return fmt.Errorf("error parsing input: %s with error: %s", input, err.Error())
 		}
+
+		if pprofHeap {
+			err := writeHeapProfile(path.Base(input))
+			if err != nil {
+				return fmt.Errorf("error writing heap profile: %s", err.Error())
+			}
+		}
+
 		err = geoGen.OpenCache() // flushing memory cache
 		if err != nil {
 			return fmt.Errorf("error flushing memory cache: %s", err.Error())
@@ -167,6 +188,15 @@ func generate(ctx *cli.Context) error {
 	fmt.Printf("Complete")
 
 	return nil
+}
+
+func writeHeapProfile(name string) error {
+	f, err := os.Create(name + ".heap.prof")
+	if err != nil {
+		logrus.Fatal(err)
+	}
+	defer f.Close()
+	return pprof.WriteHeapProfile(f)
 }
 
 func serve(ctx *cli.Context) error {

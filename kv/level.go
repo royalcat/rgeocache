@@ -27,22 +27,22 @@ type BinKey interface {
 	~string | ~bool | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~[]bool | ~[]uint8 | ~[]int8 | ~[]int16 | ~[]uint16 | ~[]int32 | ~[]uint32 | ~[]int64 | ~[]uint64 | ~float32 | ~float64 | ~[]float32 | ~[]float64
 }
 
-type LevelDbKVS[V ValueBytes[V]] struct {
+type LevelDbKVS[K ~int64, V ValueBytes[V]] struct {
 	db     *leveldb.DB
 	writer *writeCache
 }
 
-func NewLevelDbKV[V ValueBytes[V]](db *leveldb.DB) *LevelDbKVS[V] {
+func NewLevelDbKV[K ~int64, V ValueBytes[V]](db *leveldb.DB) *LevelDbKVS[K, V] {
 	writer := newWriteCache(db)
 	writer.Run()
-	return &LevelDbKVS[V]{
+	return &LevelDbKVS[K, V]{
 		db:     db,
 		writer: writer,
 	}
 }
 
 // Set implements KVS
-func (kvs *LevelDbKVS[V]) Set(key int64, value V) {
+func (kvs *LevelDbKVS[K, V]) Set(key K, value V) {
 	keyB := keyBytes(key)
 	newValue := value.ToBytes()
 
@@ -52,11 +52,11 @@ func (kvs *LevelDbKVS[V]) Set(key int64, value V) {
 		}
 	}
 
-	kvs.writer.Put(key, newValue)
+	kvs.writer.Put(int64(key), newValue)
 }
 
 // Get implements KVS
-func (kvs *LevelDbKVS[V]) Get(key int64) (V, bool) {
+func (kvs *LevelDbKVS[K, V]) Get(key K) (V, bool) {
 	kvs.writer.Flush()
 
 	var value V
@@ -68,12 +68,12 @@ func (kvs *LevelDbKVS[V]) Get(key int64) (V, bool) {
 	return value, true
 }
 
-func (kvs *LevelDbKVS[V]) Range(iterCall func(key int64, value V) bool) {
+func (kvs *LevelDbKVS[K, V]) Range(iterCall func(key K, value V) bool) {
 	iter := kvs.db.NewIterator(nil, nil)
 	defer iter.Release()
 
 	for iter.Next() {
-		k := bytesToKey(iter.Key())
+		k := bytesToKey[K](iter.Key())
 		var v V
 		v.FromBytes(iter.Value())
 
@@ -83,18 +83,18 @@ func (kvs *LevelDbKVS[V]) Range(iterCall func(key int64, value V) bool) {
 	}
 }
 
-func (kvs *LevelDbKVS[V]) Close() {
+func (kvs *LevelDbKVS[K, V]) Close() {
 	kvs.writer.Close()
 	kvs.writer.Flush()
 	kvs.db.Close()
 }
 
-func keyBytes(key int64) []byte {
+func keyBytes[K ~int64](key K) []byte {
 	buf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buf, uint64(key))
 	return buf
 }
 
-func bytesToKey(buf []byte) int64 {
-	return int64(binary.LittleEndian.Uint64(buf))
+func bytesToKey[K ~int64](buf []byte) K {
+	return K(binary.LittleEndian.Uint64(buf))
 }
