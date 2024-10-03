@@ -242,5 +242,5 @@ func newCache[K ~int64, V kv.ValueBytes[V]](base, name string) (kv.KVS[K, V], er
 }
 
 func newMemoryCache[K constraints.Ordered, V any]() kv.KVS[K, V] {
-	return kv.NewHaxMap[K, V]()
+	return kv.NewMutexMap[K, V]()
 }
