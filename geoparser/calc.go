@@ -4,6 +4,7 @@ import (
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/planar"
 	"github.com/paulmach/osm"
+	"github.com/royalcat/rgeocache/kv"
 )
 
 // FIXME it takes ALOT of time, optimize
@@ -22,10 +23,10 @@ func (f *GeoGen) calcPlace(point orb.Point) cachePlace {
 	return foundPlace
 }
 
-func (f *GeoGen) calcWayCenter(way *osm.Way) (lat, lon float64) {
+func calcWayCenter(wayCache kv.KVS[osm.WayID, cacheWay], way *osm.Way) (lat, lon float64) {
 	poly := orb.Ring{}
 
-	line, ok := f.wayCache.Get(way.ID)
+	line, ok := wayCache.Get(way.ID)
 	if !ok {
 		return 0, 0
 	}

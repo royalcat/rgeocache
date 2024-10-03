@@ -58,7 +58,7 @@ func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 	tags := rel.TagMap()
 	if tags["type"] == "multipolygon" || tags["type"] == "boundary" {
 
-		mpoly, err := f.buildPolygon(rel.Members)
+		mpoly, err := buildPolygon(f.wayCache, rel.Members)
 		if err != nil {
 			log.Errorf("Error building polygon for %s: %s", name, err.Error())
 			return

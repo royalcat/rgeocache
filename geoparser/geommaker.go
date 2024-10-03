@@ -22,7 +22,7 @@ func makeLineString(nodeCache kv.KVS[osm.NodeID, cachePoint], nodes osm.WayNodes
 	return ls
 }
 
-func (f *GeoGen) buildPolygon(members osm.Members) (orb.MultiPolygon, error) {
+func buildPolygon(wayCache kv.KVS[osm.WayID, cacheWay], members osm.Members) (orb.MultiPolygon, error) {
 
 	var outer []segment
 	var inner []segment
@@ -41,7 +41,7 @@ func (f *GeoGen) buildPolygon(members osm.Members) (orb.MultiPolygon, error) {
 			outerCount++
 		}
 
-		way, ok := f.wayCache.Get(osm.WayID(m.Ref))
+		way, ok := wayCache.Get(osm.WayID(m.Ref))
 		ls := orb.LineString(way)
 		if !ok || len(ls) == 0 {
 			// we have the way but none the the node members
