@@ -62,7 +62,7 @@ func (f *GeoGen) parseWay(way *osm.Way) (geoPoint, bool) {
 	building := way.Tags.Find("building")
 
 	if housenumber != "" && street != "" && building != "" {
-		lat, lon := f.calcWayCenter(way)
+		lat, lon := calcWayCenter(f.wayCache, way)
 
 		if lat == 0 && lon == 0 {
 			log.Warn("failed to calculate center for way")
@@ -107,7 +107,7 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 	tags := rel.TagMap()
 
 	if tags["type"] == "multipolygon" {
-		mpoly, err := f.buildPolygon(rel.Members)
+		mpoly, err := buildPolygon(f.wayCache, rel.Members)
 		if err != nil {
 			logrus.Errorf("Error building polygon: %s", err.Error())
 			return points

@@ -72,7 +72,19 @@ func (f *GeoGen) OpenCache() error {
 }
 
 func (f *GeoGen) ParseOSMFile(ctx context.Context, base string) error {
-	err := f.fillCache(ctx, base)
+	err := f.fillNodeCache(ctx, base)
+	if err != nil {
+		return err
+	}
+
+	err = f.fillWayCache(ctx, base)
+	if err != nil {
+		return err
+	}
+
+	f.nodeCache = nil
+
+	err = f.fillRelCache(ctx, base)
 	if err != nil {
 		return err
 	}
@@ -83,45 +95,6 @@ func (f *GeoGen) ParseOSMFile(ctx context.Context, base string) error {
 	}
 
 	return nil
-}
-
-func (f *GeoGen) fillCache(ctx context.Context, base string) error {
-	err := f.fillNodeCache(ctx, base)
-	if err != nil {
-		return err
-	}
-	err = f.fillWayRelCache(ctx, base)
-	if err != nil {
-		return err
-	}
-
-	f.nodeCache = nil
-	return nil
-}
-
-func (f *GeoGen) fillWayRelCache(ctx context.Context, base string) error {
-	// log := f.log.WithField("base", base)
-
-	file, err := os.Open(base)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	stat, _ := file.Stat()
-
-	scanner := osmpbf.New(ctx, file, f.threads)
-	defer scanner.Close()
-	scanner.SkipNodes = true
-	return scanWithProgress(scanner, stat.Size(), "2/3 filling ways and relations cache", func(object osm.Object) bool {
-		switch object := object.(type) {
-		case *osm.Way:
-			f.cacheWay(object)
-		case *osm.Relation:
-			f.cacheRel(object)
-		}
-		return true
-	})
 }
 
 func (f *GeoGen) fillNodeCache(ctx context.Context, base string) error {
@@ -139,12 +112,63 @@ func (f *GeoGen) fillNodeCache(ctx context.Context, base string) error {
 	defer scanner.Close()
 	scanner.SkipWays = true
 	scanner.SkipRelations = true
-	return scanWithProgress(scanner, stat.Size(), "1/3 filling node cache", func(object osm.Object) bool {
+	return scanWithProgress(scanner, stat.Size(), "1/4 filling node cache", func(object osm.Object) bool {
 		node, ok := object.(*osm.Node)
 		if !ok {
 			log.Error("Object does not type of node")
 		}
 		f.cacheNode(node)
+		return true
+	})
+}
+
+func (f *GeoGen) fillWayCache(ctx context.Context, input string) error {
+	log := f.log.WithField("input", input)
+
+	file, err := os.Open(input)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	stat, _ := file.Stat()
+
+	scanner := osmpbf.New(ctx, file, f.threads)
+	defer scanner.Close()
+	scanner.SkipNodes = true
+	scanner.SkipRelations = true
+	return scanWithProgress(scanner, stat.Size(), "2/4 filling ways cache", func(object osm.Object) bool {
+		way, ok := object.(*osm.Way)
+		if !ok {
+			log.Error("Object does not type of node")
+		}
+		f.cacheWay(way)
+
+		return true
+	})
+}
+
+func (f *GeoGen) fillRelCache(ctx context.Context, input string) error {
+	log := f.log.WithField("input", input)
+
+	file, err := os.Open(input)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	stat, _ := file.Stat()
+
+	scanner := osmpbf.New(ctx, file, f.threads)
+	defer scanner.Close()
+	scanner.SkipNodes = true
+	scanner.SkipWays = true
+	return scanWithProgress(scanner, stat.Size(), "3/4 filling relations cache", func(object osm.Object) bool {
+		rel, ok := object.(*osm.Relation)
+		if !ok {
+			log.Error("Object does not type of relation")
+		}
+		f.cacheRel(rel)
 		return true
 	})
 }
@@ -180,7 +204,7 @@ func (f *GeoGen) parseDatabase(ctx context.Context, base string) error {
 	defer scanner.Close()
 
 	bar := pb.Start64(stat.Size())
-	bar.Set("prefix", "3/3 generating database")
+	bar.Set("prefix", "4/4 generating database")
 	bar.Set(pb.Bytes, true)
 	bar.SetRefreshRate(time.Second)
 	if w, err := termutil.TerminalWidth(); w == 0 || err != nil {
