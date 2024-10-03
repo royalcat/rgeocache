@@ -55,12 +55,19 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 }
 
 func (f *GeoGen) parseWay(way *osm.Way) (geoPoint, bool) {
+	log := logrus.WithField("id", way.ID)
+
 	street := way.Tags.Find("addr:street")
 	housenumber := way.Tags.Find("addr:housenumber")
 	building := way.Tags.Find("building")
 
 	if housenumber != "" && street != "" && building != "" {
 		lat, lon := f.calcWayCenter(way)
+
+		if lat == 0 && lon == 0 {
+			log.Warn("failed to calculate center for way")
+			return geoPoint{}, false
+		}
 
 		return geoPoint{
 			Point: orb.Point{lat, lon},
@@ -136,7 +143,7 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 			continue
 		}
 
-		if way, ok := f.wayCache.Get(m.Ref); ok {
+		if way, ok := f.wayCache.Get(osm.WayID(m.Ref)); ok {
 			for _, point := range orb.LineString(way) {
 
 				points = append(points, geoPoint{

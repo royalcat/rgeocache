@@ -15,6 +15,7 @@ import (
 	"github.com/royalcat/rgeocache/kv"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
+	"golang.org/x/exp/constraints"
 
 	"github.com/sourcegraph/conc/pool"
 
@@ -26,12 +27,11 @@ type GeoGen struct {
 	threads               int
 	preferredLocalization string
 
-	nodeCache kv.KVS[int64, cachePoint]
-	wayCache  kv.KVS[int64, cacheWay]
+	nodeCache kv.KVS[osm.NodeID, cachePoint]
+	wayCache  kv.KVS[osm.WayID, cacheWay]
 
-	placeCache               kv.KVS[int64, cachePlace]
-	placeLocalizationCache   kv.KVS[string, string]
-	highwayLocalizationCache kv.KVS[string, string]
+	placeCache        kv.KVS[osm.RelationID, cachePlace]
+	localizationCache kv.KVS[string, string]
 
 	points kv.KVS[orb.Point, geomodel.Info]
 
@@ -58,17 +58,16 @@ func NewGeoGen(cachePath string, threads int, preferredLocalization string) (*Ge
 
 func (f *GeoGen) OpenCache() error {
 	var err error
-	f.nodeCache, err = newCache[cachePoint](f.cachePath, "nodes")
+	f.nodeCache, err = newCache[osm.NodeID, cachePoint](f.cachePath, "nodes")
 	if err != nil {
 		return err
 	}
-	f.wayCache, err = newCache[cacheWay](f.cachePath, "ways")
+	f.wayCache, err = newCache[osm.WayID, cacheWay](f.cachePath, "ways")
 	if err != nil {
 		return err
 	}
-	f.placeCache = kv.NewMutexMap[int64, cachePlace]()
-	f.placeLocalizationCache = kv.NewMutexMap[string, string]()
-	f.highwayLocalizationCache = kv.NewMutexMap[string, string]()
+	f.placeCache = newMemoryCache[osm.RelationID, cachePlace]()
+	f.localizationCache = newMemoryCache[string, string]()
 	return err
 }
 
@@ -181,7 +180,7 @@ func (f *GeoGen) parseDatabase(ctx context.Context, base string) error {
 	defer scanner.Close()
 
 	bar := pb.Start64(stat.Size())
-	bar.Set("prefix", "2/2 generating database")
+	bar.Set("prefix", "3/3 generating database")
 	bar.Set(pb.Bytes, true)
 	bar.SetRefreshRate(time.Second)
 	if w, err := termutil.TerminalWidth(); w == 0 || err != nil {
@@ -218,17 +217,14 @@ func (f *GeoGen) Close() {
 		f.placeCache.Close()
 	}
 
-	if f.placeLocalizationCache != nil {
-		f.placeLocalizationCache.Close()
-	}
-	if f.highwayLocalizationCache != nil {
-		f.highwayLocalizationCache.Close()
+	if f.localizationCache != nil {
+		f.localizationCache.Close()
 	}
 }
 
-func newCache[V kv.ValueBytes[V]](base, name string) (kv.KVS[int64, V], error) {
+func newCache[K ~int64, V kv.ValueBytes[V]](base, name string) (kv.KVS[K, V], error) {
 	if base == "memory" {
-		return kv.NewMutexMap[int64, V](), nil
+		return newMemoryCache[K, V](), nil
 	} else {
 		var cacheDb *leveldb.DB
 		var err error
@@ -240,7 +236,11 @@ func newCache[V kv.ValueBytes[V]](base, name string) (kv.KVS[int64, V], error) {
 		if err != nil {
 			return nil, err
 		}
-		return kv.NewLevelDbKV[V](cacheDb), nil
+		return kv.NewLevelDbKV[K, V](cacheDb), nil
 	}
 
+}
+
+func newMemoryCache[K constraints.Ordered, V any]() kv.KVS[K, V] {
+	return kv.NewHaxMap[K, V]()
 }

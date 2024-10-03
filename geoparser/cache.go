@@ -6,32 +6,32 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func (f *GeoGen) cacheObject(o osm.Object) {
-	switch obj := o.(type) {
-	case *osm.Node:
-		f.cacheNode(obj)
-	case *osm.Way:
-		f.cacheWay(obj)
-	case *osm.Relation:
-		f.cacheRel(obj)
-	}
-}
-
 func (f *GeoGen) cacheNode(node *osm.Node) {
-	f.nodeCache.Set(int64(node.ID), cachePoint{node.Lat, node.Lon})
+	f.nodeCache.Set(node.ID, cachePoint{node.Lat, node.Lon})
 }
 
 func (f *GeoGen) cacheWay(way *osm.Way) {
-	ls := cacheWay(f.makeLineString(way.Nodes))
-	f.wayCache.Set(int64(way.ID), ls)
+	log := logrus.WithField("id", way.ID)
+	ls := makeLineString(f.nodeCache, way.Nodes)
+
+	if len(ls) == 0 {
+		log.Warn("No line string for way")
+		return
+	}
+
+	f.wayCache.Set(way.ID, cacheWay(ls))
 
 	if highway := way.Tags.Find("highway"); highway != "" {
-		f.cacheHighway(way)
+		f.cacheLocalization(way.Tags)
 	}
 }
 
-func (f *GeoGen) cacheHighway(way *osm.Way) {
-	f.highwayLocalizationCache.Set(way.Tags.Find(nameKey), f.localizedName(way.Tags))
+func (f *GeoGen) cacheLocalization(tags osm.Tags) {
+	name := tags.Find(nameKey)
+	localizedName := tags.Find(nameKey + ":" + f.preferredLocalization)
+	if name != "" && localizedName != "" && name != localizedName {
+		f.localizationCache.Set(name, localizedName)
+	}
 }
 
 var cachablePlaces = []string{"city", "town", "village", "hamlet", "isolated_dwelling", "farm"}
@@ -43,6 +43,10 @@ func (f *GeoGen) cacheRel(rel *osm.Relation) {
 
 	if btrgo.InSlice(cachablePlaces, rel.Tags.Find("place")) {
 		f.cacheRelPlace(rel)
+	}
+
+	if rel.Tags.Find("type") == "associatedStreet" {
+		f.cacheLocalization(rel.Tags)
 	}
 }
 
@@ -69,8 +73,8 @@ func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 			return
 		}
 
-		f.placeLocalizationCache.Set(name, f.localizedName(rel.Tags))
-		f.placeCache.Set(int64(rel.ID), cachePlace{
+		f.cacheLocalization(rel.Tags)
+		f.placeCache.Set(rel.ID, cachePlace{
 			Name:         name,
 			Bound:        mpoly.Bound(),
 			MultiPolygon: mpoly,

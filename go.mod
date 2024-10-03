@@ -3,12 +3,14 @@ module github.com/royalcat/rgeocache
 go 1.19
 
 require (
+	github.com/alphadose/haxmap v1.4.0
 	github.com/klauspost/compress v1.16.5
 	github.com/paulmach/osm v0.7.1
 	github.com/royalcat/btrgo v0.0.0-20230407142105-78d8f468c39d
 	github.com/sourcegraph/conc v0.3.0
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/valyala/fasthttp v1.45.0
+	golang.org/x/exp v0.0.0-20230419192730-864b3d6c5c2c
 )
 
 require (
@@ -35,7 +37,6 @@ require (
 	go.mongodb.org/mongo-driver v1.11.4 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	golang.org/x/exp v0.0.0-20230419192730-864b3d6c5c2c // indirect
 	golang.org/x/sys v0.7.0 // indirect
 )
 

@@ -8,8 +8,14 @@ import (
 const nameKey = "name"
 
 func (f *GeoGen) localizedName(tags osm.Tags) string {
+	name := tags.Find(nameKey)
+
 	if f.preferredLocalization != "" {
 		if localizedName := tags.Find(nameKey + ":" + f.preferredLocalization); localizedName != "" {
+			return localizedName
+		}
+
+		if localizedName, ok := f.localizationCache.Get(name); ok {
 			return localizedName
 		}
 	}
@@ -33,12 +39,12 @@ func (f *GeoGen) localizeCityAddr(tags osm.Tags, point orb.Point) string {
 		return localizedName
 	}
 
-	if localizedName, ok := f.placeLocalizationCache.Get(name); ok {
+	if localizedName, ok := f.localizationCache.Get(name); ok {
 		return localizedName
 	}
 
 	if calcPlaceName := f.calcPlace(point).Name; calcPlaceName != "" {
-		if localizedName, ok := f.placeLocalizationCache.Get(calcPlaceName); ok {
+		if localizedName, ok := f.localizationCache.Get(calcPlaceName); ok {
 			return localizedName
 		}
 
@@ -61,7 +67,7 @@ func (f *GeoGen) localizedStreetName(tags osm.Tags) string {
 		return localizedName
 	}
 
-	if localizedName, ok := f.highwayLocalizationCache.Get(name); ok {
+	if localizedName, ok := f.localizationCache.Get(name); ok {
 		return localizedName
 	}
 

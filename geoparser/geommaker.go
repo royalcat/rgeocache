@@ -5,15 +5,19 @@ import (
 
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
+	"github.com/royalcat/rgeocache/kv"
 )
 
-func (f *GeoGen) makeLineString(nodes osm.WayNodes) orb.LineString {
+func makeLineString(nodeCache kv.KVS[osm.NodeID, cachePoint], nodes osm.WayNodes) orb.LineString {
 	ls := orb.LineString{}
 	for _, node := range nodes {
-		point, ok := f.nodeCache.Get(int64(node.ID))
-		if ok {
-			ls = append(ls, orb.Point(point))
+
+		if node.Lat != 0 && node.Lon != 0 {
+			ls = append(ls, orb.Point{node.Lat, node.Lon})
+		} else if p, ok := nodeCache.Get(node.ID); ok && p[0] != 0 && p[1] != 0 {
+			ls = append(ls, orb.Point{p[0], p[1]})
 		}
+
 	}
 	return ls
 }
@@ -37,7 +41,7 @@ func (f *GeoGen) buildPolygon(members osm.Members) (orb.MultiPolygon, error) {
 			outerCount++
 		}
 
-		way, ok := f.wayCache.Get(m.Ref)
+		way, ok := f.wayCache.Get(osm.WayID(m.Ref))
 		ls := orb.LineString(way)
 		if !ok || len(ls) == 0 {
 			// we have the way but none the the node members
