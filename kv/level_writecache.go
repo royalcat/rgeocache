@@ -16,7 +16,7 @@ type writeCache struct {
 	db         *leveldb.DB
 	batchMutex sync.Mutex
 	batch      *leveldb.Batch
-	Buf        int
+	buf        int
 }
 
 const defaultWriteCacheSize = 1024 * 1024
@@ -26,7 +26,7 @@ func newWriteCache(db *leveldb.DB) *writeCache {
 		in:    make(chan val, defaultWriteCacheSize),
 		db:    db,
 		batch: &leveldb.Batch{},
-		Buf:   defaultWriteCacheSize,
+		buf:   defaultWriteCacheSize,
 	}
 
 	return w
@@ -38,7 +38,7 @@ func (w *writeCache) Run() {
 			w.batchMutex.Lock()
 			w.batch.Put(keyBytes(p.Key), p.Value)
 			w.batchMutex.Unlock()
-			if w.batch.Len() > w.Buf {
+			if w.batch.Len() > w.buf {
 				w.Flush()
 			}
 		}

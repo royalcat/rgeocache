@@ -67,8 +67,9 @@ func main() {
 					&cli.StringFlag{
 						Name:        "cache",
 						Aliases:     []string{"c"},
-						Value:       "memory",
+						Value:       memoryCache,
 						DefaultText: "memory",
+						Usage:       "cache type, can be 'memory', 'temp' or path to a directory",
 					},
 					&cli.StringSliceFlag{
 						Name:      "input",
@@ -110,10 +111,20 @@ func main() {
 
 }
 
+const memoryCache = "memory"
+
 func generate(ctx *cli.Context) error {
 	cache := ctx.String("cache")
 	if cache == "" {
-		cache = "memory"
+		cache = memoryCache
+	}
+	if cache == "temp" {
+		tempDir, err := os.MkdirTemp("", "rgeocache")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tempDir)
+		cache = tempDir
 	}
 	threads := ctx.Int("threads")
 	if threads == 0 {
@@ -167,7 +178,7 @@ func generate(ctx *cli.Context) error {
 			}
 		}
 
-		err = geoGen.OpenCache() // flushing memory cache
+		err = geoGen.OpenCache() // clearing cache
 		if err != nil {
 			return fmt.Errorf("error flushing memory cache: %s", err.Error())
 		}
