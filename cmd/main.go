@@ -114,6 +114,7 @@ func main() {
 const memoryCache = "memory"
 
 func generate(ctx *cli.Context) error {
+	log := logrus.NewEntry(logrus.StandardLogger())
 	cache := ctx.String("cache")
 	if cache == "" {
 		cache = memoryCache
@@ -123,13 +124,18 @@ func generate(ctx *cli.Context) error {
 		if err != nil {
 			return err
 		}
+		log.Infof("Using dir %s as cache", tempDir)
 		defer os.RemoveAll(tempDir)
 		cache = tempDir
 	}
+	log = log.WithField("cache", cache)
+
 	threads := ctx.Int("threads")
 	if threads == 0 {
 		threads = runtime.GOMAXPROCS(0)
 	}
+	log = log.WithField("threads", threads)
+
 	preferredLocalization := ctx.String("preferred-localization")
 	if preferredLocalization == "official" {
 		preferredLocalization = ""
