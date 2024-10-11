@@ -9,6 +9,8 @@ import (
 
 	"github.com/cheggaaa/pb/v3"
 	"github.com/cheggaaa/pb/v3/termutil"
+	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v4/options"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
 	"github.com/paulmach/osm/osmpbf"
@@ -59,10 +61,17 @@ func (f *GeoGen) OpenCache() error {
 	f.Close()
 
 	var err error
-	f.nodeCache, err = newCache[osm.NodeID, cachePoint](f.cachePath, "nodes")
+	// f.nodeCache, err = newCache[osm.NodeID, cachePoint](f.cachePath, "nodes")
+	// if err != nil {
+	// 	return err
+	// }
+
+	file, err := os.Create(path.Join(f.cachePath, "nodes"))
 	if err != nil {
 		return err
 	}
+	f.nodeCache = kv.NewPointFileCache[osm.NodeID, cachePoint](file)
+
 	f.wayCache, err = newCache[osm.WayID, cacheWay](f.cachePath, "ways")
 	if err != nil {
 		return err
@@ -276,28 +285,28 @@ func newCache[K ~int64, V kv.ValueBytes[V]](base, name string) (kv.KVS[K, V], er
 	if base == "memory" {
 		return newMemoryCache[K, V](), nil
 	} else {
-		// opts := badger.DefaultOptions(path.Join(base, name)).
-		// 	WithCompactL0OnClose(true).
-		// 	WithCompression(options.ZSTD).
-		// 	WithBlockSize(128 * 1024).
-		// 	WithBlockCacheSize(3 * 1024 * 1024).
-		// 	WithVLogPercentile(0.90)
-		// cacheDb, err := badger.Open(opts)
+		opts := badger.DefaultOptions(path.Join(base, name)).
+			WithCompactL0OnClose(true).
+			WithCompression(options.ZSTD).
+			WithBlockSize(128 * 1024).
+			WithBlockCacheSize(3 * 1024 * 1024).
+			WithVLogPercentile(0.90)
+		cacheDb, err := badger.Open(opts)
+		if err != nil {
+			return nil, err
+		}
+		return kv.NewBadgerKVS[K, V](cacheDb), nil
+		// err := os.MkdirAll(base, 0755)
 		// if err != nil {
 		// 	return nil, err
 		// }
-		// return kv.NewBadgerKVS[K, V](cacheDb), nil
-		err := os.MkdirAll(base, 0755)
-		if err != nil {
-			return nil, err
-		}
 
-		file, err := os.Create(path.Join(base, name))
-		if err != nil {
-			return nil, err
-		}
+		// file, err := os.Create(path.Join(base, name))
+		// if err != nil {
+		// 	return nil, err
+		// }
 
-		return kv.NewFileKV[K, V](file), nil
+		// return kv.NewFileKV[K, V](file), nil
 	}
 
 }
