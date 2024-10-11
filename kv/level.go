@@ -28,16 +28,12 @@ type BinKey interface {
 }
 
 type LevelDbKVS[K ~int64, V ValueBytes[V]] struct {
-	db     *leveldb.DB
-	writer *writeCache
+	db *leveldb.DB
 }
 
 func NewLevelDbKV[K ~int64, V ValueBytes[V]](db *leveldb.DB) *LevelDbKVS[K, V] {
-	writer := newWriteCache(db)
-	writer.Run()
 	return &LevelDbKVS[K, V]{
-		db:     db,
-		writer: writer,
+		db: db,
 	}
 }
 
@@ -52,19 +48,17 @@ func (kvs *LevelDbKVS[K, V]) Set(key K, value V) {
 		}
 	}
 
-	kvs.writer.Put(int64(key), newValue)
+	kvs.db.Put(keyB, newValue, nil)
 }
 
 // Get implements KVS
 func (kvs *LevelDbKVS[K, V]) Get(key K) (V, bool) {
-	kvs.writer.Flush()
-
 	var value V
 	body, err := kvs.db.Get(keyBytes(key), nil)
 	if err != nil {
 		return value, false
 	}
-	value.FromBytes(body)
+	value = value.FromBytes(body)
 	return value, true
 }
 
@@ -83,9 +77,11 @@ func (kvs *LevelDbKVS[K, V]) Range(iterCall func(key K, value V) bool) {
 	}
 }
 
+func (kvs *LevelDbKVS[K, V]) Flush() error {
+	return nil
+}
+
 func (kvs *LevelDbKVS[K, V]) Close() {
-	kvs.writer.Close()
-	kvs.writer.Flush()
 	kvs.db.Close()
 }
 

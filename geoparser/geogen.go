@@ -2,6 +2,7 @@ package geoparser
 
 import (
 	"context"
+	"io"
 	"os"
 	"path"
 	"time"
@@ -13,8 +14,6 @@ import (
 	"github.com/paulmach/osm/osmpbf"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kv"
-	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/opt"
 	"golang.org/x/exp/constraints"
 
 	"github.com/sourcegraph/conc/pool"
@@ -35,7 +34,7 @@ type GeoGen struct {
 
 	points kv.KVS[orb.Point, geomodel.Info]
 
-	log *logrus.Logger
+	log *logrus.Entry
 }
 
 func NewGeoGen(cachePath string, threads int, preferredLocalization string) (*GeoGen, error) {
@@ -47,7 +46,7 @@ func NewGeoGen(cachePath string, threads int, preferredLocalization string) (*Ge
 
 		points: kv.NewMutexMap[orb.Point, geomodel.Info](),
 
-		log: logrus.New(),
+		log: logrus.NewEntry(logrus.StandardLogger()),
 	}
 
 	logrus.Info("Opening cache database")
@@ -57,6 +56,8 @@ func NewGeoGen(cachePath string, threads int, preferredLocalization string) (*Ge
 }
 
 func (f *GeoGen) OpenCache() error {
+	f.Close()
+
 	var err error
 	f.nodeCache, err = newCache[osm.NodeID, cachePoint](f.cachePath, "nodes")
 	if err != nil {
@@ -71,25 +72,39 @@ func (f *GeoGen) OpenCache() error {
 	return err
 }
 
-func (f *GeoGen) ParseOSMFile(ctx context.Context, base string) error {
-	err := f.fillNodeCache(ctx, base)
+func (f *GeoGen) ParseOSMFile(ctx context.Context, input string) error {
+	file, err := os.Open(input)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	err = f.fillNodeCache(ctx, file)
 	if err != nil {
 		return err
 	}
 
-	err = f.fillWayCache(ctx, base)
+	f.nodeCache.Flush()
+
+	err = f.fillWayCache(ctx, file)
 	if err != nil {
 		return err
 	}
 
+	f.nodeCache.Close()
 	f.nodeCache = nil
 
-	err = f.fillRelCache(ctx, base)
+	f.wayCache.Flush()
+
+	err = f.fillRelCache(ctx, file)
 	if err != nil {
 		return err
 	}
 
-	err = f.parseDatabase(ctx, base)
+	f.placeCache.Flush()
+	f.localizationCache.Flush()
+
+	err = f.parseDatabase(ctx, file)
 	if err != nil {
 		return err
 	}
@@ -97,78 +112,126 @@ func (f *GeoGen) ParseOSMFile(ctx context.Context, base string) error {
 	return nil
 }
 
-func (f *GeoGen) fillNodeCache(ctx context.Context, base string) error {
-	log := f.log.WithField("base", base)
-
-	file, err := os.Open(base)
+func (f *GeoGen) fillNodeCache(ctx context.Context, file *os.File) error {
+	log := f.log.WithField("input", file.Name())
+	_, err := file.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	stat, _ := file.Stat()
-
+	stat, err := file.Stat()
+	if err != nil {
+		return err
+	}
 	scanner := osmpbf.New(ctx, file, f.threads)
 	defer scanner.Close()
 	scanner.SkipWays = true
 	scanner.SkipRelations = true
+
+	pool := pool.New().WithMaxGoroutines(f.threads)
+	defer pool.Wait()
+
 	return scanWithProgress(scanner, stat.Size(), "1/4 filling node cache", func(object osm.Object) bool {
 		node, ok := object.(*osm.Node)
 		if !ok {
 			log.Error("Object does not type of node")
 		}
-		f.cacheNode(node)
+
+		pool.Go(func() {
+			f.cacheNode(node)
+		})
+
 		return true
 	})
 }
 
-func (f *GeoGen) fillWayCache(ctx context.Context, input string) error {
-	log := f.log.WithField("input", input)
-
-	file, err := os.Open(input)
+func (f *GeoGen) fillWayCache(ctx context.Context, file *os.File) error {
+	log := f.log.WithField("input", file.Name())
+	_, err := file.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	stat, _ := file.Stat()
+	stat, err := file.Stat()
+	if err != nil {
+		return err
+	}
 
 	scanner := osmpbf.New(ctx, file, f.threads)
 	defer scanner.Close()
 	scanner.SkipNodes = true
 	scanner.SkipRelations = true
+
+	pool := pool.New().WithMaxGoroutines(f.threads)
+	defer pool.Wait()
+
 	return scanWithProgress(scanner, stat.Size(), "2/4 filling ways cache", func(object osm.Object) bool {
 		way, ok := object.(*osm.Way)
 		if !ok {
 			log.Error("Object does not type of node")
 		}
-		f.cacheWay(way)
+
+		pool.Go(func() {
+			f.cacheWay(way)
+		})
 
 		return true
 	})
 }
 
-func (f *GeoGen) fillRelCache(ctx context.Context, input string) error {
-	log := f.log.WithField("input", input)
-
-	file, err := os.Open(input)
+func (f *GeoGen) fillRelCache(ctx context.Context, file *os.File) error {
+	log := f.log.WithField("input", file.Name())
+	_, err := file.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	stat, _ := file.Stat()
+	stat, err := file.Stat()
+	if err != nil {
+		return err
+	}
 
 	scanner := osmpbf.New(ctx, file, f.threads)
 	defer scanner.Close()
 	scanner.SkipNodes = true
 	scanner.SkipWays = true
+
+	pool := pool.New().WithMaxGoroutines(f.threads)
+	defer pool.Wait()
+
 	return scanWithProgress(scanner, stat.Size(), "3/4 filling relations cache", func(object osm.Object) bool {
 		rel, ok := object.(*osm.Relation)
 		if !ok {
 			log.Error("Object does not type of relation")
 		}
-		f.cacheRel(rel)
+
+		pool.Go(func() {
+			f.cacheRel(rel)
+		})
+
+		return true
+	})
+}
+
+func (f *GeoGen) parseDatabase(ctx context.Context, file *os.File) error {
+	// log := f.log.WithField("input", file.Name())
+	_, err := file.Seek(0, io.SeekStart)
+	if err != nil {
+		return err
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		return err
+	}
+
+	// The third parameter is the number of parallel decoders to use.
+	scanner := osmpbf.New(ctx, file, f.threads)
+	defer scanner.Close()
+
+	pool := pool.New().WithMaxGoroutines(f.threads)
+	defer pool.Wait()
+
+	return scanWithProgress(scanner, stat.Size(), "4/4 generating database", func(object osm.Object) bool {
+		pool.Go(func() {
+			f.parseObject(object)
+		})
 		return true
 	})
 }
@@ -184,49 +247,12 @@ func scanWithProgress(scanner *osmpbf.Scanner, size int64, name string, it func(
 
 	for scanner.Scan() {
 		bar.SetCurrent(scanner.FullyScannedBytes())
-		it(scanner.Object())
+		obj := scanner.Object()
+		it(obj)
 	}
 	bar.Finish()
 
 	return scanner.Err()
-}
-
-func (f *GeoGen) parseDatabase(ctx context.Context, base string) error {
-	file, err := os.Open(base)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	stat, _ := file.Stat()
-
-	// The third parameter is the number of parallel decoders to use.
-	scanner := osmpbf.New(ctx, file, f.threads)
-	defer scanner.Close()
-
-	bar := pb.Start64(stat.Size())
-	bar.Set("prefix", "4/4 generating database")
-	bar.Set(pb.Bytes, true)
-	bar.SetRefreshRate(time.Second)
-	if w, err := termutil.TerminalWidth(); w == 0 || err != nil {
-		bar.SetTemplateString(`{{with string . "prefix"}}{{.}} {{end}}{{counters . }} {{bar . }} {{percent . }} {{speed . }} {{rtime . "ETA %s"}}{{with string . "suffix"}} {{.}}{{end}}` + "\n")
-	}
-
-	pool := pool.New().WithMaxGoroutines(f.threads)
-	for scanner.Scan() {
-		bar.SetCurrent(scanner.FullyScannedBytes())
-		object := scanner.Object()
-		pool.Go(func() {
-			f.parseObject(object)
-		})
-	}
-	pool.Wait()
-
-	bar.Finish()
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (f *GeoGen) Close() {
@@ -250,17 +276,28 @@ func newCache[K ~int64, V kv.ValueBytes[V]](base, name string) (kv.KVS[K, V], er
 	if base == "memory" {
 		return newMemoryCache[K, V](), nil
 	} else {
-		var cacheDb *leveldb.DB
-		var err error
-		options := &opt.Options{
-			NoSync:      true,
-			WriteBuffer: 1024 * opt.MiB,
-		}
-		cacheDb, err = leveldb.OpenFile(path.Join(base, name), options)
+		// opts := badger.DefaultOptions(path.Join(base, name)).
+		// 	WithCompactL0OnClose(true).
+		// 	WithCompression(options.ZSTD).
+		// 	WithBlockSize(128 * 1024).
+		// 	WithBlockCacheSize(3 * 1024 * 1024).
+		// 	WithVLogPercentile(0.90)
+		// cacheDb, err := badger.Open(opts)
+		// if err != nil {
+		// 	return nil, err
+		// }
+		// return kv.NewBadgerKVS[K, V](cacheDb), nil
+		err := os.MkdirAll(base, 0755)
 		if err != nil {
 			return nil, err
 		}
-		return kv.NewLevelDbKV[K, V](cacheDb), nil
+
+		file, err := os.Create(path.Join(base, name))
+		if err != nil {
+			return nil, err
+		}
+
+		return kv.NewFileKV[K, V](file), nil
 	}
 
 }
