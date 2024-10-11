@@ -22,7 +22,7 @@
                 // "--cache",
                 // "memory",
                 "--cache",
-                "/tmp/rgeocache",
+                "temp",
                 "-i",
                 "cache_build/maps/europe/ukraine-latest.osm.pbf",
                 "-i",
