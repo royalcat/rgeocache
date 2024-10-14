@@ -66,11 +66,13 @@ func (f *GeoGen) OpenCache() error {
 	// 	return err
 	// }
 
-	file, err := os.Create(path.Join(f.cachePath, "nodes"))
-	if err != nil {
-		return err
-	}
-	f.nodeCache = kv.NewPointFileCache[osm.NodeID, cachePoint](file)
+	// file, err := os.Create(path.Join(f.cachePath, "nodes"))
+	// if err != nil {
+	// 	return err
+	// }
+	// f.nodeCache = kv.NewPointFileCache[osm.NodeID, cachePoint](file)
+
+	f.nodeCache = kv.NewPoints32MutexMap[osm.NodeID, cachePoint]()
 
 	f.wayCache, err = newCache[osm.WayID, cacheWay](f.cachePath, "ways")
 	if err != nil {

@@ -114,7 +114,7 @@ func (kvs *BadgerKVS[K, V]) Range(iterCall func(key K, value V) bool) {
 
 }
 
-func (kvs *BadgerKVS[K, V]) Close() {
+func (kvs *BadgerKVS[K, V]) Close() error {
 	kvs.batch.Flush()
-	kvs.db.Close()
+	return kvs.db.Close()
 }
