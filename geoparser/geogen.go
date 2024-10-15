@@ -59,18 +59,7 @@ func NewGeoGen(cachePath string, threads int, preferredLocalization string) (*Ge
 
 func (f *GeoGen) OpenCache() error {
 	f.Close()
-
 	var err error
-	// f.nodeCache, err = newCache[osm.NodeID, cachePoint](f.cachePath, "nodes")
-	// if err != nil {
-	// 	return err
-	// }
-
-	// file, err := os.Create(path.Join(f.cachePath, "nodes"))
-	// if err != nil {
-	// 	return err
-	// }
-	// f.nodeCache = kv.NewPointFileCache[osm.NodeID, cachePoint](file)
 
 	f.nodeCache = kv.NewPoints32MutexMap[osm.NodeID, cachePoint]()
 
@@ -80,7 +69,8 @@ func (f *GeoGen) OpenCache() error {
 	}
 	f.placeCache = newMemoryCache[osm.RelationID, cachePlace]()
 	f.localizationCache = newMemoryCache[string, string]()
-	return err
+
+	return nil
 }
 
 func (f *GeoGen) ParseOSMFile(ctx context.Context, input string) error {
@@ -283,11 +273,11 @@ func (f *GeoGen) Close() {
 	}
 }
 
-func newCache[K ~int64, V kv.ValueBytes[V]](base, name string) (kv.KVS[K, V], error) {
-	if base == "memory" {
+func newCache[K ~int64, V kv.ValueBytes[V]](basePath, name string) (kv.KVS[K, V], error) {
+	if basePath == "memory" {
 		return newMemoryCache[K, V](), nil
 	} else {
-		opts := badger.DefaultOptions(path.Join(base, name)).
+		opts := badger.DefaultOptions(path.Join(basePath, name)).
 			WithCompactL0OnClose(true).
 			WithCompression(options.ZSTD).
 			WithBlockSize(128 * 1024).
