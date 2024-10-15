@@ -18,18 +18,23 @@ var _ KVS[int64, [2]float64] = (*Point32MutexMap[int64, [2]float64])(nil)
 // Get implements KVS.
 func (f *Point32MutexMap[K, V]) Get(key K) (V, bool) {
 	f.mu.RLock()
-	defer f.mu.RUnlock()
-
 	v, ok := f.m[key]
+	f.mu.RUnlock()
+
+	if !ok {
+		return V{}, false
+	}
 	return castToPoint64[V](v), ok
 }
 
 // Set implements KVS.
 func (m *Point32MutexMap[K, V]) Set(key K, value V) {
+	p32 := castToPoint32(value)
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.m[key] = castToPoint32(value)
+	m.m[key] = p32
 }
 
 // Range implements KVS.
