@@ -17,7 +17,7 @@ func makeLineString(nodeCache kv.KVS[osm.NodeID, cachePoint], nodes osm.WayNodes
 		} else {
 			p, ok := nodeCache.Get(node.ID)
 			if ok && p[0] != 0 && p[1] != 0 {
-				ls = append(ls, orb.Point{p[0], p[1]})
+				ls = append(ls, orb.Point(p))
 			}
 		}
 
