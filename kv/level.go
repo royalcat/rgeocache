@@ -77,13 +77,8 @@ func (kvs *LevelDbKVS[K, V]) Range(iterCall func(key K, value V) bool) {
 	}
 }
 
-func (kvs *LevelDbKVS[K, V]) Flush() error {
-	return nil
-}
-
-func (kvs *LevelDbKVS[K, V]) Close() {
-	kvs.db.Close()
-}
+func (kvs *LevelDbKVS[K, V]) Flush() error { return nil }
+func (kvs *LevelDbKVS[K, V]) Close() error { return kvs.db.Close() }
 
 func keyBytes[K ~int64](key K) []byte {
 	buf := make([]byte, 8)

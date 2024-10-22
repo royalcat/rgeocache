@@ -42,5 +42,5 @@ func (m *MutexMap[K, V]) Range(f func(key K, value V) bool) {
 	}
 }
 
-func (m *MutexMap[K, V]) Close()       {}
+func (m *MutexMap[K, V]) Close() error { return nil }
 func (m *MutexMap[K, V]) Flush() error { return nil }

@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/dgraph-io/badger/v4 v4.3.1
 	github.com/klauspost/compress v1.17.10
-	github.com/paulmach/osm v0.7.1
+	github.com/paulmach/osm v0.8.0
 	github.com/royalcat/btrgo v0.0.0-20230407142105-78d8f468c39d
 	github.com/sourcegraph/conc v0.3.0
 	github.com/syndtr/goleveldb v1.0.0

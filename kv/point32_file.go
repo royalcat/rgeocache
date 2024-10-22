@@ -7,10 +7,8 @@ import (
 	"sync"
 )
 
-const pointSize = 8
-
 // stores points as float32s, accracy lose expected
-type PointsFileCache[K ~int64, V ~[2]float64] struct {
+type Point32FileCache[K ~int64, V ~[2]float64] struct {
 	mu sync.RWMutex
 
 	file *os.File
@@ -19,15 +17,15 @@ type PointsFileCache[K ~int64, V ~[2]float64] struct {
 	writeI uint32
 }
 
-func NewPointFileCache[K ~int64, V ~[2]float64](file *os.File) *PointsFileCache[K, V] {
-	return &PointsFileCache[K, V]{
+func NewPointFileCache[K ~int64, V ~[2]float64](file *os.File) *Point32FileCache[K, V] {
+	return &Point32FileCache[K, V]{
 		index: map[K]uint32{},
 		file:  file,
 	}
 }
 
 // Get implements KVS
-func (m *PointsFileCache[K, V]) Get(key K) (V, bool) {
+func (m *Point32FileCache[K, V]) Get(key K) (V, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -35,19 +33,15 @@ func (m *PointsFileCache[K, V]) Get(key K) (V, bool) {
 	if !ok {
 		return V{}, false
 	}
-	offset := int64(i) * pointSize
+	offset := int64(i) * point32Size
 
 	v := m.readPoint(offset)
 
 	return castToPoint64[V](v), true
 }
 
-func castToPoint64[V ~[2]float64](v [2]float32) V {
-	return V([2]float64{float64(v[0]), float64(v[1])})
-}
-
-func (m *PointsFileCache[K, V]) readPoint(offset int64) (v [2]float32) {
-	b := [pointSize]byte{}
+func (m *Point32FileCache[K, V]) readPoint(offset int64) (v [2]float32) {
+	b := [point32Size]byte{}
 	_, err := m.file.ReadAt(b[:], offset)
 	if err != nil {
 		panic(err)
@@ -60,11 +54,11 @@ func (m *PointsFileCache[K, V]) readPoint(offset int64) (v [2]float32) {
 }
 
 // Set implements KVS
-func (m *PointsFileCache[K, V]) Set(key K, value V) {
+func (m *Point32FileCache[K, V]) Set(key K, value V) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var b [pointSize]byte
+	var b [point32Size]byte
 	binary.LittleEndian.PutUint32(b[:4], math.Float32bits(float32(value[0])))
 	binary.LittleEndian.PutUint32(b[4:], math.Float32bits(float32(value[1])))
 
@@ -77,7 +71,7 @@ func (m *PointsFileCache[K, V]) Set(key K, value V) {
 	m.writeI++
 }
 
-func (m *PointsFileCache[K, V]) Range(f func(key K, value V) bool) {
+func (m *Point32FileCache[K, V]) Range(f func(key K, value V) bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -91,8 +85,8 @@ func (m *PointsFileCache[K, V]) Range(f func(key K, value V) bool) {
 
 }
 
-func (m *PointsFileCache[K, V]) Close() {
+func (m *Point32FileCache[K, V]) Close() error {
 	m.index = nil
-	m.file.Close()
+	return m.file.Close()
 }
-func (m *PointsFileCache[K, V]) Flush() error { return nil }
+func (m *Point32FileCache[K, V]) Flush() error { return nil }
