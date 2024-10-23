@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"runtime"
@@ -221,29 +222,25 @@ func TestDB(t *testing.T) {
 	}
 	defer f.Close()
 
-	d, err := InitDB(context.Background(), f)
+	d, err := OpenDB(context.Background(), f)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = d.Get(0)
+	_, err = d.GetWay(0)
 	if err != nil && err != ErrNotFound {
 		t.Fatal(err)
 	}
 
-	var randomIndex osm.ObjectID
-	for id := range d.index {
-		randomIndex = id
-		break
-	}
+	randomKey := d.wayIndex.data[rand.Intn(len(d.wayIndex.data))].k
 
-	obj, err := d.Get(randomIndex)
+	obj, err := d.GetWay(randomKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if obj.ObjectID() != randomIndex {
-		t.Fatalf("expected %v, got %v", randomIndex, obj.ObjectID())
+	if obj.ID != randomKey {
+		t.Fatalf("expected %v, got %v", randomKey, obj.ID)
 	}
 
 	PrintMemUsage()
@@ -287,12 +284,12 @@ func BenchmarkGet(b *testing.B) {
 	}
 	defer f.Close()
 
-	d, err := InitDB(context.Background(), f)
+	d, err := OpenDB(context.Background(), f)
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	_, err = d.Get(0)
+	_, err = d.GetNode(0)
 	if err != nil && err != ErrNotFound {
 		b.Fatal(err)
 	}
@@ -300,19 +297,15 @@ func BenchmarkGet(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		var randomIndex osm.ObjectID
-		for id := range d.index {
-			randomIndex = id
-			break
-		}
+		randomKey := d.nodeIndex.data[rand.Intn(len(d.nodeIndex.data))].k
 
-		obj, err := d.Get(randomIndex)
+		obj, err := d.GetNode(randomKey)
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		if obj.ObjectID() != randomIndex {
-			b.Fatalf("expected %v, got %v", randomIndex, obj.ObjectID())
+		if obj.ID != randomKey {
+			b.Fatalf("expected %v, got %v", randomKey, obj.ObjectID())
 		}
 	}
 

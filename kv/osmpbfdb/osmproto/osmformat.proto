@@ -23,8 +23,8 @@ SOFTWARE.
 syntax = "proto2";
 
 option java_package = "crosby.binary";
-package osmpbf;
-option go_package = "github.com/royalcat/rgeocache/kv/osmpbfdb/osmpbf";
+package osmproto;
+option go_package = "github.com/royalcat/rgeocache/kv/osmpbfdb/osmproto";
 
 /* OSM Binary file format
 

@@ -62,7 +62,7 @@ func (f *GeoGen) parseWay(way *osm.Way) (geoPoint, bool) {
 	building := way.Tags.Find("building")
 
 	if housenumber != "" && street != "" && building != "" {
-		lat, lon := calcWayCenter(f.wayCache, way)
+		lat, lon := f.calcWayCenter(way)
 
 		if lat == 0 && lon == 0 {
 			log.Warn("failed to calculate center for way")
@@ -107,7 +107,7 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 	tags := rel.TagMap()
 
 	if tags["type"] == "multipolygon" {
-		mpoly, err := buildPolygon(f.wayCache, rel.Members)
+		mpoly, err := f.buildPolygon(rel.Members)
 		if err != nil {
 			logrus.Errorf("Error building polygon: %s", err.Error())
 			return points
@@ -143,19 +143,25 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 			continue
 		}
 
-		if way, ok := f.wayCache.Get(osm.WayID(m.Ref)); ok {
-			for _, point := range orb.LineString(way) {
-
-				points = append(points, geoPoint{
-					Point: point,
-					Info: geomodel.Info{
-						Name:   f.localizedName(rel.Tags),
-						Street: f.localizedStreetName(rel.Tags),
-						City:   f.localizeCityAddr(rel.Tags, point),
-					},
-				})
-			}
+		way, err := f.osmdb.GetWay(osm.WayID(m.Ref))
+		if err != nil {
+			f.log.Errorf("Error getting way id %d: %s", m.Ref, err.Error())
+			continue
 		}
+
+		ls := f.makeLineString(way.Nodes)
+
+		for _, point := range ls {
+			points = append(points, geoPoint{
+				Point: point,
+				Info: geomodel.Info{
+					Name:   f.localizedName(rel.Tags),
+					Street: f.localizedStreetName(rel.Tags),
+					City:   f.localizeCityAddr(rel.Tags, point),
+				},
+			})
+		}
+
 	}
 	return points
 }

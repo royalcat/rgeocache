@@ -22,10 +22,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 syntax = "proto2";
 
 option java_package = "crosby.binary";
-package osmpbf;
+package osmproto;
 
 // protoc --java_out=../.. fileformat.proto
-option go_package = "github.com/royalcat/rgeocache/kv/osmpbfdb/osmpbf";
+option go_package = "github.com/royalcat/rgeocache/kv/osmpbfdb/osmproto";
 
 //
 //  STORAGE LAYER: Storing primitives.
