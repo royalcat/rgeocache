@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/paulmach/osm"
+	"golang.org/x/exp/constraints"
 )
 
 const (
@@ -232,15 +233,39 @@ func TestDB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	randomKey := d.wayIndex.data[rand.Intn(len(d.wayIndex.data))].k
+	const testCout = 10
 
-	obj, err := d.GetWay(randomKey)
-	if err != nil {
-		t.Fatal(err)
+	for range testCout {
+		randomKey := randomKey(d.nodeIndex.data)
+		obj, err := d.GetNode(randomKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if obj.ID != randomKey {
+			t.Fatalf("expected %v, got %v", randomKey, obj.ID)
+		}
 	}
 
-	if obj.ID != randomKey {
-		t.Fatalf("expected %v, got %v", randomKey, obj.ID)
+	for range testCout {
+		randomKey := randomKey(d.wayIndex.data)
+		obj, err := d.GetWay(randomKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if obj.ID != randomKey {
+			t.Fatalf("expected %v, got %v", randomKey, obj.ID)
+		}
+	}
+
+	for range testCout {
+		randomKey := randomKey(d.relationIndex.data)
+		obj, err := d.GetRelation(randomKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if obj.ID != randomKey {
+			t.Fatalf("expected %v, got %v", randomKey, obj.ID)
+		}
 	}
 
 	PrintMemUsage()
@@ -297,7 +322,7 @@ func BenchmarkGet(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		randomKey := d.nodeIndex.data[rand.Intn(len(d.nodeIndex.data))].k
+		randomKey := randomKey(d.nodeIndex.data)
 
 		obj, err := d.GetNode(randomKey)
 		if err != nil {
@@ -309,4 +334,14 @@ func BenchmarkGet(b *testing.B) {
 		}
 	}
 
+}
+
+func randomKey[K constraints.Integer, V comparable](data []window[K, V]) K {
+	randomWindow := data[rand.Intn(len(data))]
+
+	if randomWindow.minK == randomWindow.maxK {
+		return randomWindow.minK
+	}
+
+	return randomWindow.minK + K(rand.Intn(int(randomWindow.maxK-randomWindow.minK)))
 }
