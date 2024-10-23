@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/creativecreature/sturdyc"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/paulmach/osm"
 	"github.com/royalcat/rgeocache/kv/osmpbfdb/osmproto"
 	"google.golang.org/protobuf/proto"
@@ -56,32 +55,26 @@ type DB struct {
 	r      io.ReaderAt
 
 	// TODO add block cache
-	blockCache *lru.TwoQueueCache[int64, []osm.Object]
-	cache      *sturdyc.Client[[]osm.Object]
+	cache *sturdyc.Client[[]osm.Object]
 
 	// id to block offset with it
 	// objectIndex   bindex[osm.ObjectID, int64]
-	nodeIndex     bindex[osm.NodeID, uint32]
-	wayIndex      bindex[osm.WayID, uint32]
-	relationIndex bindex[osm.RelationID, uint32]
+	nodeIndex     winindex[osm.NodeID, uint32]
+	wayIndex      winindex[osm.WayID, uint32]
+	relationIndex winindex[osm.RelationID, uint32]
 }
 
 // newDecoder returns a new decoder that reads from r.
 func OpenDB(ctx context.Context, r io.ReaderAt) (*DB, error) {
-	blockCache, err := lru.New2Q[int64, []osm.Object](100)
-	if err != nil {
-		return nil, err
-	}
 
 	const maxDuration = time.Duration(^uint64(0) >> 1)
 
 	db := &DB{
-		r:          r,
-		blockCache: blockCache,
-		cache:      sturdyc.New[[]osm.Object](500, 10, maxDuration, 10),
+		r:     r,
+		cache: sturdyc.New[[]osm.Object](500, 10, maxDuration, 10),
 	}
 
-	err = db.buildIndex()
+	err := db.buildIndex()
 	if err != nil {
 		return nil, err
 	}
