@@ -6,8 +6,14 @@ import (
 
 	"github.com/paulmach/osm"
 	"github.com/paulmach/protoscan"
-	"github.com/royalcat/rgeocache/kv/osmpbfdb/osmpbf"
+	"github.com/royalcat/rgeocache/kv/osmpbfdb/osmproto"
 	"google.golang.org/protobuf/proto"
+)
+
+var (
+	sizeBufPool   = newSyncPool[[]byte](func() []byte { return make([]byte, 4) })
+	headerBufPool = newSyncPool[[]byte](func() []byte { return make([]byte, maxBlobHeaderSize) })
+	blobBufPool   = newSyncPool[[]byte](func() []byte { return make([]byte, maxBlobSize) })
 )
 
 // dataDecoder is a decoder for Blob with OSMData (PrimitiveBlock).
@@ -16,7 +22,7 @@ type dataDecoder struct {
 	q    []osm.Object
 
 	// cache objects to save allocations
-	primitiveBlock *osmpbf.PrimitiveBlock
+	primitiveBlock *osmproto.PrimitiveBlock
 
 	keys, vals *protoscan.Iterator
 
@@ -46,7 +52,7 @@ type dataDecoder struct {
 	keyvals *protoscan.Iterator
 }
 
-func (dec *dataDecoder) Decode(blob *osmpbf.Blob) ([]osm.Object, error) {
+func (dec *dataDecoder) Decode(blob *osmproto.Blob) ([]osm.Object, error) {
 	dec.q = make([]osm.Object, 0, 8000) // typical PrimitiveBlock contains 8k OSM entities
 
 	var err error
@@ -66,8 +72,8 @@ func (dec *dataDecoder) scanPrimitiveBlock(data []byte) error {
 	msg := protoscan.New(data)
 
 	if dec.primitiveBlock == nil {
-		dec.primitiveBlock = &osmpbf.PrimitiveBlock{
-			Stringtable: &osmpbf.StringTable{},
+		dec.primitiveBlock = &osmproto.PrimitiveBlock{
+			Stringtable: &osmproto.StringTable{},
 		}
 	} else {
 		dec.primitiveBlock.Stringtable.S = dec.primitiveBlock.Stringtable.S[:0]
@@ -315,15 +321,15 @@ func (dec *dataDecoder) scanDenseNodes(data []byte) error {
 	}
 
 	if !foundIds {
-		return errors.New("osmpbf: dense node did not contain ids")
+		return errors.New("osmproto: dense node did not contain ids")
 	}
 
 	if !foundLats {
-		return errors.New("osmpbf: dense node did not contain latitudes")
+		return errors.New("osmproto: dense node did not contain latitudes")
 	}
 
 	if !foundLons {
-		return errors.New("osmpbf: dense node did not contain longitudes")
+		return errors.New("osmproto: dense node did not contain longitudes")
 	}
 
 	// keyvals could be empty if all nodes are tagless
@@ -678,12 +684,12 @@ func extractMembers(
 			return nil, err
 		}
 
-		switch osmpbf.Relation_MemberType(t) {
-		case osmpbf.Relation_NODE:
+		switch osmproto.Relation_MemberType(t) {
+		case osmproto.Relation_NODE:
 			members[index].Type = osm.TypeNode
-		case osmpbf.Relation_WAY:
+		case osmproto.Relation_WAY:
 			members[index].Type = osm.TypeWay
-		case osmpbf.Relation_RELATION:
+		case osmproto.Relation_RELATION:
 			members[index].Type = osm.TypeRelation
 		}
 

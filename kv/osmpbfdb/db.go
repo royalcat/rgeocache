@@ -2,16 +2,18 @@ package osmpbfdb
 
 import (
 	"bytes"
-	"compress/zlib"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
+	"github.com/creativecreature/sturdyc"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/paulmach/osm"
-	"github.com/royalcat/rgeocache/kv/osmpbfdb/osmpbf"
+	"github.com/royalcat/rgeocache/kv/osmpbfdb/osmproto"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -53,16 +55,33 @@ type DB struct {
 	dd     *dataDecoder
 	r      io.ReaderAt
 
-	index map[osm.ObjectID]int64 // object id to block offset with it
+	// TODO add block cache
+	blockCache *lru.TwoQueueCache[int64, []osm.Object]
+	cache      *sturdyc.Client[[]osm.Object]
+
+	// id to block offset with it
+	// objectIndex   bindex[osm.ObjectID, int64]
+	nodeIndex     bindex[osm.NodeID, uint32]
+	wayIndex      bindex[osm.WayID, uint32]
+	relationIndex bindex[osm.RelationID, uint32]
 }
 
 // newDecoder returns a new decoder that reads from r.
-func InitDB(ctx context.Context, r io.ReaderAt) (*DB, error) {
-	db := &DB{
-		r:     r,
-		index: make(map[osm.ObjectID]int64),
+func OpenDB(ctx context.Context, r io.ReaderAt) (*DB, error) {
+	blockCache, err := lru.New2Q[int64, []osm.Object](100)
+	if err != nil {
+		return nil, err
 	}
-	err := db.buildIndex()
+
+	const maxDuration = time.Duration(^uint64(0) >> 1)
+
+	db := &DB{
+		r:          r,
+		blockCache: blockCache,
+		cache:      sturdyc.New[[]osm.Object](500, 10, maxDuration, 10),
+	}
+
+	err = db.buildIndex()
 	if err != nil {
 		return nil, err
 	}
@@ -75,17 +94,12 @@ func (dec *DB) Close() error {
 
 // buildIndex decoding process using n goroutines.
 func (dec *DB) buildIndex() error {
-
-	sizeBuf := make([]byte, 4)
-	headerBuf := make([]byte, maxBlobHeaderSize)
-	blobBuf := make([]byte, maxBlobSize)
-
 	bytesRead := int64(0)
 
 	// read OSMHeader
 	// NOTE: if the first block is not a header, i.e. after a restart we need
 	// to decode that block. It gets pushed on the first "input" below.
-	n, blobHeader, blob, err := dec.readFileBlock(sizeBuf, headerBuf, blobBuf, 0)
+	n, blobHeader, blob, err := dec.readFileBlock(0)
 	if err != nil {
 		return err
 	}
@@ -101,7 +115,12 @@ func (dec *DB) buildIndex() error {
 
 	dd := &dataDecoder{}
 
-	for n, blobHeader, blob, err := dec.readFileBlock(sizeBuf, headerBuf, blobBuf, bytesRead); err != io.EOF; n, blobHeader, blob, err = dec.readFileBlock(sizeBuf, headerBuf, blobBuf, bytesRead) {
+	// objectIndexBuilder := indexBuilder[osm.ObjectID, int64]{}
+	nodeIndexBuilder := indexBuilder[osm.NodeID, uint32]{}
+	wayIndexBuilder := indexBuilder[osm.WayID, uint32]{}
+	relationIndexBuilder := indexBuilder[osm.RelationID, uint32]{}
+
+	for n, blobHeader, blob, err := dec.readFileBlock(bytesRead); err != io.EOF; n, blobHeader, blob, err = dec.readFileBlock(bytesRead) {
 		if err != nil {
 			return err
 		}
@@ -116,57 +135,138 @@ func (dec *DB) buildIndex() error {
 		}
 
 		for _, obj := range objects {
-			dec.index[obj.ObjectID()] = bytesRead
+			// objectIndexBuilder.Add(obj.ObjectID(), bytesRead)
+			switch obj := obj.(type) {
+			case *osm.Node:
+				nodeIndexBuilder.Add(obj.ID, uint32(bytesRead))
+			case *osm.Way:
+				wayIndexBuilder.Add(obj.ID, uint32(bytesRead))
+			case *osm.Relation:
+				relationIndexBuilder.Add(obj.ID, uint32(bytesRead))
+			}
 		}
 
 		bytesRead += n
 	}
+
+	// dec.objectIndex = objectIndexBuilder.Build()
+	dec.nodeIndex = nodeIndexBuilder.Build()
+	dec.wayIndex = wayIndexBuilder.Build()
+	dec.relationIndex = relationIndexBuilder.Build()
 
 	return nil
 }
 
 var ErrNotFound = errors.New("object not found")
 
-func (db *DB) Get(id osm.ObjectID) (osm.Object, error) {
-	offset, ok := db.index[id]
+// func (db *DB) Get(id osm.ObjectID) (osm.Object, error) {
+// 	offset, ok := db.objectIndex.Get(id)
+// 	if !ok {
+// 		return nil, ErrNotFound
+// 	}
+
+// 	objects, err := db.readObjects(offset)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	for _, obj := range objects {
+// 		if obj.ObjectID() == id {
+// 			return obj, nil
+// 		}
+// 	}
+
+// 	return nil, fmt.Errorf("object with id %d not found", id)
+// }
+
+func (db *DB) GetNode(id osm.NodeID) (*osm.Node, error) {
+	offset, ok := db.nodeIndex.Get(id)
 	if !ok {
 		return nil, ErrNotFound
 	}
 
-	objects, err := db.readObjects(offset)
+	objects, err := db.readObjects(int64(offset))
 	if err != nil {
 		return nil, err
 	}
 
 	for _, obj := range objects {
-		if obj.ObjectID() == id {
-			return obj, nil
+		if node, ok := obj.(*osm.Node); ok && node.ID == id {
+			return node, nil
 		}
 	}
 
 	return nil, fmt.Errorf("object with id %d not found", id)
 }
 
-func (db *DB) readObjects(offset int64) ([]osm.Object, error) {
-	sizeBuf := make([]byte, 4)
-	headerBuf := make([]byte, maxBlobHeaderSize)
-	blobBuf := make([]byte, maxBlobSize)
-	dd := &dataDecoder{}
+func (db *DB) GetWay(id osm.WayID) (*osm.Way, error) {
+	offset, ok := db.wayIndex.Get(id)
+	if !ok {
+		return nil, ErrNotFound
+	}
 
-	_, _, blob, err := db.readFileBlock(sizeBuf, headerBuf, blobBuf, offset)
+	objects, err := db.readObjects(int64(offset))
 	if err != nil {
 		return nil, err
 	}
 
-	objects, err := dd.Decode(blob)
-	if err != nil {
-		return nil, err
+	for _, obj := range objects {
+		if way, ok := obj.(*osm.Way); ok && way.ID == id {
+			return way, nil
+		}
 	}
 
-	return objects, nil
+	return nil, fmt.Errorf("object with id %d not found", id)
 }
 
-func (dec *DB) readFileBlock(sizeBuf, headerBuf, blobBuf []byte, off int64) (int64, *osmpbf.BlobHeader, *osmpbf.Blob, error) {
+func (db *DB) GetRelation(id osm.RelationID) (*osm.Relation, error) {
+	offset, ok := db.relationIndex.Get(id)
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	objects, err := db.readObjects(int64(offset))
+	if err != nil {
+		return nil, err
+	}
+
+	for _, obj := range objects {
+		if rel, ok := obj.(*osm.Relation); ok && rel.ID == id {
+			return rel, nil
+		}
+	}
+
+	return nil, fmt.Errorf("object with id %d not found", id)
+}
+
+var dataDecoderPool = newSyncPool[*dataDecoder](func() *dataDecoder { return &dataDecoder{} })
+
+func (db *DB) readObjects(offset int64) ([]osm.Object, error) {
+	return db.cache.GetOrFetch(context.TODO(), strconv.Itoa(int(offset)), func(ctx context.Context) ([]osm.Object, error) {
+		dd := dataDecoderPool.Get()
+		defer dataDecoderPool.Put(dd)
+
+		_, _, blob, err := db.readFileBlock(offset)
+		if err != nil {
+			return nil, err
+		}
+
+		objects, err := dd.Decode(blob)
+		if err != nil {
+			return nil, err
+		}
+		return objects, nil
+	})
+}
+
+func (dec *DB) readFileBlock(off int64) (int64, *osmproto.BlobHeader, *osmproto.Blob, error) {
+	sizeBuf := sizeBufPool.Get()
+	defer sizeBufPool.Put(sizeBuf)
+	headerBuf := headerBufPool.Get()
+	defer headerBufPool.Put(headerBuf)
+	blobBuf := blobBufPool.Get()
+	defer blobBufPool.Put(blobBuf)
+
 	blobHeaderSize, err := dec.readBlobHeaderSize(sizeBuf, off)
 	if err != nil {
 		return 0, nil, nil, err
@@ -205,7 +305,7 @@ func (dec *DB) readBlobHeaderSize(buf []byte, off int64) (uint32, error) {
 	return size, nil
 }
 
-func (dec *DB) readBlobHeader(buf []byte, off int64) (*osmpbf.BlobHeader, error) {
+func (dec *DB) readBlobHeader(buf []byte, off int64) (*osmproto.BlobHeader, error) {
 	n, err := dec.r.ReadAt(buf, off)
 	if err != nil {
 		return nil, err
@@ -214,7 +314,7 @@ func (dec *DB) readBlobHeader(buf []byte, off int64) (*osmpbf.BlobHeader, error)
 		return nil, io.ErrUnexpectedEOF
 	}
 
-	blobHeader := &osmpbf.BlobHeader{}
+	blobHeader := &osmproto.BlobHeader{}
 	if err := proto.Unmarshal(buf, blobHeader); err != nil {
 		return nil, err
 	}
@@ -225,7 +325,7 @@ func (dec *DB) readBlobHeader(buf []byte, off int64) (*osmpbf.BlobHeader, error)
 	return blobHeader, nil
 }
 
-func (dec *DB) readBlob(buf []byte, off int64) (*osmpbf.Blob, error) {
+func (dec *DB) readBlob(buf []byte, off int64) (*osmproto.Blob, error) {
 	n, err := dec.r.ReadAt(buf, off)
 	if err != nil {
 		return nil, err
@@ -234,20 +334,20 @@ func (dec *DB) readBlob(buf []byte, off int64) (*osmpbf.Blob, error) {
 		return nil, io.ErrUnexpectedEOF
 	}
 
-	blob := &osmpbf.Blob{}
+	blob := &osmproto.Blob{}
 	if err := proto.Unmarshal(buf, blob); err != nil {
 		return nil, err
 	}
 	return blob, nil
 }
 
-func getData(blob *osmpbf.Blob, data []byte) ([]byte, error) {
+func getData(blob *osmproto.Blob, data []byte) ([]byte, error) {
 	switch {
 	case blob.Raw != nil:
 		return blob.GetRaw(), nil
 
 	case blob.ZlibData != nil:
-		r, err := zlib.NewReader(bytes.NewReader(blob.GetZlibData()))
+		r, err := zlibReader(blob.GetZlibData())
 		if err != nil {
 			return nil, err
 		}
@@ -274,13 +374,13 @@ func getData(blob *osmpbf.Blob, data []byte) ([]byte, error) {
 	}
 }
 
-func decodeOSMHeader(blob *osmpbf.Blob) (*Header, error) {
+func decodeOSMHeader(blob *osmproto.Blob) (*Header, error) {
 	data, err := getData(blob, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	headerBlock := &osmpbf.HeaderBlock{}
+	headerBlock := &osmproto.HeaderBlock{}
 	if err := proto.Unmarshal(data, headerBlock); err != nil {
 		return nil, err
 	}

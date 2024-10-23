@@ -1,9 +1,10 @@
 module github.com/royalcat/rgeocache
 
-go 1.22
+go 1.23
 
 require (
 	github.com/dgraph-io/badger/v4 v4.3.1
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/klauspost/compress v1.17.10
 	github.com/paulmach/osm v0.8.0
 	github.com/royalcat/btrgo v0.0.0-20230407142105-78d8f468c39d
@@ -19,6 +20,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
+	github.com/creativecreature/sturdyc v1.0.6 // indirect
 	github.com/dgraph-io/ristretto v1.0.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.15.0 // indirect
@@ -53,10 +55,10 @@ require (
 	github.com/datadog/czlib v0.0.0-20160811164712-4bc9a24e37f2 // indirect
 	github.com/fasthttp/router v1.4.18
 	github.com/paulmach/orb v0.9.0
-	github.com/paulmach/protoscan v0.2.1 // indirect
+	github.com/paulmach/protoscan v0.2.1
 	github.com/prometheus/client_golang v1.15.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/urfave/cli/v3 v3.0.0-alpha2
 	go.uber.org/automaxprocs v1.5.2
-	google.golang.org/protobuf v1.33.0 // indirect
+	google.golang.org/protobuf v1.33.0
 )
