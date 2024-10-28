@@ -12,7 +12,7 @@ import (
 
 	"github.com/creativecreature/sturdyc"
 	"github.com/paulmach/osm"
-	"github.com/royalcat/rgeocache/kv/osmpbfdb/osmproto"
+	"github.com/royalcat/rgeocache/osmpbfdb/osmproto"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -54,7 +54,6 @@ type DB struct {
 	dd     *dataDecoder
 	r      io.ReaderAt
 
-	// TODO add block cache
 	cache *sturdyc.Client[[]osm.Object]
 
 	// id to block offset with it
@@ -71,7 +70,7 @@ func OpenDB(ctx context.Context, r io.ReaderAt) (*DB, error) {
 
 	db := &DB{
 		r:     r,
-		cache: sturdyc.New[[]osm.Object](500, 10, maxDuration, 10),
+		cache: sturdyc.New[[]osm.Object](1000, 10, maxDuration, 10),
 	}
 
 	err := db.buildIndex()
