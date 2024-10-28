@@ -11,7 +11,7 @@ import (
 	"github.com/paulmach/osm"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kv"
-	"github.com/royalcat/rgeocache/kv/osmpbfdb"
+	"github.com/royalcat/rgeocache/osmpbfdb"
 	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/mmap"
 
