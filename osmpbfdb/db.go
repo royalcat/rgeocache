@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"time"
 
-	"github.com/creativecreature/sturdyc"
+	"github.com/ammario/weakmap"
+	"github.com/goware/singleflight"
 	"github.com/paulmach/osm"
 	"github.com/royalcat/rgeocache/osmpbfdb/osmproto"
 	"google.golang.org/protobuf/proto"
@@ -54,7 +54,8 @@ type DB struct {
 	dd     *dataDecoder
 	r      io.ReaderAt
 
-	cache *sturdyc.Client[[]osm.Object]
+	cache     weakmap.Map[int64, []osm.Object]
+	readGroup singleflight.Group[int64, []osm.Object]
 
 	// id to block offset with it
 	// objectIndex   bindex[osm.ObjectID, int64]
@@ -69,8 +70,7 @@ func OpenDB(ctx context.Context, r io.ReaderAt) (*DB, error) {
 	const maxDuration = time.Duration(^uint64(0) >> 1)
 
 	db := &DB{
-		r:     r,
-		cache: sturdyc.New[[]osm.Object](1000, 10, maxDuration, 10),
+		r: r,
 	}
 
 	err := db.buildIndex()
@@ -234,21 +234,28 @@ func (db *DB) GetRelation(id osm.RelationID) (*osm.Relation, error) {
 var dataDecoderPool = newSyncPool[*dataDecoder](func() *dataDecoder { return &dataDecoder{} })
 
 func (db *DB) readObjects(offset int64) ([]osm.Object, error) {
-	return db.cache.GetOrFetch(context.TODO(), strconv.Itoa(int(offset)), func(ctx context.Context) ([]osm.Object, error) {
-		dd := dataDecoderPool.Get()
-		defer dataDecoderPool.Put(dd)
+	if out, ok := db.cache.Get(offset); ok {
+		return out, nil
+	}
 
-		_, _, blob, err := db.readFileBlock(offset)
-		if err != nil {
-			return nil, err
-		}
+	out, err, _ := db.readGroup.Do(offset, func() ([]osm.Object, error) {
+		return db.cache.Do(offset, func() ([]osm.Object, error) {
+			dd := dataDecoderPool.Get()
+			defer dataDecoderPool.Put(dd)
 
-		objects, err := dd.Decode(blob)
-		if err != nil {
-			return nil, err
-		}
-		return objects, nil
+			_, _, blob, err := db.readFileBlock(offset)
+			if err != nil {
+				return nil, err
+			}
+
+			objects, err := dd.Decode(blob)
+			if err != nil {
+				return nil, err
+			}
+			return objects, nil
+		})
 	})
+	return out, err
 }
 
 func (dec *DB) readFileBlock(off int64) (int64, *osmproto.BlobHeader, *osmproto.Blob, error) {

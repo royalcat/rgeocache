@@ -3,15 +3,26 @@ module github.com/royalcat/rgeocache
 go 1.23
 
 require (
-	github.com/creativecreature/sturdyc v1.0.6
+	github.com/ammario/weakmap v0.3.0
+	github.com/cheggaaa/pb/v3 v3.1.2
+	github.com/datadog/czlib v0.0.0-20160811164712-4bc9a24e37f2
 	github.com/dgraph-io/badger/v4 v4.3.1
+	github.com/fasthttp/router v1.4.18
+	github.com/goware/singleflight v0.2.0
 	github.com/klauspost/compress v1.17.10
+	github.com/paulmach/orb v0.9.0
 	github.com/paulmach/osm v0.8.0
+	github.com/paulmach/protoscan v0.2.1
+	github.com/prometheus/client_golang v1.15.0
 	github.com/royalcat/btrgo v0.0.0-20230407142105-78d8f468c39d
+	github.com/sirupsen/logrus v1.9.0
 	github.com/sourcegraph/conc v0.3.0
 	github.com/syndtr/goleveldb v1.0.0
+	github.com/urfave/cli/v3 v3.0.0-alpha2
 	github.com/valyala/fasthttp v1.45.0
+	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/exp v0.0.0-20230419192730-864b3d6c5c2c
+	google.golang.org/protobuf v1.33.0
 )
 
 require (
@@ -28,6 +39,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
@@ -47,17 +59,4 @@ require (
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/net v0.29.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
-)
-
-require (
-	github.com/cheggaaa/pb/v3 v3.1.2
-	github.com/datadog/czlib v0.0.0-20160811164712-4bc9a24e37f2
-	github.com/fasthttp/router v1.4.18
-	github.com/paulmach/orb v0.9.0
-	github.com/paulmach/protoscan v0.2.1
-	github.com/prometheus/client_golang v1.15.0
-	github.com/sirupsen/logrus v1.9.0
-	github.com/urfave/cli/v3 v3.0.0-alpha2
-	go.uber.org/automaxprocs v1.5.2
-	google.golang.org/protobuf v1.33.0
 )
