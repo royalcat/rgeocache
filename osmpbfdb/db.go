@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"time"
 
 	"github.com/ammario/weakmap"
@@ -72,6 +73,9 @@ func OpenDB(ctx context.Context, r io.ReaderAt) (*DB, error) {
 	db := &DB{
 		r: r,
 	}
+
+	// this is required for weakmap to work properly
+	debug.SetGCPercent(80)
 
 	err := db.buildIndex()
 	if err != nil {
