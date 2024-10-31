@@ -10,6 +10,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	_ "github.com/KimMachineGun/automemlimit"
+
 	"github.com/ammario/weakmap"
 	"github.com/goware/singleflight"
 	"github.com/paulmach/osm"
