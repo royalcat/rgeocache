@@ -2,12 +2,14 @@ package osmpbfdb
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"runtime/debug"
+	"slices"
 	"time"
 
 	_ "github.com/KimMachineGun/automemlimit"
@@ -177,6 +179,41 @@ var ErrNotFound = errors.New("object not found")
 // 	return nil, fmt.Errorf("object with id %d not found", id)
 // }
 
+func findInObjects[refID ~int64, objType osm.Object](objects []osm.Object, id refID) (objType, error) {
+	i, ok := slices.BinarySearchFunc(objects, id, func(o osm.Object, id refID) int {
+		return cmp.Compare(o.ObjectID().Ref(), int64(id))
+	})
+
+	var obj objType
+
+	if !ok {
+		return obj, ErrNotFound
+	}
+
+	// used for debugging
+	// switch obj := objects[i].(type) {
+	// case *osm.Node:
+	// 	if obj.ID != osm.NodeID(id) {
+	// 		panic("node id mismatch")
+	// 	}
+	// case *osm.Way:
+	// 	if obj.ID != osm.WayID(id) {
+	// 		panic("way id mismatch")
+	// 	}
+	// case *osm.Relation:
+	// 	if obj.ID != osm.RelationID(id) {
+	// 		panic("relation id mismatch")
+	// 	}
+	// }
+
+	obj, ok = objects[i].(objType)
+	if ok {
+		return obj, nil
+	}
+
+	return obj, ErrNotFound
+}
+
 func (db *DB) GetNode(id osm.NodeID) (*osm.Node, error) {
 	offset, ok := db.nodeIndex.Get(id)
 	if !ok {
@@ -188,13 +225,7 @@ func (db *DB) GetNode(id osm.NodeID) (*osm.Node, error) {
 		return nil, err
 	}
 
-	for _, obj := range objects {
-		if node, ok := obj.(*osm.Node); ok && node.ID == id {
-			return node, nil
-		}
-	}
-
-	return nil, fmt.Errorf("object with id %d not found", id)
+	return findInObjects[osm.NodeID, *osm.Node](objects, id)
 }
 
 func (db *DB) GetWay(id osm.WayID) (*osm.Way, error) {
@@ -208,13 +239,7 @@ func (db *DB) GetWay(id osm.WayID) (*osm.Way, error) {
 		return nil, err
 	}
 
-	for _, obj := range objects {
-		if way, ok := obj.(*osm.Way); ok && way.ID == id {
-			return way, nil
-		}
-	}
-
-	return nil, fmt.Errorf("object with id %d not found", id)
+	return findInObjects[osm.WayID, *osm.Way](objects, id)
 }
 
 func (db *DB) GetRelation(id osm.RelationID) (*osm.Relation, error) {
@@ -228,13 +253,7 @@ func (db *DB) GetRelation(id osm.RelationID) (*osm.Relation, error) {
 		return nil, err
 	}
 
-	for _, obj := range objects {
-		if rel, ok := obj.(*osm.Relation); ok && rel.ID == id {
-			return rel, nil
-		}
-	}
-
-	return nil, fmt.Errorf("object with id %d not found", id)
+	return findInObjects[osm.RelationID, *osm.Relation](objects, id)
 }
 
 var dataDecoderPool = newSyncPool[*dataDecoder](func() *dataDecoder { return &dataDecoder{} })
@@ -258,6 +277,11 @@ func (db *DB) readObjects(offset int64) ([]osm.Object, error) {
 			if err != nil {
 				return nil, err
 			}
+
+			slices.SortStableFunc(objects, func(a, b osm.Object) int {
+				return cmp.Compare(a.ObjectID().Ref(), b.ObjectID().Ref())
+			})
+
 			return objects, nil
 		})
 	})
