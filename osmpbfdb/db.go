@@ -179,9 +179,15 @@ var ErrNotFound = errors.New("object not found")
 // 	return nil, fmt.Errorf("object with id %d not found", id)
 // }
 
-func findInObjects[refID ~int64, objType osm.Object](objects []osm.Object, id refID) (objType, error) {
-	i, ok := slices.BinarySearchFunc(objects, id, func(o osm.Object, id refID) int {
-		return cmp.Compare(o.ObjectID().Ref(), int64(id))
+const featureMask = 0x7FFFFFFFFFFF0000
+
+func featureID(id osm.ObjectID) osm.FeatureID {
+	return osm.FeatureID(id & featureMask)
+}
+
+func findInObjects[objType osm.Object](objects []osm.Object, id osm.FeatureID) (objType, error) {
+	i, ok := slices.BinarySearchFunc(objects, id, func(o osm.Object, id osm.FeatureID) int {
+		return cmp.Compare(featureID(o.ObjectID()), id)
 	})
 
 	var obj objType
@@ -191,18 +197,24 @@ func findInObjects[refID ~int64, objType osm.Object](objects []osm.Object, id re
 	}
 
 	// used for debugging
-	// switch obj := objects[i].(type) {
-	// case *osm.Node:
-	// 	if obj.ID != osm.NodeID(id) {
-	// 		panic("node id mismatch")
+	// {
+	// 	if reflect.TypeOf(objects[i]) != reflect.TypeOf(obj) {
+	// 		panic("type mismatch")
 	// 	}
-	// case *osm.Way:
-	// 	if obj.ID != osm.WayID(id) {
-	// 		panic("way id mismatch")
-	// 	}
-	// case *osm.Relation:
-	// 	if obj.ID != osm.RelationID(id) {
-	// 		panic("relation id mismatch")
+	// 	switch obj := objects[i].(type) {
+	// 	case *osm.Node:
+
+	// 		if obj.ID != id.NodeID() {
+	// 			panic("node id mismatch")
+	// 		}
+	// 	case *osm.Way:
+	// 		if obj.ID != id.WayID() {
+	// 			panic("way id mismatch")
+	// 		}
+	// 	case *osm.Relation:
+	// 		if obj.ID != id.RelationID() {
+	// 			panic("relation id mismatch")
+	// 		}
 	// 	}
 	// }
 
@@ -225,7 +237,7 @@ func (db *DB) GetNode(id osm.NodeID) (*osm.Node, error) {
 		return nil, err
 	}
 
-	return findInObjects[osm.NodeID, *osm.Node](objects, id)
+	return findInObjects[*osm.Node](objects, id.FeatureID())
 }
 
 func (db *DB) GetWay(id osm.WayID) (*osm.Way, error) {
@@ -239,7 +251,7 @@ func (db *DB) GetWay(id osm.WayID) (*osm.Way, error) {
 		return nil, err
 	}
 
-	return findInObjects[osm.WayID, *osm.Way](objects, id)
+	return findInObjects[*osm.Way](objects, id.FeatureID())
 }
 
 func (db *DB) GetRelation(id osm.RelationID) (*osm.Relation, error) {
@@ -253,7 +265,7 @@ func (db *DB) GetRelation(id osm.RelationID) (*osm.Relation, error) {
 		return nil, err
 	}
 
-	return findInObjects[osm.RelationID, *osm.Relation](objects, id)
+	return findInObjects[*osm.Relation](objects, id.FeatureID())
 }
 
 var dataDecoderPool = newSyncPool[*dataDecoder](func() *dataDecoder { return &dataDecoder{} })
@@ -279,7 +291,7 @@ func (db *DB) readObjects(offset int64) ([]osm.Object, error) {
 			}
 
 			slices.SortStableFunc(objects, func(a, b osm.Object) int {
-				return cmp.Compare(a.ObjectID().Ref(), b.ObjectID().Ref())
+				return cmp.Compare(featureID(a.ObjectID()), featureID(b.ObjectID()))
 			})
 
 			return objects, nil
