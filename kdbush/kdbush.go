@@ -8,7 +8,8 @@ import (
 
 // Minimal struct, that implements Point interface
 type Point[T any] struct {
-	X, Y float64
+	X float64 // lat
+	Y float64 // lon
 	//	Prev, Next *Point[T]
 	Data T
 }
