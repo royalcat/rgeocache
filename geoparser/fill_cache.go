@@ -98,12 +98,7 @@ func (f *GeoGen) Close() {
 	// if f.wayCache != nil {
 	// 	f.wayCache.Close()
 	// }
-
-	if f.placeCache != nil {
-		f.placeCache.Close()
-	}
-
-	if f.localizationCache != nil {
-		f.localizationCache.Close()
-	}
+	// if f.localizationCache != nil {
+	// 	f.localizationCache.Close()
+	// }
 }

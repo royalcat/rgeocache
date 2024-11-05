@@ -14,17 +14,24 @@ import (
 func (f *GeoGen) parseObject(o osm.Object) {
 	switch obj := o.(type) {
 	case *osm.Node:
-
 		if point, ok := f.parseNode(obj); ok {
-			f.points.Set(point.Point, point.Info)
+			f.parsedPointsMu.Lock()
+			defer f.parsedPointsMu.Unlock()
+			f.parsedPoints = append(f.parsedPoints, point)
 		}
 	case *osm.Way:
 		if point, ok := f.parseWay(obj); ok {
-			f.points.Set(point.Point, point.Info)
+			f.parsedPointsMu.Lock()
+			defer f.parsedPointsMu.Unlock()
+			f.parsedPoints = append(f.parsedPoints, point)
 		}
 	case *osm.Relation:
-		for _, point := range f.parseRelation(obj) {
-			f.points.Set(point.Point, point.Info)
+		rels := f.parseRelation(obj)
+
+		f.parsedPointsMu.Lock()
+		defer f.parsedPointsMu.Unlock()
+		for _, point := range rels {
+			f.parsedPoints = append(f.parsedPoints, point)
 		}
 	}
 }

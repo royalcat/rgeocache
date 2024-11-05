@@ -31,7 +31,7 @@ func (f *GeoGen) cacheLocalization(tags osm.Tags) {
 	name := tags.Find(nameKey)
 	localizedName := tags.Find(nameKey + ":" + f.preferredLocalization)
 	if name != "" && localizedName != "" && name != localizedName {
-		f.localizationCache.Set(name, localizedName)
+		f.localizationCache.Store(name, localizedName)
 	}
 }
 
@@ -75,7 +75,7 @@ func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 		}
 
 		f.cacheLocalization(rel.Tags)
-		f.placeCache.Set(rel.ID, cachePlace{
+		f.placeCache.Store(rel.ID, cachePlace{
 			Name:         name,
 			Bound:        mpoly.Bound(),
 			MultiPolygon: mpoly,
