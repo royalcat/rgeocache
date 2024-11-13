@@ -8,14 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"runtime/debug"
 	"slices"
 	"time"
 
-	_ "github.com/KimMachineGun/automemlimit"
-
-	"github.com/ammario/weakmap"
 	"github.com/goware/singleflight"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/paulmach/osm"
 	"github.com/royalcat/rgeocache/osmpbfdb/osmproto"
 	"google.golang.org/protobuf/proto"
@@ -55,11 +52,9 @@ type Header struct {
 
 // A Decoder reads and decodes OpenStreetMap PBF data from an input stream.
 type DB struct {
-	header *Header
-	dd     *dataDecoder
-	r      io.ReaderAt
+	r io.ReaderAt
 
-	cache     weakmap.Map[int64, []osm.Object]
+	cache     *lru.TwoQueueCache[int64, []osm.Object]
 	readGroup singleflight.Group[int64, []osm.Object]
 
 	// id to block offset with it
@@ -71,17 +66,17 @@ type DB struct {
 
 // newDecoder returns a new decoder that reads from r.
 func OpenDB(ctx context.Context, r io.ReaderAt) (*DB, error) {
-
-	const maxDuration = time.Duration(^uint64(0) >> 1)
-
-	db := &DB{
-		r: r,
+	cache, err := lru.New2Q[int64, []osm.Object](1024)
+	if err != nil {
+		return nil, err
 	}
 
-	// this is required for weakmap to work properly
-	debug.SetGCPercent(80)
+	db := &DB{
+		r:     r,
+		cache: cache,
+	}
 
-	err := db.buildIndex()
+	err = db.buildIndex()
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +101,7 @@ func (dec *DB) buildIndex() error {
 	bytesRead += n
 
 	if blobHeader.GetType() == osmHeaderType {
-		var err error
-		dec.header, err = decodeOSMHeader(blob)
+		_, err := decodeOSMHeader(blob)
 		if err != nil {
 			return err
 		}
@@ -158,26 +152,6 @@ func (dec *DB) buildIndex() error {
 }
 
 var ErrNotFound = errors.New("object not found")
-
-// func (db *DB) Get(id osm.ObjectID) (osm.Object, error) {
-// 	offset, ok := db.objectIndex.Get(id)
-// 	if !ok {
-// 		return nil, ErrNotFound
-// 	}
-
-// 	objects, err := db.readObjects(offset)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	for _, obj := range objects {
-// 		if obj.ObjectID() == id {
-// 			return obj, nil
-// 		}
-// 	}
-
-// 	return nil, fmt.Errorf("object with id %d not found", id)
-// }
 
 const featureMask = 0x7FFFFFFFFFFF0000
 
@@ -276,26 +250,30 @@ func (db *DB) readObjects(offset int64) ([]osm.Object, error) {
 	}
 
 	out, err, _ := db.readGroup.Do(offset, func() ([]osm.Object, error) {
-		return db.cache.Do(offset, func() ([]osm.Object, error) {
-			dd := dataDecoderPool.Get()
-			defer dataDecoderPool.Put(dd)
-
-			_, _, blob, err := db.readFileBlock(offset)
-			if err != nil {
-				return nil, err
-			}
-
-			objects, err := dd.Decode(blob)
-			if err != nil {
-				return nil, err
-			}
-
-			slices.SortStableFunc(objects, func(a, b osm.Object) int {
-				return cmp.Compare(featureID(a.ObjectID()), featureID(b.ObjectID()))
-			})
-
+		if objects, ok := db.cache.Get(offset); ok {
 			return objects, nil
+		}
+
+		dd := dataDecoderPool.Get()
+		defer dataDecoderPool.Put(dd)
+
+		_, _, blob, err := db.readFileBlock(offset)
+		if err != nil {
+			return nil, err
+		}
+
+		objects, err := dd.Decode(blob)
+		if err != nil {
+			return nil, err
+		}
+
+		slices.SortStableFunc(objects, func(a, b osm.Object) int {
+			return cmp.Compare(featureID(a.ObjectID()), featureID(b.ObjectID()))
 		})
+
+		db.cache.Add(offset, slices.Clone(objects))
+
+		return objects, nil
 	})
 	return out, err
 }
