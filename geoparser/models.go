@@ -18,11 +18,11 @@ type cachePlace struct {
 type cachePoint orb.Point
 
 func (p cachePoint) ToBytes() []byte {
-	return NodePointByte(p[0], p[1])
+	return nodePointByte(p[0], p[1])
 }
 
 func (p cachePoint) FromBytes(b []byte) cachePoint {
-	p[0], p[1] = BytePoint(b)
+	p[0], p[1] = bytePoint(b)
 	return p
 }
 
@@ -46,20 +46,14 @@ func (p cacheWay) FromBytes(b []byte) cacheWay {
 	return cacheWay(way)
 }
 
-func NodeIdKey(id int64) []byte {
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, uint64(id))
-	return b
-}
-
-func NodePointByte(x, y float64) []byte {
+func nodePointByte(x, y float64) []byte {
 	b := make([]byte, 16)
 	binary.LittleEndian.PutUint64(b[:8], math.Float64bits(x))
 	binary.LittleEndian.PutUint64(b[8:], math.Float64bits(y))
 	return b
 }
 
-func BytePoint(b []byte) (x, y float64) {
+func bytePoint(b []byte) (x, y float64) {
 	x = math.Float64frombits(binary.LittleEndian.Uint64(b[:8]))
 	y = math.Float64frombits(binary.LittleEndian.Uint64(b[8:]))
 	return x, y

@@ -51,15 +51,6 @@ func NewGeoGen(cachePath string, threads int, preferredLocalization string) (*Ge
 }
 
 func (f *GeoGen) OpenCache() error {
-	f.Close()
-	// var err error
-
-	// f.nodeCache = kv.NewPoints32MutexMap[osm.NodeID, cachePoint]()
-
-	// f.wayCache, err = newCache[osm.WayID, cacheWay](f.cachePath, "ways")
-	// if err != nil {
-	// 	return err
-	// }
 	f.placeCache = xsync.NewMapOf[osm.RelationID, cachePlace]()
 	f.localizationCache = xsync.NewMapOf[string, string]()
 
