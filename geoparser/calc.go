@@ -29,7 +29,6 @@ func (f *GeoGen) calcWayCenter(way *osm.Way) (lat, lon float64) {
 		return 0, 0
 	}
 
-	//return Polylabel(poly, 0.00001)
 	p, _ := planar.CentroidArea(poly)
 	return p[0], p[1]
 }

@@ -90,15 +90,3 @@ func scanWithProgress(scanner *osmpbf.Scanner, size int64, name string, it func(
 
 	return scanner.Err()
 }
-
-func (f *GeoGen) Close() {
-	// if f.nodeCache != nil {
-	// 	f.nodeCache.Close()
-	// }
-	// if f.wayCache != nil {
-	// 	f.wayCache.Close()
-	// }
-	// if f.localizationCache != nil {
-	// 	f.localizationCache.Close()
-	// }
-}

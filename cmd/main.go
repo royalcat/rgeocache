@@ -166,7 +166,6 @@ func generate(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
-	defer geoGen.Close()
 
 	inputs := ctx.StringSlice("input")
 	fmt.Printf("Input maps: %v\n", inputs)
