@@ -2,8 +2,6 @@ package kdbush
 
 import (
 	"math"
-
-	"github.com/royalcat/btrgo/btrcontainer"
 )
 
 // Minimal struct, that implements Point interface
@@ -12,20 +10,6 @@ type Point[T any] struct {
 	Y float64 // lon
 	//	Prev, Next *Point[T]
 	Data T
-}
-
-type Lane[T any] struct {
-	list *btrcontainer.List[Point[T]]
-}
-
-func NewLane[T any]() *Lane[T] {
-	return &Lane[T]{
-		list: btrcontainer.New[Point[T]](),
-	}
-}
-
-func (l *Lane[T]) Add(p Point[T]) {
-	l.list.PushBack(p)
 }
 
 type KDBush[T any] struct {

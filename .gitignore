@@ -5,4 +5,5 @@ install
 Makefile
 data
 cache_build
-thunder-tests
+go.work
+go.work.sum
