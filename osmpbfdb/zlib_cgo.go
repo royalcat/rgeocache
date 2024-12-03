@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/DataDog/czlib"
+	"github.com/datadog/czlib"
 )
 
 func zlibReader(data []byte) (io.ReadCloser, error) {
