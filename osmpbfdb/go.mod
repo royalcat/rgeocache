@@ -3,7 +3,7 @@ module github.com/royalcat/rgeocache/osmpbfdb
 go 1.23.3
 
 require (
-	github.com/DataDog/czlib v0.0.0-20240814115052-86a9592b3985
+	github.com/datadog/czlib v0.0.0-20160811164712-4bc9a24e37f2
 	github.com/goware/singleflight v0.2.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/paulmach/osm v0.8.0
