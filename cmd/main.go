@@ -115,20 +115,20 @@ const memoryCache = "memory"
 
 func generate(ctx *cli.Context) error {
 	log := logrus.NewEntry(logrus.StandardLogger())
-	cache := ctx.String("cache")
-	if cache == "" {
-		cache = memoryCache
-	}
-	if cache == "temp" {
-		tempDir, err := os.MkdirTemp("", "rgeocache")
-		if err != nil {
-			return err
-		}
-		log.Infof("Using dir %s as cache", tempDir)
-		defer os.RemoveAll(tempDir)
-		cache = tempDir
-	}
-	log = log.WithField("cache", cache)
+	// cache := ctx.String("cache")
+	// if cache == "" {
+	// 	cache = memoryCache
+	// }
+	// if cache == "temp" {
+	// 	tempDir, err := os.MkdirTemp("", "rgeocache")
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	log.Infof("Using dir %s as cache", tempDir)
+	// 	defer os.RemoveAll(tempDir)
+	// 	cache = tempDir
+	// }
+	// log = log.WithField("cache", cache)
 
 	threads := ctx.Int("threads")
 	if threads == 0 {
@@ -162,7 +162,7 @@ func generate(ctx *cli.Context) error {
 		defer pprof.StopCPUProfile()
 	}
 
-	geoGen, err := geoparser.NewGeoGen(cache, threads, preferredLocalization)
+	geoGen, err := geoparser.NewGeoGen(threads, preferredLocalization)
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
@@ -183,7 +183,7 @@ func generate(ctx *cli.Context) error {
 			}
 		}
 
-		err = geoGen.OpenCache() // clearing cache
+		err = geoGen.ResetCache()
 		if err != nil {
 			return fmt.Errorf("error flushing memory cache: %s", err.Error())
 		}
