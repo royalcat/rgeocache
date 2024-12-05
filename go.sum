@@ -1,5 +1,3 @@
-github.com/DataDog/czlib v0.0.0-20240814115052-86a9592b3985 h1:0nepyu+UcpcOt3rrr0G4PvNDuoEW2aoqtbh2NK0AQ3w=
-github.com/DataDog/czlib v0.0.0-20240814115052-86a9592b3985/go.mod h1:ROY4muaTWpoeQAx/oUkvxe9zKCmgU5xDGXsfEbA+omc=
 github.com/VividCortex/ewma v1.2.0 h1:f58SaIzcDXrSy3kWaHNvuJgJ3Nmz59Zji6XoJR/q1ow=
 github.com/VividCortex/ewma v1.2.0/go.mod h1:nz4BbCtbLyFDeC9SUHbtcT5644juEuWfUAUnGx7j5l4=
 github.com/andybalholm/brotli v1.0.5 h1:8uQZIdzKmjc/iuPu7O2ioW48L81FgatrcpfFmiq/cCs=
@@ -79,6 +77,8 @@ github.com/puzpuzpuz/xsync/v3 v3.4.0/go.mod h1:VjzYrABPabuM4KyBh1Ftq6u8nhwY5tBPK
 github.com/rivo/uniseg v0.2.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJtxc=
 github.com/rivo/uniseg v0.4.4 h1:8TfxU8dW6PdqD27gjM8MVNuicgxIjxpm4K7x4jp8sis=
 github.com/rivo/uniseg v0.4.4/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
+github.com/royalcat/rgeocache/osmpbfdb v0.0.0-20241205202021-ba4e7787ce6e h1:M6tVxpR8neKijtYOGidBaeZqgI5qZcEJyU5QhVnCxkM=
+github.com/royalcat/rgeocache/osmpbfdb v0.0.0-20241205202021-ba4e7787ce6e/go.mod h1:HeHUdRCpMspWlunRqacQe6aA8vUSFsiwx6m75AIkbII=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/savsgio/gotils v0.0.0-20230208104028-c358bd845dee h1:8Iv5m6xEo1NR1AvpV+7XmhI4r39LGNzwUL4YpMuL5vk=
