@@ -8,7 +8,7 @@ import (
 
 type ring orb.Ring
 
-func Polylabel(ring orb.Ring, precision float64) (x, y float64) {
+func polylabel(ring orb.Ring, precision float64) (x, y float64) {
 	minX, minY, maxX, maxY := math.MaxFloat64, math.MaxFloat64, -math.MaxFloat64, -math.MaxFloat64
 	for _, p := range ring {
 		minX = math.Min(minX, p[0])

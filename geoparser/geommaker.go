@@ -5,27 +5,34 @@ import (
 
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
-	"github.com/royalcat/rgeocache/kv"
 )
 
-func makeLineString(nodeCache kv.KVS[osm.NodeID, cachePoint], nodes osm.WayNodes) orb.LineString {
+func (f *GeoGen) makeLineString(nodes osm.WayNodes) orb.LineString {
 	ls := orb.LineString{}
 	for _, node := range nodes {
 
 		if node.Lat != 0 && node.Lon != 0 {
-			ls = append(ls, orb.Point{node.Lat, node.Lon})
+			ls = append(ls, orb.Point{node.Lon, node.Lat})
 		} else {
-			p, ok := nodeCache.Get(node.ID)
-			if ok && p[0] != 0 && p[1] != 0 {
-				ls = append(ls, orb.Point(p))
+			p, err := f.osmdb.GetNode(node.ID)
+			if err != nil {
+				f.log.WithError(err).Error("failed to get node")
+				continue
 			}
+
+			if p.Lat == 0 && p.Lon == 0 {
+				f.log.Error("node has no coordinates")
+				continue
+			}
+
+			ls = append(ls, orb.Point{p.Lon, p.Lat})
 		}
 
 	}
 	return ls
 }
 
-func buildPolygon(wayCache kv.KVS[osm.WayID, cacheWay], members osm.Members) (orb.MultiPolygon, error) {
+func (f *GeoGen) buildPolygon(members osm.Members) (orb.MultiPolygon, error) {
 
 	var outer []segment
 	var inner []segment
@@ -44,13 +51,13 @@ func buildPolygon(wayCache kv.KVS[osm.WayID, cacheWay], members osm.Members) (or
 			outerCount++
 		}
 
-		way, ok := wayCache.Get(osm.WayID(m.Ref))
-		ls := orb.LineString(way)
-		if !ok || len(ls) == 0 {
+		way, err := f.osmdb.GetWay(osm.WayID(m.Ref))
+		if err != nil || len(way.Nodes) == 0 {
 			// we have the way but none the the node members
 			continue
 		}
 
+		ls := f.makeLineString(way.Nodes)
 		segment := segment{
 			Orientation: m.Orientation,
 			Line:        ls,

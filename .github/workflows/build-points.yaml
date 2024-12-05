@@ -10,7 +10,9 @@ on:
       - "geoparser/**"
       - "cmd/**"
       - "kv/**"
-      - "go.*"
+      - "osmpbfdb/**"
+      - "go.mod"
+      - "go.sum"
   workflow_dispatch:
 
 jobs:

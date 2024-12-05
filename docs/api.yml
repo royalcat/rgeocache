@@ -17,6 +17,7 @@ paths:
         schema:
           type: string
     get:
+      summary: Get address by coordinates
       responses:
         "200":
           description: OK
@@ -33,6 +34,36 @@ paths:
 
   /rgeocode/multiaddress:
     get:
+      summary: Get multiple addresses with single request
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: array
+                maxItems: 2
+                minItems: 2
+                description: "[lat, lon]"
+                items:
+                  type: number
+                  format: float64
+
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Address"
+        "500":
+          description: Server error
+        "400":
+          description: Bad request
+    post:
+      summary: Get multiple addresses with single request
       requestBody:
         content:
           application/json:
