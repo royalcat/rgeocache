@@ -14,7 +14,6 @@ import (
 )
 
 type GeoGen struct {
-	cachePath             string
 	threads               int
 	preferredLocalization string
 
@@ -29,10 +28,8 @@ type GeoGen struct {
 	log *logrus.Entry
 }
 
-func NewGeoGen(cachePath string, threads int, preferredLocalization string) (*GeoGen, error) {
+func NewGeoGen(threads int, preferredLocalization string) (*GeoGen, error) {
 	f := &GeoGen{
-		cachePath: cachePath,
-
 		placeCache:        xsync.NewMapOf[osm.RelationID, cachePlace](),
 		localizationCache: xsync.NewMapOf[string, string](),
 
@@ -44,13 +41,12 @@ func NewGeoGen(cachePath string, threads int, preferredLocalization string) (*Ge
 		log: logrus.NewEntry(logrus.StandardLogger()),
 	}
 
-	logrus.Info("Opening cache database")
-	err := f.OpenCache()
+	err := f.ResetCache()
 
 	return f, err
 }
 
-func (f *GeoGen) OpenCache() error {
+func (f *GeoGen) ResetCache() error {
 	f.placeCache = xsync.NewMapOf[osm.RelationID, cachePlace]()
 	f.localizationCache = xsync.NewMapOf[string, string]()
 
@@ -76,23 +72,6 @@ func (f *GeoGen) ParseOSMFile(ctx context.Context, input string) error {
 		return err
 	}
 	defer file.Close()
-
-	// err = f.fillNodeCache(ctx, file)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// f.nodeCache.Flush()
-
-	// err = f.fillWayCache(ctx, file)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// f.nodeCache.Close()
-	// f.nodeCache = nil
-
-	// f.wayCache.Flush()
 
 	err = f.fillRelCache(ctx, file)
 	if err != nil {

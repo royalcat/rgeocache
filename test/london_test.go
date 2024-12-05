@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -222,7 +223,7 @@ func TestLondon(t *testing.T) {
 
 	t.Log("Parsing OSM file")
 
-	gg, err := geoparser.NewGeoGen("", 1, "")
+	gg, err := geoparser.NewGeoGen(runtime.GOMAXPROCS(0), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,5 +252,44 @@ func TestLondon(t *testing.T) {
 	}
 	if i.Street != "Cannon Row" || i.HouseNumber != "1" {
 		t.Fatalf("expected Cannon Row 1, got %s %s", i.Street, i.HouseNumber)
+	}
+}
+
+func BenchmarkGenerationLondon(b *testing.B) {
+	ctx := context.Background()
+
+	ft := &OSMFileTest{
+		FileName:     London,
+		FileURL:      LondonURL,
+		ExpNode:      en,
+		ExpWay:       ew,
+		ExpRel:       er,
+		ExpNodeCount: enc,
+		ExpWayCount:  ewc,
+		ExpRelCount:  erc,
+		IDsExpOrder:  IDsExpectedOrder,
+	}
+
+	b.Log("Downloading OSM file")
+
+	err := ft.downloadTestOSMFile()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.Log("Parsing OSM file")
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		gg, err := geoparser.NewGeoGen(runtime.GOMAXPROCS(0), "")
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		err = gg.ParseOSMFile(ctx, ft.FileName)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
