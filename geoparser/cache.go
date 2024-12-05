@@ -1,36 +1,17 @@
 package geoparser
 
 import (
+	"slices"
+
 	"github.com/paulmach/osm"
-	"github.com/royalcat/btrgo"
 	"github.com/sirupsen/logrus"
 )
-
-func (f *GeoGen) cacheNode(node *osm.Node) {
-	f.nodeCache.Set(node.ID, cachePoint{node.Lat, node.Lon})
-}
-
-func (f *GeoGen) cacheWay(way *osm.Way) {
-	log := logrus.WithField("id", way.ID)
-	ls := makeLineString(f.nodeCache, way.Nodes)
-
-	if len(ls) == 0 {
-		log.Warn("No line string for way")
-		return
-	}
-
-	f.wayCache.Set(way.ID, cacheWay(ls))
-
-	if highway := way.Tags.Find("highway"); highway != "" {
-		f.cacheLocalization(way.Tags)
-	}
-}
 
 func (f *GeoGen) cacheLocalization(tags osm.Tags) {
 	name := tags.Find(nameKey)
 	localizedName := tags.Find(nameKey + ":" + f.preferredLocalization)
 	if name != "" && localizedName != "" && name != localizedName {
-		f.localizationCache.Set(name, localizedName)
+		f.localizationCache.Store(name, localizedName)
 	}
 }
 
@@ -41,7 +22,7 @@ func (f *GeoGen) cacheRel(rel *osm.Relation) {
 
 	_ = name
 
-	if btrgo.InSlice(cachablePlaces, rel.Tags.Find("place")) {
+	if slices.Contains(cachablePlaces, rel.Tags.Find("place")) {
 		f.cacheRelPlace(rel)
 	}
 
@@ -58,7 +39,7 @@ func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 	tags := rel.TagMap()
 	if tags["type"] == "multipolygon" || tags["type"] == "boundary" {
 
-		mpoly, err := buildPolygon(f.wayCache, rel.Members)
+		mpoly, err := f.buildPolygon(rel.Members)
 		if err != nil {
 			log.Errorf("Error building polygon for %s: %s", name, err.Error())
 			return
@@ -74,7 +55,7 @@ func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 		}
 
 		f.cacheLocalization(rel.Tags)
-		f.placeCache.Set(rel.ID, cachePlace{
+		f.placeCache.Store(rel.ID, cachePlace{
 			Name:         name,
 			Bound:        mpoly.Bound(),
 			MultiPolygon: mpoly,

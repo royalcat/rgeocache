@@ -11,8 +11,8 @@ type RGeoCoder struct {
 	tree *kdbush.KDBush[geomodel.Info]
 }
 
-const defaultRadius float64 = 0.01
-const thesholdDist float64 = 1e-7
+const maxRadius float64 = 0.01
+const thresholdRadius float64 = 1e-7
 
 type InfoModel struct {
 	geomodel.Info
@@ -21,14 +21,14 @@ type InfoModel struct {
 func (f *RGeoCoder) Find(lat, lon float64) (i InfoModel, ok bool) {
 	finPoint := kdbush.Point[geomodel.Info]{}
 	finDist := math.Inf(1)
-	f.tree.Within(lat, lon, defaultRadius, func(p kdbush.Point[geomodel.Info]) bool {
+	f.tree.Within(lat, lon, maxRadius, func(p kdbush.Point[geomodel.Info]) bool {
 		dist := distanceSquared(lat, lon, p.X, p.Y)
 		if dist < finDist {
 			finPoint = p
 			finDist = dist
 		}
 
-		if dist < thesholdDist {
+		if dist < thresholdRadius {
 			return false
 		}
 

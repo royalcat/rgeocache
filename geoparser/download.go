@@ -5,7 +5,6 @@ import (
 	"encoding/gob"
 	"os"
 
-	"github.com/paulmach/orb"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
@@ -25,19 +24,37 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	// serialize the data
 	dataEncoder := gob.NewEncoder(dataFile)
 
-	points := make([]kdbush.Point[geomodel.Info], 0) // TODO preallocate
-	f.points.Range(func(point orb.Point, info geomodel.Info) bool {
+	f.parsedPointsMu.Lock()
+	defer f.parsedPointsMu.Unlock()
+
+	f.parsedPoints = uniq(f.parsedPoints)
+
+	points := make([]kdbush.Point[geomodel.Info], 0, len(f.parsedPoints))
+	for _, point := range f.parsedPoints {
 		points = append(points, kdbush.Point[geomodel.Info]{
-			X:    point[0],
-			Y:    point[1],
-			Data: info,
+			X:    point.Lat(),
+			Y:    point.Lon(),
+			Data: point.Info,
 		})
-		return true
-	})
+	}
 
 	err = dataEncoder.Encode(points)
 	if err != nil {
 		return err
 	}
 	return dataFile.Close()
+}
+
+func uniq[T comparable](s []T) []T {
+	seen := make(map[T]struct{}, len(s))
+	j := 0
+	for _, v := range s {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		s[j] = v
+		j++
+	}
+	return s[:j]
 }
