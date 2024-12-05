@@ -10,6 +10,7 @@ require (
 	github.com/paulmach/osm v0.8.0
 	github.com/prometheus/client_golang v1.15.0
 	github.com/puzpuzpuz/xsync/v3 v3.4.0
+	github.com/royalcat/rgeocache/osmpbfdb v0.0.0-20241205202021-ba4e7787ce6e
 	github.com/sirupsen/logrus v1.9.0
 	github.com/sourcegraph/conc v0.3.0
 	github.com/urfave/cli/v3 v3.0.0-alpha2
@@ -19,7 +20,6 @@ require (
 )
 
 require (
-	github.com/DataDog/czlib v0.0.0-20240814115052-86a9592b3985 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
