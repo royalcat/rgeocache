@@ -11,7 +11,6 @@ import (
 )
 
 var (
-	sizeBufPool   = newSyncPool[[]byte](func() []byte { return make([]byte, 4) })
 	headerBufPool = newSyncPool[[]byte](func() []byte { return make([]byte, maxBlobHeaderSize) })
 	blobBufPool   = newSyncPool[[]byte](func() []byte { return make([]byte, maxBlobSize) })
 )

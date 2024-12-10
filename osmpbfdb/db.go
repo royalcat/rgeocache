@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -279,14 +278,12 @@ func (db *DB) readObjects(offset int64) ([]osm.Object, error) {
 }
 
 func (dec *DB) readFileBlock(off int64) (int64, *osmproto.BlobHeader, *osmproto.Blob, error) {
-	sizeBuf := sizeBufPool.Get()
-	defer sizeBufPool.Put(sizeBuf)
 	headerBuf := headerBufPool.Get()
 	defer headerBufPool.Put(headerBuf)
 	blobBuf := blobBufPool.Get()
 	defer blobBufPool.Put(blobBuf)
 
-	blobHeaderSize, err := dec.readBlobHeaderSize(sizeBuf, off)
+	blobHeaderSize, err := dec.readBlobHeaderSize(off)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -308,8 +305,10 @@ func (dec *DB) readFileBlock(off int64) (int64, *osmproto.BlobHeader, *osmproto.
 	return bytesRead, blobHeader, blob, nil
 }
 
-func (dec *DB) readBlobHeaderSize(buf []byte, off int64) (uint32, error) {
-	n, err := dec.r.ReadAt(buf, off)
+func (dec *DB) readBlobHeaderSize(off int64) (uint32, error) {
+	var buf [sizeBufSize]byte
+
+	n, err := dec.r.ReadAt(buf[:], off)
 	if err != nil {
 		return 0, err
 	}
@@ -317,7 +316,8 @@ func (dec *DB) readBlobHeaderSize(buf []byte, off int64) (uint32, error) {
 		return 0, io.ErrUnexpectedEOF
 	}
 
-	size := binary.BigEndian.Uint32(buf)
+	// size := binary.BigEndian.Uint32(buf[:])
+	size := uint32(buf[3]) | uint32(buf[2])<<8 | uint32(buf[1])<<16 | uint32(buf[0])<<24
 	if size >= maxBlobHeaderSize {
 		return 0, errors.New("blobHeader size >= 64Kb")
 	}

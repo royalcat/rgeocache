@@ -25,7 +25,7 @@ func (f *GeoGen) localizedName(tags osm.Tags) string {
 
 const cityAddrKey = "addr:city"
 
-func (f *GeoGen) localizeCityAddr(tags osm.Tags, point orb.Point) string {
+func (f *GeoGen) localizedCityAddr(tags osm.Tags, point orb.Point) string {
 	name := tags.Find(cityAddrKey)
 
 	if f.preferredLocalization == "" {
