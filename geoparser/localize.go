@@ -32,7 +32,7 @@ func (f *GeoGen) localizedCityAddr(tags osm.Tags, point orb.Point) string {
 		if name != "" {
 			return name
 		}
-		return f.calcPlace(point).Name
+		return f.calcPlace(point)
 	}
 
 	if localizedName := tags.Find(cityAddrKey + ":" + f.preferredLocalization); localizedName != "" {
@@ -43,7 +43,7 @@ func (f *GeoGen) localizedCityAddr(tags osm.Tags, point orb.Point) string {
 		return localizedName
 	}
 
-	if calcPlaceName := f.calcPlace(point).Name; calcPlaceName != "" {
+	if calcPlaceName := f.calcPlace(point); calcPlaceName != "" {
 		if localizedName, ok := f.localizationCache.Load(calcPlaceName); ok {
 			return localizedName
 		}
@@ -72,4 +72,17 @@ func (f *GeoGen) localizedStreetName(tags osm.Tags) string {
 	}
 
 	return name
+}
+
+func (f *GeoGen) localizedRegion(point orb.Point) string {
+
+	if regionName := f.calcRegion(point); regionName != "" {
+		if localizedName, ok := f.localizationCache.Load(regionName); ok {
+			return localizedName
+		}
+
+		return regionName
+	}
+
+	return ""
 }

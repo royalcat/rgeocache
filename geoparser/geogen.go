@@ -5,8 +5,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/paulmach/osm"
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/royalcat/rgeocache/bordertree"
 	"github.com/royalcat/rgeocache/osmpbfdb"
 	"golang.org/x/exp/mmap"
 
@@ -17,7 +17,9 @@ type GeoGen struct {
 	threads               int
 	preferredLocalization string
 
-	placeCache        *xsync.MapOf[osm.RelationID, cachePlace]
+	placeIndex  *bordertree.BorderTree[string]
+	regoinIndex *bordertree.BorderTree[string]
+
 	localizationCache *xsync.MapOf[string, string]
 
 	osmdb *osmpbfdb.DB
@@ -30,7 +32,8 @@ type GeoGen struct {
 
 func NewGeoGen(threads int, preferredLocalization string) (*GeoGen, error) {
 	f := &GeoGen{
-		placeCache:        xsync.NewMapOf[osm.RelationID, cachePlace](),
+		placeIndex:        bordertree.NewBorderTree[string](),
+		regoinIndex:       bordertree.NewBorderTree[string](),
 		localizationCache: xsync.NewMapOf[string, string](),
 
 		threads:               threads,
@@ -47,7 +50,8 @@ func NewGeoGen(threads int, preferredLocalization string) (*GeoGen, error) {
 }
 
 func (f *GeoGen) ResetCache() error {
-	f.placeCache = xsync.NewMapOf[osm.RelationID, cachePlace]()
+	f.placeIndex = bordertree.NewBorderTree[string]()
+	f.regoinIndex = bordertree.NewBorderTree[string]()
 	f.localizationCache = xsync.NewMapOf[string, string]()
 
 	return nil

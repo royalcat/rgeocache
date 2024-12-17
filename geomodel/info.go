@@ -5,4 +5,5 @@ type Info struct {
 	Street      string `json:"street"`
 	HouseNumber string `json:"house_number"`
 	City        string `json:"city"`
+	Region      string `json:"region"`
 }
