@@ -16,6 +16,7 @@ require (
 	github.com/puzpuzpuz/xsync/v3 v3.4.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/sourcegraph/conc v0.3.0
+	github.com/tidwall/qtree v0.1.0
 	github.com/urfave/cli/v3 v3.0.0-alpha2
 	github.com/valyala/fasthttp v1.45.0
 	go.uber.org/automaxprocs v1.5.2
@@ -41,6 +42,9 @@ require (
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20230208104028-c358bd845dee // indirect
+	github.com/tidwall/cities v0.1.0 // indirect
+	github.com/tidwall/geoindex v1.6.1 // indirect
+	github.com/tidwall/lotsa v1.0.2 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.mongodb.org/mongo-driver v1.11.4 // indirect

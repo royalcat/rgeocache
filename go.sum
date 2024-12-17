@@ -91,8 +91,16 @@ github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.8.1 h1:w7B6lhMri9wdJUVmEZPGGhZzrYTPvgJArz7wNPgYKsk=
 github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
+github.com/tidwall/cities v0.1.0 h1:CVNkmMf7NEC9Bvokf5GoSsArHCKRMTgLuubRTHnH0mE=
+github.com/tidwall/cities v0.1.0/go.mod h1:lV/HDp2gCcRcHJWqgt6Di54GiDrTZwh1aG2ZUPNbqa4=
+github.com/tidwall/geoindex v1.6.1 h1:zGVJiAhHl5ZsPZHMM5HRpgv7Bqw3ZNxbnFRf3pxS1dk=
+github.com/tidwall/geoindex v1.6.1/go.mod h1:rvVVNEFfkJVWGUdEfU8QaoOg/9zFX0h9ofWzA60mz1I=
+github.com/tidwall/lotsa v1.0.2 h1:dNVBH5MErdaQ/xd9s769R31/n2dXavsQ0Yf4TMEHHw8=
+github.com/tidwall/lotsa v1.0.2/go.mod h1:X6NiU+4yHA3fE3Puvpnn1XMDrFZrE9JO2/w+UMuqgR8=
 github.com/tidwall/pretty v1.0.0 h1:HsD+QiTn7sK6flMKIvNmpqz1qrpP3Ps6jOKIKMooyg4=
 github.com/tidwall/pretty v1.0.0/go.mod h1:XNkn88O1ChpSDQmQeStsy+sBenx6DDtFZJxhVysOjyk=
+github.com/tidwall/qtree v0.1.0 h1:UeG2Rq+sALVIIQbyxBIEG1lIRDwjxotUfPhOqcypEyA=
+github.com/tidwall/qtree v0.1.0/go.mod h1:nXIrTQ7uDXX8KZ2fgBuHVxEPo2jXJBhWbHcjyRkebgI=
 github.com/urfave/cli/v3 v3.0.0-alpha2 h1:JKkuTewMlS2leTQeAcsPGL7WmBVa2uoBLy89As4Jauc=
 github.com/urfave/cli/v3 v3.0.0-alpha2/go.mod h1:gHI/xEYplFhOa3Y90xJleh3kqqsSanBj/19hVFxiVZ4=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
