@@ -6,20 +6,14 @@ import (
 	"github.com/paulmach/osm"
 )
 
-// FIXME it takes ALOT of time, optimize
-func (f *GeoGen) calcPlace(point orb.Point) cachePlace {
-	var foundPlace cachePlace
-	f.placeCache.Range(func(_ osm.RelationID, place cachePlace) bool {
-		if place.Bound.Contains(point) {
-			if planar.MultiPolygonContains(place.MultiPolygon, point) {
-				foundPlace = place
-				return false
-			}
-		}
+func (f *GeoGen) calcPlace(point orb.Point) string {
+	out, _ := f.placeIndex.QueryPoint(point)
+	return out
+}
 
-		return true
-	})
-	return foundPlace
+func (f *GeoGen) calcRegion(point orb.Point) string {
+	out, _ := f.regoinIndex.QueryPoint(point)
+	return out
 }
 
 func (f *GeoGen) calcWayCenter(way *osm.Way) (lat, lon float64) {
