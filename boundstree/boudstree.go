@@ -1,30 +1,23 @@
 package boundstree
 
 import (
+	"math"
+
 	"github.com/paulmach/orb"
 	// "github.com/paulmach/orb/quadtree"
 	// "github.com/JamesLMilner/quadtree-go"
+	"github.com/s0rg/quadtree"
 )
 
 type BoundTree struct {
-	qt *Quadtree[string]
+	qt *quadtree.Tree[string]
 }
+
+const offset = 90.0
 
 func NewBoundTree() *BoundTree {
 	return &BoundTree{
-		qt: &Quadtree[string]{
-			Bounds: Bounds[string]{
-				X:      0,
-				Y:      0,
-				Width:  100,
-				Height: 100,
-			},
-			MaxObjects: 10,
-			MaxLevels:  4,
-			Level:      0,
-			Objects:    make([]Bounds[string], 0),
-			Nodes:      make([]Quadtree[string], 0),
-		},
+		qt: quadtree.New[string](180, 180, 4),
 	}
 }
 
@@ -38,26 +31,25 @@ type BorderPoint struct {
 	Border *Border
 }
 
-func (bt *BoundTree) InsertBorder(name string, border orb.MultiPolygon) {
-	bound := border.Bound()
-	bt.qt.Insert(Bounds[string]{
-		X:      bound.Min[0],
-		Y:      bound.Min[1],
-		Width:  bound.Max[0] - bound.Min[0],
-		Height: bound.Max[1] - bound.Min[1],
-		Data:   name,
-	})
+func (bt *BoundTree) InsertBorder(name string, b orb.Bound) {
+	tl := b.LeftTop()
+	br := b.RightBottom()
+	x := offset + tl.X()
+	y := offset + tl.Y()
+	w := math.Abs(br.X() - tl.X())
+	h := math.Abs(br.Y() - tl.Y())
+	bt.qt.Add(x, y, w, h, name)
 }
 
 func (bt *BoundTree) QueryPoint(point orb.Point) string {
-	bounds := bt.qt.Retrieve(Bounds[string]{
-		X: point[0],
-		Y: point[1],
+	out := ""
+
+	bt.qt.KNearest(offset+point[0], offset+point[1], 1, 1, func(x, y, w, h float64, value string) {
+		bound := orb.MultiPoint{orb.Point{x, y}, orb.Point{x + w, y + h}}.Bound()
+		if bound.Contains(point) {
+			out = value
+		}
 	})
 
-	if len(bounds) == 0 {
-		return ""
-	}
-
-	return bounds[0].Data
+	return out
 }

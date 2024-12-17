@@ -14,6 +14,7 @@ require (
 	github.com/paulmach/protoscan v0.2.1
 	github.com/prometheus/client_golang v1.15.0
 	github.com/puzpuzpuz/xsync/v3 v3.4.0
+	github.com/s0rg/quadtree v1.0.3
 	github.com/sirupsen/logrus v1.9.0
 	github.com/sourcegraph/conc v0.3.0
 	github.com/urfave/cli/v3 v3.0.0-alpha2
