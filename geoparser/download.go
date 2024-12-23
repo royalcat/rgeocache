@@ -21,6 +21,7 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	if err != nil {
 		return err
 	}
+
 	// serialize the data
 	dataEncoder := gob.NewEncoder(dataFile)
 
@@ -32,8 +33,8 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	points := make([]kdbush.Point[geomodel.Info], 0, len(f.parsedPoints))
 	for _, point := range f.parsedPoints {
 		points = append(points, kdbush.Point[geomodel.Info]{
-			X:    point.Lat(),
-			Y:    point.Lon(),
+			X:    point.X(),
+			Y:    point.Y(),
 			Data: point.Info,
 		})
 	}

@@ -47,14 +47,16 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 	building := node.Tags.Find("building")
 
 	if housenumber != "" && street != "" && building != "" {
+		point := orb.Point{node.Lon, node.Lat}
+
 		return geoPoint{
-			Point: orb.Point{node.Lat, node.Lon},
+			Point: point,
 			Info: geomodel.Info{
 				Name:        f.localizedName(node.Tags),
 				Street:      f.localizedStreetName(node.Tags),
 				HouseNumber: housenumber,
-				City:        f.localizedCityAddr(node.Tags, orb.Point{node.Lat, node.Lon}),
-				Region:      f.localizedRegion(orb.Point{node.Lat, node.Lon}),
+				City:        f.localizedCityAddr(node.Tags, point),
+				Region:      f.localizedRegion(point),
 			},
 		}, true
 	}
@@ -77,14 +79,16 @@ func (f *GeoGen) parseWay(way *osm.Way) (geoPoint, bool) {
 			return geoPoint{}, false
 		}
 
+		point := orb.Point{lon, lat}
+
 		return geoPoint{
-			Point: orb.Point{lat, lon},
+			Point: point,
 			Info: geomodel.Info{
 				Name:        f.localizedName(way.Tags),
 				Street:      f.localizedStreetName(way.Tags),
 				HouseNumber: housenumber,
-				City:        f.localizedCityAddr(way.Tags, orb.Point{lat, lon}),
-				Region:      f.localizedRegion(orb.Point{lat, lon}),
+				City:        f.localizedCityAddr(way.Tags, point),
+				Region:      f.localizedRegion(point),
 			},
 		}, true
 	}
