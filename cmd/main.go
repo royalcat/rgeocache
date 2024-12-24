@@ -300,7 +300,7 @@ func (s *server) RGeoCodeHandler(ctx *fasthttp.RequestCtx) {
 func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 	metricHttpMultiAdressCallCount.Inc()
 
-	req := []orb.Point{} // latitude, longitude
+	req := []orb.Point{} // longitude, latitude
 	err := json.Unmarshal(ctx.Request.Body(), &req)
 	if err != nil {
 		ctx.Response.SetStatusCode(http.StatusBadRequest)

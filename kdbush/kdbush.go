@@ -4,17 +4,15 @@ import (
 	"math"
 )
 
-// Minimal struct, that implements Point interface
 type Point[T any] struct {
-	X float64 // lat
-	Y float64 // lon
-	//	Prev, Next *Point[T]
+	X    float64
+	Y    float64
 	Data T
 }
 
 type KDBush[T any] struct {
-	NodeSize int
-	Points   []Point[T]
+	nodeSize int
+	points   []Point[T]
 
 	idxs   []int     //array of indexes
 	coords []float64 //array of coordinates
@@ -40,7 +38,7 @@ func (bush *KDBush[T]) Range(minX, minY, maxX, maxY float64) []int {
 		left := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
-		if right-left <= bush.NodeSize {
+		if right-left <= bush.nodeSize {
 			for i := left; i <= right; i++ {
 				x = bush.coords[2*i]
 				y = bush.coords[2*i+1]
@@ -90,11 +88,11 @@ func (bush *KDBush[T]) Within(qx, qy float64, radius float64, handler func(p Poi
 		left := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
-		if right-left <= bush.NodeSize {
+		if right-left <= bush.nodeSize {
 			for i := left; i <= right; i++ {
 				dst := sqrtDist(bush.coords[2*i], bush.coords[2*i+1], qx, qy)
 				if dst <= r2 {
-					if !handler(bush.Points[bush.idxs[i]]) {
+					if !handler(bush.points[bush.idxs[i]]) {
 						return
 					}
 				}
@@ -107,7 +105,7 @@ func (bush *KDBush[T]) Within(qx, qy float64, radius float64, handler func(p Poi
 		y := bush.coords[2*m+1]
 
 		if sqrtDist(x, y, qx, qy) <= r2 {
-			if !handler(bush.Points[bush.idxs[m]]) {
+			if !handler(bush.points[bush.idxs[m]]) {
 				return
 			}
 		}
@@ -135,8 +133,8 @@ func (bush *KDBush[T]) Within(qx, qy float64, radius float64, handler func(p Poi
 ////////////////////////////////////////////////////////////////
 
 func (bush *KDBush[T]) buildIndex(points []Point[T], nodeSize int) {
-	bush.NodeSize = nodeSize
-	bush.Points = points
+	bush.nodeSize = nodeSize
+	bush.points = points
 
 	bush.idxs = make([]int, len(points))
 	bush.coords = make([]float64, 2*len(points))
@@ -147,7 +145,7 @@ func (bush *KDBush[T]) buildIndex(points []Point[T], nodeSize int) {
 		bush.coords[i*2+1] = v.Y
 	}
 
-	sort(bush.idxs, bush.coords, bush.NodeSize, 0, len(bush.idxs)-1, 0)
+	sort(bush.idxs, bush.coords, bush.nodeSize, 0, len(bush.idxs)-1, 0)
 }
 
 func sort(idxs []int, coords []float64, nodeSize int, left, right, depth int) {

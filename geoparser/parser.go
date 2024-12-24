@@ -47,14 +47,16 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 	building := node.Tags.Find("building")
 
 	if housenumber != "" && street != "" && building != "" {
+		point := orb.Point{node.Lon, node.Lat}
+
 		return geoPoint{
-			Point: orb.Point{node.Lat, node.Lon},
+			Point: point,
 			Info: geomodel.Info{
 				Name:        f.localizedName(node.Tags),
 				Street:      f.localizedStreetName(node.Tags),
 				HouseNumber: housenumber,
-				City:        f.localizedCityAddr(node.Tags, orb.Point{node.Lat, node.Lon}),
-				Region:      f.localizedRegion(orb.Point{node.Lat, node.Lon}),
+				City:        f.localizedCityAddr(node.Tags, point),
+				Region:      f.localizedRegion(point),
 			},
 		}, true
 	}
@@ -70,21 +72,21 @@ func (f *GeoGen) parseWay(way *osm.Way) (geoPoint, bool) {
 	building := way.Tags.Find("building")
 
 	if housenumber != "" && street != "" && building != "" {
-		lat, lon := f.calcWayCenter(way)
+		point := f.calcWayCenter(way)
 
-		if lat == 0 && lon == 0 {
+		if point.X() == 0 && point.Y() == 0 {
 			log.Warn("failed to calculate center for way")
 			return geoPoint{}, false
 		}
 
 		return geoPoint{
-			Point: orb.Point{lat, lon},
+			Point: point,
 			Info: geomodel.Info{
 				Name:        f.localizedName(way.Tags),
 				Street:      f.localizedStreetName(way.Tags),
 				HouseNumber: housenumber,
-				City:        f.localizedCityAddr(way.Tags, orb.Point{lat, lon}),
-				Region:      f.localizedRegion(orb.Point{lat, lon}),
+				City:        f.localizedCityAddr(way.Tags, point),
+				Region:      f.localizedRegion(point),
 			},
 		}, true
 	}
