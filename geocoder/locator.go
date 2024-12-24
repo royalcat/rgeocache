@@ -21,16 +21,16 @@ type InfoModel struct {
 func (f *RGeoCoder) Find(lat, lon float64) (i InfoModel, ok bool) {
 	finPoint := kdbush.Point[geomodel.Info]{}
 	finDist := math.Inf(1)
-	f.tree.Within(lat, lon, maxRadius, func(p kdbush.Point[geomodel.Info]) bool {
-		dist := distanceSquared(lat, lon, p.X, p.Y)
+	f.tree.Within(lon, lat, maxRadius, func(p kdbush.Point[geomodel.Info]) bool {
+		dist := distanceSquared(lon, lat, p.X, p.Y)
 		if dist < finDist {
 			finPoint = p
 			finDist = dist
 		}
 
-		if dist < thresholdRadius {
-			return false
-		}
+		// if dist < thresholdRadius {
+		// 	return false
+		// }
 
 		return true
 	})

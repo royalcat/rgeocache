@@ -16,13 +16,13 @@ func (f *GeoGen) calcRegion(point orb.Point) string {
 	return out
 }
 
-func (f *GeoGen) calcWayCenter(way *osm.Way) (lat, lon float64) {
+func (f *GeoGen) calcWayCenter(way *osm.Way) orb.Point {
 	poly := orb.Ring(f.makeLineString(way.Nodes))
 
 	if len(poly) == 0 {
-		return 0, 0
+		return orb.Point{}
 	}
 
 	p, _ := planar.CentroidArea(poly)
-	return p[0], p[1]
+	return p
 }

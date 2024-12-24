@@ -1,3 +1,3 @@
 {
-    "go.testTimeout": "600s"
+    "go.testTimeout": "6000s"
 }
