@@ -72,14 +72,12 @@ func (f *GeoGen) parseWay(way *osm.Way) (geoPoint, bool) {
 	building := way.Tags.Find("building")
 
 	if housenumber != "" && street != "" && building != "" {
-		lat, lon := f.calcWayCenter(way)
+		point := f.calcWayCenter(way)
 
-		if lat == 0 && lon == 0 {
+		if point.X() == 0 && point.Y() == 0 {
 			log.Warn("failed to calculate center for way")
 			return geoPoint{}, false
 		}
-
-		point := orb.Point{lon, lat}
 
 		return geoPoint{
 			Point: point,

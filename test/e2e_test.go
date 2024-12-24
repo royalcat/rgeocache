@@ -19,6 +19,8 @@ func TestLondon(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	const pointsFile = "gb_points.gob"
+
 	t.Log("Parsing OSM file")
 
 	gg, err := geoparser.NewGeoGen(runtime.GOMAXPROCS(0), "")
@@ -26,14 +28,12 @@ func TestLondon(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const pointsFile = "gb_points.gob"
-
 	err = gg.ParseOSMFile(ctx, greatBritanName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = gg.SavePointsToFile("gb_points.gob")
+	err = gg.SavePointsToFile(pointsFile)
 	if err != nil {
 		t.Fatal(err)
 	}
