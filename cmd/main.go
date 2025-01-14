@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fasthttp/router"
@@ -286,14 +288,15 @@ func (s *server) RGeoCodeHandler(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	body, err := json.Marshal(i)
-	if err != nil {
-		ctx.Response.SetStatusCode(http.StatusInternalServerError)
-		return
-	}
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+
+	writeGeoInfoFast(buf, i.Info)
 
 	ctx.Response.SetStatusCode(http.StatusOK)
-	ctx.Response.BodyWriter().Write(body)
+	ctx.Response.SetBody(buf.Bytes())
+
 	return
 }
 
@@ -301,6 +304,12 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 	metricHttpMultiAdressCallCount.Inc()
 
 	req := []orb.Point{} // longitude, latitude
+
+	// TODO fast unmarshal
+	// const (
+	// 	minRune = uint8(',')
+	// 	maxRune = uint8(']')
+	// )
 	err := json.Unmarshal(ctx.Request.Body(), &req)
 	if err != nil {
 		ctx.Response.SetStatusCode(http.StatusBadRequest)
@@ -313,14 +322,14 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 		res = append(res, info.Info)
 	}
 
-	body, err := json.Marshal(res)
-	if err != nil {
-		ctx.Response.SetStatusCode(http.StatusInternalServerError)
-		return
-	}
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+
+	writeGeoInfoListFast(buf, res)
 
 	ctx.Response.SetStatusCode(http.StatusOK)
-	ctx.Response.BodyWriter().Write(body)
+	ctx.Response.SetBody(buf.Bytes())
 	return
 }
 
@@ -342,3 +351,32 @@ var (
 		},
 	)
 )
+
+var bufPool = sync.Pool{
+	New: func() any {
+		return &bytes.Buffer{}
+	},
+}
+
+func writeGeoInfoFast(buf *bytes.Buffer, i geomodel.Info) {
+	// return []byte(fmt.Sprintf(`{"region":"%s","city":"%s","street":"%s","house_number":"%s"}`, p.Region, p.City, p.Street, p.HouseNumber))
+	buf.WriteString("{")
+	buf.WriteString(`"region":"`)
+	buf.WriteString(i.Region)
+	buf.WriteString(`","city":"`)
+	buf.WriteString(i.City)
+	buf.WriteString(`","street":"`)
+	buf.WriteString(i.Street)
+	buf.WriteString(`","house_number":"`)
+	buf.WriteString(i.HouseNumber)
+	buf.WriteString(`"}`)
+}
+
+func writeGeoInfoListFast(buf *bytes.Buffer, i []geomodel.Info) {
+	buf.WriteRune('[')
+	for _, v := range i {
+		writeGeoInfoFast(buf, v)
+		buf.WriteRune(',')
+	}
+	buf.WriteByte(']')
+}
