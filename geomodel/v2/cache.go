@@ -1,8 +1,6 @@
 package geomodelv2
 
 import (
-	"slices"
-
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
@@ -22,34 +20,18 @@ type Cache struct {
 	Regions []string
 }
 
-func GenerateV2CacheFromV1(points []kdbush.Point[geomodel.Info]) {
-	c := Cache{
-		Points:  []kdbush.Point[Info]{},
-		Streets: []string{},
-		Cities:  []string{},
-		Regions: []string{},
-	}
+func GenerateV2CacheFromV1(input []kdbush.Point[geomodel.Info]) Cache {
+	points := []kdbush.Point[Info]{}
+	streets := uniqueMap{}
+	cities := uniqueMap{}
+	regions := uniqueMap{}
 
-	for _, p := range points {
-		streetIndex := slices.Index(c.Streets, p.Data.Street)
-		if streetIndex == -1 {
-			c.Streets = append(c.Streets, p.Data.Street)
-			streetIndex = len(c.Streets) - 1
-		}
+	for _, p := range input {
+		streetIndex := streets.Add(p.Data.Street)
+		cityIndex := cities.Add(p.Data.City)
+		regionIndex := regions.Add(p.Data.Region)
 
-		cityIndex := slices.Index(c.Cities, p.Data.City)
-		if cityIndex == -1 {
-			c.Cities = append(c.Cities, p.Data.City)
-			cityIndex = len(c.Cities) - 1
-		}
-
-		regionIndex := slices.Index(c.Regions, p.Data.Region)
-		if regionIndex == -1 {
-			c.Regions = append(c.Regions, p.Data.Region)
-			regionIndex = len(c.Regions) - 1
-		}
-
-		c.Points = append(c.Points, kdbush.Point[Info]{
+		points = append(points, kdbush.Point[Info]{
 			X: p.X,
 			Y: p.Y,
 			Data: Info{
@@ -61,4 +43,41 @@ func GenerateV2CacheFromV1(points []kdbush.Point[geomodel.Info]) {
 			},
 		})
 	}
+
+	return Cache{
+		Points:  points,
+		Streets: streets.Slice(),
+		Cities:  cities.Slice(),
+		Regions: regions.Slice(),
+	}
+}
+
+type uniqueMap struct {
+	m map[string]int
+	i int
+}
+
+func (uq *uniqueMap) Add(val string) int {
+	i, ok := uq.m[val]
+	if !ok {
+		uq.m[val] = uq.i
+		uq.i++
+		return uq.i - 1
+	}
+	return i
+}
+
+func (uq *uniqueMap) Get(val string) int {
+	if i, ok := uq.m[val]; ok {
+		return i
+	}
+	return -1
+}
+
+func (uq *uniqueMap) Slice() []string {
+	s := make([]string, uq.i)
+	for k, v := range uq.m {
+		s[v] = k
+	}
+	return s
 }
