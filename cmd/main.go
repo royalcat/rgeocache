@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -228,6 +229,8 @@ func serve(ctx *cli.Context) error {
 	return runServer(ctx.Context, ctx.String("listen"), rgeo)
 }
 
+const MaxBodySize = 32 * 1000 * 1000 // 32MB
+
 func runServer(ctx context.Context, address string, rgeo *geocoder.RGeoCoder) error {
 	log := logrus.New()
 
@@ -242,9 +245,11 @@ func runServer(ctx context.Context, address string, rgeo *geocoder.RGeoCoder) er
 	r.Handle(http.MethodGet, "/metrics", fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler()))
 
 	server := &fasthttp.Server{
-		ReadTimeout: time.Second,
-		Handler:     r.Handler,
+		ReadTimeout:        time.Second,
+		MaxRequestBodySize: MaxBodySize,
+		Handler:            r.Handler,
 	}
+
 	go func() {
 		log.Infof("Server listening on: %s", address)
 		if err := server.ListenAndServe(address); err != http.ErrServerClosed {
@@ -306,12 +311,19 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 	req = req[:0]
 	defer reqPointsPool.Put(req)
 
-	err := unmarshalPointsListFast(ctx.Request.Body(), &req)
+	err := json.Unmarshal(ctx.Request.Body(), &req)
 	if err != nil {
 		ctx.Response.SetStatusCode(http.StatusBadRequest)
 		ctx.Response.SetBodyString("failed to parse request: " + err.Error())
 		return
 	}
+
+	// err := unmarshalPointsListFast(ctx.Request.Body(), &req)
+	// if err != nil {
+	// 	ctx.Response.SetStatusCode(http.StatusBadRequest)
+	// 	ctx.Response.SetBodyString("failed to parse request: " + err.Error())
+	// 	return
+	// }
 
 	res := []geomodel.Info{}
 	for _, p := range req {
