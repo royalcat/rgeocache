@@ -248,6 +248,7 @@ func runServer(ctx context.Context, address string, rgeo *geocoder.RGeoCoder) er
 		ReadTimeout:        time.Second,
 		MaxRequestBodySize: MaxBodySize,
 		Handler:            r.Handler,
+		Logger:             logrus.NewEntry(log).WithField("component", "fasthttp"),
 	}
 
 	go func() {
