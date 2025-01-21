@@ -484,11 +484,14 @@ func writeGeoInfoFast(buf *bytes.Buffer, i geomodel.Info) {
 	buf.WriteString(`"}`)
 }
 
-func writeGeoInfoListFast(buf *bytes.Buffer, i []geomodel.Info) {
+func writeGeoInfoListFast(buf *bytes.Buffer, infos []geomodel.Info) {
 	buf.WriteRune('[')
-	for _, v := range i {
+	for i, v := range infos {
 		writeGeoInfoFast(buf, v)
-		buf.WriteRune(',')
+		if i != len(infos)-1 {
+			buf.WriteRune(',')
+		}
+
 	}
 	buf.WriteByte(']')
 }
