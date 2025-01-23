@@ -12,6 +12,12 @@ import (
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
+func NewRGeoCoder() *RGeoCoder {
+	return &RGeoCoder{
+		tree: kdbush.NewBush[geomodel.Info](nil, 256),
+	}
+}
+
 func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 	dataFile, err := os.Open(file)
 	if err != nil {
