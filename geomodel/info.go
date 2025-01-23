@@ -1,5 +1,9 @@
 package geomodel
 
+import (
+	_ "unsafe"
+)
+
 type Info struct {
 	Name        string `json:"name"`
 	Street      string `json:"street"`
