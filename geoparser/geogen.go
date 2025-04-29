@@ -18,7 +18,7 @@ type GeoGen struct {
 	preferredLocalization string
 
 	placeIndex  *bordertree.BorderTree[string]
-	regoinIndex *bordertree.BorderTree[string]
+	regionIndex *bordertree.BorderTree[string]
 
 	localizationCache *xsync.MapOf[string, string]
 
@@ -33,7 +33,7 @@ type GeoGen struct {
 func NewGeoGen(threads int, preferredLocalization string) (*GeoGen, error) {
 	f := &GeoGen{
 		placeIndex:        bordertree.NewBorderTree[string](),
-		regoinIndex:       bordertree.NewBorderTree[string](),
+		regionIndex:       bordertree.NewBorderTree[string](),
 		localizationCache: xsync.NewMapOf[string, string](),
 
 		threads:               threads,
@@ -51,7 +51,7 @@ func NewGeoGen(threads int, preferredLocalization string) (*GeoGen, error) {
 
 func (f *GeoGen) ResetCache() error {
 	f.placeIndex = bordertree.NewBorderTree[string]()
-	f.regoinIndex = bordertree.NewBorderTree[string]()
+	f.regionIndex = bordertree.NewBorderTree[string]()
 	f.localizationCache = xsync.NewMapOf[string, string]()
 
 	return nil

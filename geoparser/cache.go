@@ -8,10 +8,10 @@ import (
 )
 
 func (f *GeoGen) cacheLocalization(tags osm.Tags) {
-	name := tags.Find(nameKey)
+	officialName := tags.Find(nameKey)
 	localizedName := tags.Find(nameKey + ":" + f.preferredLocalization)
-	if name != "" && localizedName != "" && name != localizedName {
-		f.localizationCache.Store(name, localizedName)
+	if officialName != "" && localizedName != "" && officialName != localizedName {
+		f.localizationCache.Store(officialName, localizedName)
 	}
 }
 
@@ -86,6 +86,6 @@ func (f *GeoGen) cacheRelRegion(rel *osm.Relation) {
 		}
 
 		f.cacheLocalization(rel.Tags)
-		f.regoinIndex.InsertBorder(name, mpoly)
+		f.regionIndex.InsertBorder(name, mpoly)
 	}
 }

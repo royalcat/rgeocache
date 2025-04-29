@@ -12,7 +12,7 @@ func (f *GeoGen) calcPlace(point orb.Point) string {
 }
 
 func (f *GeoGen) calcRegion(point orb.Point) string {
-	out, _ := f.regoinIndex.QueryPoint(point)
+	out, _ := f.regionIndex.QueryPoint(point)
 	return out
 }
 

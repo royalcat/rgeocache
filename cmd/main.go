@@ -53,13 +53,6 @@ func main() {
 						Required:  true,
 						TakesFile: true,
 					},
-					&cli.StringFlag{
-						Name:        "cache",
-						Aliases:     []string{"c"},
-						Value:       memoryCache,
-						DefaultText: "memory",
-						Usage:       "cache type, can be 'memory', 'temp' or path to a directory",
-					},
 					&cli.StringSliceFlag{
 						Name:      "input",
 						Aliases:   []string{"i"},
@@ -100,24 +93,8 @@ func main() {
 
 }
 
-const memoryCache = "memory"
-
 func generate(ctx *cli.Context) error {
 	log := logrus.NewEntry(logrus.StandardLogger())
-	// cache := ctx.String("cache")
-	// if cache == "" {
-	// 	cache = memoryCache
-	// }
-	// if cache == "temp" {
-	// 	tempDir, err := os.MkdirTemp("", "rgeocache")
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	log.Infof("Using dir %s as cache", tempDir)
-	// 	defer os.RemoveAll(tempDir)
-	// 	cache = tempDir
-	// }
-	// log = log.WithField("cache", cache)
 
 	threads := ctx.Int("threads")
 	if threads == 0 {
