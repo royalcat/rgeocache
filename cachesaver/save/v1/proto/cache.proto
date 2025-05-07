@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package cachesaver.save.v1;
+
+option go_package = "./saveproto";
+
+message Cache {
+  repeated Point points = 1;
+  repeated uint32 street_ids = 2;
+  repeated uint32 city_ids = 3;
+  repeated uint32 region_ids = 4;
+}
+
+message Point {
+  double latitude = 1;
+  double longitude = 2;
+  string name = 3;
+  uint32 street = 4;
+  string house_number = 5;
+  uint32 city = 6;
+  uint32 region = 7;
+}

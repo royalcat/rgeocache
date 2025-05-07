@@ -13,22 +13,9 @@ import (
 )
 
 func (f *RGeoCoder) LoadFromPointsFile(file string) error {
-	dataFile, err := os.Open(file)
+	reader, err := openReader(file)
 	if err != nil {
-		return fmt.Errorf("can`t open file error: %s", err.Error())
-	}
-	defer dataFile.Close()
-
-	var reader io.Reader
-	if strings.HasSuffix(file, ".zst") {
-		dec, err := zstd.NewReader(dataFile, zstd.WithDecoderConcurrency(0))
-		if err != nil {
-			return err
-		}
-		defer dec.Close()
-		reader = dec
-	} else {
-		reader = dataFile
+		return fmt.Errorf("error opening points file: %s", err.Error())
 	}
 
 	var points []kdbush.Point[geomodel.Info]
@@ -40,4 +27,21 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 
 	f.tree = kdbush.NewBush(points, 256)
 	return nil
+}
+
+func openReader(name string) (io.ReadCloser, error) {
+	file, err := os.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("can`t open file error: %s", err.Error())
+	}
+
+	if strings.HasSuffix(name, ".zst") {
+		dec, err := zstd.NewReader(file, zstd.WithDecoderConcurrency(0))
+		if err != nil {
+			return nil, fmt.Errorf("can`t create zstd reader: %s", err.Error())
+		}
+		return dec.IOReadCloser(), nil
+	}
+
+	return file, nil
 }
