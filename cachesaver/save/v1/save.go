@@ -35,7 +35,7 @@ func Save(w io.Writer, cache Cache) error {
 	header := &saveproto.CacheHeader{
 		MetadataSize:     uint32(len(metadataBytes)),
 		StringsCacheSize: uint32(len(stringsCacheBytes)),
-		PointsBlobSize:   0, // We'll calculate this with the first blob
+		PointsBlobSizes:  []uint32{},
 	}
 
 	// Write points blobs
@@ -71,10 +71,7 @@ func Save(w io.Writer, cache Cache) error {
 
 		pointsBlobs = append(pointsBlobs, blobBytes)
 
-		// Set the points blob size in the header if this is the first chunk
-		if i == 0 {
-			header.PointsBlobSize = uint32(len(blobBytes))
-		}
+		header.PointsBlobSizes = append(header.PointsBlobSizes, uint32(len(blobBytes)))
 	}
 
 	// Serialize header

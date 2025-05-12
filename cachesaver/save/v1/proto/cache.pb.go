@@ -25,7 +25,7 @@ type CacheHeader struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	MetadataSize     uint32                 `protobuf:"varint,1,opt,name=metadata_size,json=metadataSize,proto3" json:"metadata_size,omitempty"`
 	StringsCacheSize uint32                 `protobuf:"varint,2,opt,name=strings_cache_size,json=stringsCacheSize,proto3" json:"strings_cache_size,omitempty"`
-	PointsBlobSize   uint32                 `protobuf:"varint,3,opt,name=points_blob_size,json=pointsBlobSize,proto3" json:"points_blob_size,omitempty"`
+	PointsBlobSizes  []uint32               `protobuf:"varint,3,rep,packed,name=points_blob_sizes,json=pointsBlobSizes,proto3" json:"points_blob_sizes,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -74,11 +74,11 @@ func (x *CacheHeader) GetStringsCacheSize() uint32 {
 	return 0
 }
 
-func (x *CacheHeader) GetPointsBlobSize() uint32 {
+func (x *CacheHeader) GetPointsBlobSizes() []uint32 {
 	if x != nil {
-		return x.PointsBlobSize
+		return x.PointsBlobSizes
 	}
-	return 0
+	return nil
 }
 
 type CacheMetadata struct {
@@ -333,11 +333,11 @@ var File_cache_proto protoreflect.FileDescriptor
 
 const file_cache_proto_rawDesc = "" +
 	"\n" +
-	"\vcache.proto\x12\x12cachesaver.save.v1\"\x8a\x01\n" +
+	"\vcache.proto\x12\x12cachesaver.save.v1\"\x8c\x01\n" +
 	"\vCacheHeader\x12#\n" +
 	"\rmetadata_size\x18\x01 \x01(\rR\fmetadataSize\x12,\n" +
-	"\x12strings_cache_size\x18\x02 \x01(\rR\x10stringsCacheSize\x12(\n" +
-	"\x10points_blob_size\x18\x03 \x01(\rR\x0epointsBlobSize\"L\n" +
+	"\x12strings_cache_size\x18\x02 \x01(\rR\x10stringsCacheSize\x12*\n" +
+	"\x11points_blob_sizes\x18\x03 \x03(\rR\x0fpointsBlobSizes\"L\n" +
 	"\rCacheMetadata\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12!\n" +
 	"\fdate_created\x18\x02 \x01(\tR\vdateCreated\"Z\n" +

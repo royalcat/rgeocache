@@ -7,7 +7,7 @@ option go_package = "./saveproto";
 message CacheHeader {
   uint32 metadata_size = 1;
   uint32 strings_cache_size = 2;
-  uint32 points_blob_size = 3;
+  repeated uint32 points_blob_sizes = 3;
 }
 
 message CacheMetadata {
