@@ -4,7 +4,7 @@
 // 	protoc        v6.30.2
 // source: cache.proto
 
-package proto
+package saveproto
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -21,30 +21,29 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type Cache struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Points        []*Point               `protobuf:"bytes,1,rep,name=points,proto3" json:"points,omitempty"`
-	StreetIds     []uint32               `protobuf:"varint,2,rep,packed,name=street_ids,json=streetIds,proto3" json:"street_ids,omitempty"`
-	CityIds       []uint32               `protobuf:"varint,3,rep,packed,name=city_ids,json=cityIds,proto3" json:"city_ids,omitempty"`
-	RegionIds     []uint32               `protobuf:"varint,4,rep,packed,name=region_ids,json=regionIds,proto3" json:"region_ids,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+type CacheHeader struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	MetadataSize     uint32                 `protobuf:"varint,1,opt,name=metadata_size,json=metadataSize,proto3" json:"metadata_size,omitempty"`
+	StringsCacheSize uint32                 `protobuf:"varint,2,opt,name=strings_cache_size,json=stringsCacheSize,proto3" json:"strings_cache_size,omitempty"`
+	PointsBlobSize   uint32                 `protobuf:"varint,3,opt,name=points_blob_size,json=pointsBlobSize,proto3" json:"points_blob_size,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
-func (x *Cache) Reset() {
-	*x = Cache{}
+func (x *CacheHeader) Reset() {
+	*x = CacheHeader{}
 	mi := &file_cache_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Cache) String() string {
+func (x *CacheHeader) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Cache) ProtoMessage() {}
+func (*CacheHeader) ProtoMessage() {}
 
-func (x *Cache) ProtoReflect() protoreflect.Message {
+func (x *CacheHeader) ProtoReflect() protoreflect.Message {
 	mi := &file_cache_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -56,35 +55,184 @@ func (x *Cache) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Cache.ProtoReflect.Descriptor instead.
-func (*Cache) Descriptor() ([]byte, []int) {
+// Deprecated: Use CacheHeader.ProtoReflect.Descriptor instead.
+func (*CacheHeader) Descriptor() ([]byte, []int) {
 	return file_cache_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Cache) GetPoints() []*Point {
+func (x *CacheHeader) GetMetadataSize() uint32 {
+	if x != nil {
+		return x.MetadataSize
+	}
+	return 0
+}
+
+func (x *CacheHeader) GetStringsCacheSize() uint32 {
+	if x != nil {
+		return x.StringsCacheSize
+	}
+	return 0
+}
+
+func (x *CacheHeader) GetPointsBlobSize() uint32 {
+	if x != nil {
+		return x.PointsBlobSize
+	}
+	return 0
+}
+
+type CacheMetadata struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	DateCreated   string                 `protobuf:"bytes,2,opt,name=date_created,json=dateCreated,proto3" json:"date_created,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CacheMetadata) Reset() {
+	*x = CacheMetadata{}
+	mi := &file_cache_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CacheMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CacheMetadata) ProtoMessage() {}
+
+func (x *CacheMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CacheMetadata.ProtoReflect.Descriptor instead.
+func (*CacheMetadata) Descriptor() ([]byte, []int) {
+	return file_cache_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *CacheMetadata) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *CacheMetadata) GetDateCreated() string {
+	if x != nil {
+		return x.DateCreated
+	}
+	return ""
+}
+
+type StringsCache struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Streets       []string               `protobuf:"bytes,2,rep,name=streets,proto3" json:"streets,omitempty"`
+	Cities        []string               `protobuf:"bytes,3,rep,name=cities,proto3" json:"cities,omitempty"`
+	Regions       []string               `protobuf:"bytes,4,rep,name=regions,proto3" json:"regions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StringsCache) Reset() {
+	*x = StringsCache{}
+	mi := &file_cache_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StringsCache) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StringsCache) ProtoMessage() {}
+
+func (x *StringsCache) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StringsCache.ProtoReflect.Descriptor instead.
+func (*StringsCache) Descriptor() ([]byte, []int) {
+	return file_cache_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *StringsCache) GetStreets() []string {
+	if x != nil {
+		return x.Streets
+	}
+	return nil
+}
+
+func (x *StringsCache) GetCities() []string {
+	if x != nil {
+		return x.Cities
+	}
+	return nil
+}
+
+func (x *StringsCache) GetRegions() []string {
+	if x != nil {
+		return x.Regions
+	}
+	return nil
+}
+
+type PointsBlob struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Points        []*Point               `protobuf:"bytes,1,rep,name=points,proto3" json:"points,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PointsBlob) Reset() {
+	*x = PointsBlob{}
+	mi := &file_cache_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PointsBlob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PointsBlob) ProtoMessage() {}
+
+func (x *PointsBlob) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PointsBlob.ProtoReflect.Descriptor instead.
+func (*PointsBlob) Descriptor() ([]byte, []int) {
+	return file_cache_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *PointsBlob) GetPoints() []*Point {
 	if x != nil {
 		return x.Points
-	}
-	return nil
-}
-
-func (x *Cache) GetStreetIds() []uint32 {
-	if x != nil {
-		return x.StreetIds
-	}
-	return nil
-}
-
-func (x *Cache) GetCityIds() []uint32 {
-	if x != nil {
-		return x.CityIds
-	}
-	return nil
-}
-
-func (x *Cache) GetRegionIds() []uint32 {
-	if x != nil {
-		return x.RegionIds
 	}
 	return nil
 }
@@ -104,7 +252,7 @@ type Point struct {
 
 func (x *Point) Reset() {
 	*x = Point{}
-	mi := &file_cache_proto_msgTypes[1]
+	mi := &file_cache_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -116,7 +264,7 @@ func (x *Point) String() string {
 func (*Point) ProtoMessage() {}
 
 func (x *Point) ProtoReflect() protoreflect.Message {
-	mi := &file_cache_proto_msgTypes[1]
+	mi := &file_cache_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -129,7 +277,7 @@ func (x *Point) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Point.ProtoReflect.Descriptor instead.
 func (*Point) Descriptor() ([]byte, []int) {
-	return file_cache_proto_rawDescGZIP(), []int{1}
+	return file_cache_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Point) GetLatitude() float64 {
@@ -185,14 +333,21 @@ var File_cache_proto protoreflect.FileDescriptor
 
 const file_cache_proto_rawDesc = "" +
 	"\n" +
-	"\vcache.proto\x12\x12cachesaver.save.v1\"\x93\x01\n" +
-	"\x05Cache\x121\n" +
-	"\x06points\x18\x01 \x03(\v2\x19.cachesaver.save.v1.PointR\x06points\x12\x1d\n" +
+	"\vcache.proto\x12\x12cachesaver.save.v1\"\x8a\x01\n" +
+	"\vCacheHeader\x12#\n" +
+	"\rmetadata_size\x18\x01 \x01(\rR\fmetadataSize\x12,\n" +
+	"\x12strings_cache_size\x18\x02 \x01(\rR\x10stringsCacheSize\x12(\n" +
+	"\x10points_blob_size\x18\x03 \x01(\rR\x0epointsBlobSize\"L\n" +
+	"\rCacheMetadata\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\x12!\n" +
+	"\fdate_created\x18\x02 \x01(\tR\vdateCreated\"Z\n" +
+	"\fStringsCache\x12\x18\n" +
+	"\astreets\x18\x02 \x03(\tR\astreets\x12\x16\n" +
+	"\x06cities\x18\x03 \x03(\tR\x06cities\x12\x18\n" +
+	"\aregions\x18\x04 \x03(\tR\aregions\"?\n" +
 	"\n" +
-	"street_ids\x18\x02 \x03(\rR\tstreetIds\x12\x19\n" +
-	"\bcity_ids\x18\x03 \x03(\rR\acityIds\x12\x1d\n" +
-	"\n" +
-	"region_ids\x18\x04 \x03(\rR\tregionIds\"\xbc\x01\n" +
+	"PointsBlob\x121\n" +
+	"\x06points\x18\x01 \x03(\v2\x19.cachesaver.save.v1.PointR\x06points\"\xbc\x01\n" +
 	"\x05Point\x12\x1a\n" +
 	"\blatitude\x18\x01 \x01(\x01R\blatitude\x12\x1c\n" +
 	"\tlongitude\x18\x02 \x01(\x01R\tlongitude\x12\x12\n" +
@@ -200,8 +355,7 @@ const file_cache_proto_rawDesc = "" +
 	"\x06street\x18\x04 \x01(\rR\x06street\x12!\n" +
 	"\fhouse_number\x18\x05 \x01(\tR\vhouseNumber\x12\x12\n" +
 	"\x04city\x18\x06 \x01(\rR\x04city\x12\x16\n" +
-	"\x06region\x18\a \x01(\rR\x06regionB\n" +
-	"Z\b./savev1b\x06proto3"
+	"\x06region\x18\a \x01(\rR\x06regionB\rZ\v./saveprotob\x06proto3"
 
 var (
 	file_cache_proto_rawDescOnce sync.Once
@@ -215,13 +369,16 @@ func file_cache_proto_rawDescGZIP() []byte {
 	return file_cache_proto_rawDescData
 }
 
-var file_cache_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_cache_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_cache_proto_goTypes = []any{
-	(*Cache)(nil), // 0: cachesaver.save.v1.Cache
-	(*Point)(nil), // 1: cachesaver.save.v1.Point
+	(*CacheHeader)(nil),   // 0: cachesaver.save.v1.CacheHeader
+	(*CacheMetadata)(nil), // 1: cachesaver.save.v1.CacheMetadata
+	(*StringsCache)(nil),  // 2: cachesaver.save.v1.StringsCache
+	(*PointsBlob)(nil),    // 3: cachesaver.save.v1.PointsBlob
+	(*Point)(nil),         // 4: cachesaver.save.v1.Point
 }
 var file_cache_proto_depIdxs = []int32{
-	1, // 0: cachesaver.save.v1.Cache.points:type_name -> cachesaver.save.v1.Point
+	4, // 0: cachesaver.save.v1.PointsBlob.points:type_name -> cachesaver.save.v1.Point
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -240,7 +397,7 @@ func file_cache_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cache_proto_rawDesc), len(file_cache_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
