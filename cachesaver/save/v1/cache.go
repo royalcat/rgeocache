@@ -2,9 +2,6 @@
 package savev1
 
 import (
-	"encoding/gob"
-	"io"
-
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
@@ -59,13 +56,4 @@ func CacheFromPoints(input []kdbush.Point[geomodel.Info]) Cache {
 
 		Points: points,
 	}
-}
-
-func Load(r io.Reader) (Cache, error) {
-	var cache Cache
-	err := gob.NewDecoder(r).Decode(&cache)
-	if err != nil {
-		return Cache{}, err
-	}
-	return cache, nil
 }

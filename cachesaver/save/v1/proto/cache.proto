@@ -4,12 +4,24 @@ package cachesaver.save.v1;
 
 option go_package = "./saveproto";
 
-message Cache {
-  repeated Point points = 1;
-  repeated uint32 street_ids = 2;
-  repeated uint32 city_ids = 3;
-  repeated uint32 region_ids = 4;
+message CacheHeader {
+  uint32 metadata_size = 1;
+  uint32 strings_cache_size = 2;
+  uint32 points_blob_size = 3;
 }
+
+message CacheMetadata {
+  uint32 version = 1;
+  string date_created = 2;
+}
+
+message StringsCache {
+  repeated string streets = 2;
+  repeated string cities = 3;
+  repeated string regions = 4;
+}
+
+message PointsBlob { repeated Point points = 1; }
 
 message Point {
   double latitude = 1;
