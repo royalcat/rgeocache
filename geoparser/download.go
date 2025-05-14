@@ -2,9 +2,9 @@ package geoparser
 
 import (
 	"context"
-	"encoding/gob"
 	"os"
 
+	"github.com/royalcat/rgeocache/cachesaver"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
@@ -22,9 +22,6 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		return err
 	}
 
-	// serialize the data
-	dataEncoder := gob.NewEncoder(dataFile)
-
 	f.parsedPointsMu.Lock()
 	defer f.parsedPointsMu.Unlock()
 
@@ -39,10 +36,10 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		})
 	}
 
-	err = dataEncoder.Encode(points)
-	if err != nil {
+	if err := cachesaver.Save(points, dataFile); err != nil {
 		return err
 	}
+
 	return dataFile.Close()
 }
 
