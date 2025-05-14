@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package cachesaver.save.v1;
+
+option go_package = "./saveproto";
+
+message CacheHeader {
+  uint32 metadata_size = 1;
+  uint32 strings_cache_size = 2;
+  repeated uint32 points_blob_sizes = 3;
+}
+
+message CacheMetadata {
+  uint32 version = 1;
+  string date_created = 2;
+}
+
+message StringsCache {
+  repeated string streets = 2;
+  repeated string cities = 3;
+  repeated string regions = 4;
+}
+
+message PointsBlob { repeated Point points = 1; }
+
+message Point {
+  double latitude = 1;
+  double longitude = 2;
+  string name = 3;
+  uint32 street = 4;
+  string house_number = 5;
+  uint32 city = 6;
+  uint32 region = 7;
+}
