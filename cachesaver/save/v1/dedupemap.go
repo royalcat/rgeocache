@@ -5,6 +5,13 @@ type uniqueMap struct {
 	i int
 }
 
+func newUniqueMap() *uniqueMap {
+	return &uniqueMap{
+		m: make(map[string]int),
+		i: 0,
+	}
+}
+
 func (uq *uniqueMap) Add(val string) int {
 	i, ok := uq.m[val]
 	if !ok {

@@ -1,28 +1,26 @@
 package geocoder
 
 import (
-	"encoding/gob"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/cachesaver"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
 func (f *RGeoCoder) LoadFromPointsFile(file string) error {
+
 	reader, err := openReader(file)
 	if err != nil {
 		return fmt.Errorf("error opening points file: %s", err.Error())
 	}
 
-	var points []kdbush.Point[geomodel.Info]
-	dataEncoder := gob.NewDecoder(reader)
-	err = dataEncoder.Decode(&points)
+	points, err := cachesaver.LoadFromReader(reader)
 	if err != nil {
-		return fmt.Errorf("error decoding points file: %s", err.Error())
+		return fmt.Errorf("error loading points file: %s", err.Error())
 	}
 
 	f.tree = kdbush.NewBush(points, 256)

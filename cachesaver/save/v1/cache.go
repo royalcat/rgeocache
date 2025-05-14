@@ -6,7 +6,7 @@ import (
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
-const COMPATIBILITY_LEVEL = 2
+const COMPATIBILITY_LEVEL uint32 = 1
 
 type Point struct {
 	Lat, Lon float64
@@ -29,9 +29,9 @@ type Cache struct {
 
 func CacheFromPoints(input []kdbush.Point[geomodel.Info]) Cache {
 	points := []Point{}
-	streets := uniqueMap{}
-	cities := uniqueMap{}
-	regions := uniqueMap{}
+	streets := newUniqueMap()
+	cities := newUniqueMap()
+	regions := newUniqueMap()
 
 	for _, p := range input {
 		streetIndex := streets.Add(p.Data.Street)
