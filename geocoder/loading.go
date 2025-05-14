@@ -8,6 +8,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/royalcat/rgeocache/cachesaver"
+	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
