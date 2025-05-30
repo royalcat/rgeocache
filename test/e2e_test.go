@@ -19,7 +19,7 @@ func TestLondon(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const pointsFile = "gb_points.gob"
+	const pointsFile = "gb_points.rgc"
 
 	t.Log("Parsing OSM file")
 
