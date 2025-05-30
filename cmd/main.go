@@ -156,18 +156,18 @@ func generate(ctx *cli.Context) error {
 	}
 
 	saveFile := ctx.String("points")
-	if !strings.HasSuffix(saveFile, ".gob") {
-		saveFile = saveFile + ".gob"
+	if !strings.HasSuffix(saveFile, ".rgc") {
+		saveFile = saveFile + ".rgc"
 	}
 
-	fmt.Printf("Generataion complete\n")
+	fmt.Printf("Generation complete\n")
 	fmt.Printf("Saving to file: %s\n", saveFile)
 	err = geoGen.SavePointsToFile(saveFile)
 	if err != nil {
 		return fmt.Errorf("failed to save points to file: %s", err.Error())
 	}
 
-	fmt.Printf("Complete")
+	fmt.Printf("Complete\n")
 
 	return nil
 }

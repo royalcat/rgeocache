@@ -85,6 +85,7 @@ type CacheMetadata struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Version       uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
 	DateCreated   string                 `protobuf:"bytes,2,opt,name=date_created,json=dateCreated,proto3" json:"date_created,omitempty"`
+	Locale        string                 `protobuf:"bytes,3,opt,name=locale,proto3" json:"locale,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -129,6 +130,13 @@ func (x *CacheMetadata) GetVersion() uint32 {
 func (x *CacheMetadata) GetDateCreated() string {
 	if x != nil {
 		return x.DateCreated
+	}
+	return ""
+}
+
+func (x *CacheMetadata) GetLocale() string {
+	if x != nil {
+		return x.Locale
 	}
 	return ""
 }
@@ -337,10 +345,11 @@ const file_cache_proto_rawDesc = "" +
 	"\vCacheHeader\x12#\n" +
 	"\rmetadata_size\x18\x01 \x01(\rR\fmetadataSize\x12,\n" +
 	"\x12strings_cache_size\x18\x02 \x01(\rR\x10stringsCacheSize\x12*\n" +
-	"\x11points_blob_sizes\x18\x03 \x03(\rR\x0fpointsBlobSizes\"L\n" +
+	"\x11points_blob_sizes\x18\x03 \x03(\rR\x0fpointsBlobSizes\"d\n" +
 	"\rCacheMetadata\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12!\n" +
-	"\fdate_created\x18\x02 \x01(\tR\vdateCreated\"Z\n" +
+	"\fdate_created\x18\x02 \x01(\tR\vdateCreated\x12\x16\n" +
+	"\x06locale\x18\x03 \x01(\tR\x06locale\"Z\n" +
 	"\fStringsCache\x12\x18\n" +
 	"\astreets\x18\x02 \x03(\tR\astreets\x12\x16\n" +
 	"\x06cities\x18\x03 \x03(\tR\x06cities\x12\x18\n" +
