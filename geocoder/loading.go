@@ -18,8 +18,27 @@ func NewRGeoCoder() *RGeoCoder {
 	}
 }
 
-func (f *RGeoCoder) LoadFromPointsFile(file string) error {
+func LoadGeoCoderFromReader(r io.Reader) (*RGeoCoder, error) {
+	points, err := cachesaver.LoadFromReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("error loading points: %s", err.Error())
+	}
 
+	tree := kdbush.NewBush(points, 256)
+	return &RGeoCoder{tree: tree}, nil
+}
+
+func LoadGeoCoderFromFile(file string) (*RGeoCoder, error) {
+	reader, err := openReader(file)
+	if err != nil {
+		return nil, fmt.Errorf("error opening points file: %s", err.Error())
+	}
+
+	return LoadGeoCoderFromReader(reader)
+}
+
+// Deprecated: Use LoadGeoCoderFromFile instead.
+func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 	reader, err := openReader(file)
 	if err != nil {
 		return fmt.Errorf("error opening points file: %s", err.Error())
@@ -27,7 +46,7 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 
 	points, err := cachesaver.LoadFromReader(reader)
 	if err != nil {
-		return fmt.Errorf("error loading points file: %s", err.Error())
+		return fmt.Errorf("error loading points: %s", err.Error())
 	}
 
 	f.tree = kdbush.NewBush(points, 256)
@@ -41,10 +60,11 @@ func openReader(name string) (io.ReadCloser, error) {
 	}
 
 	if strings.HasSuffix(name, ".zst") {
-		dec, err := zstd.NewReader(file, zstd.WithDecoderConcurrency(0))
+		dec, err := zstd.NewReader(file)
 		if err != nil {
 			return nil, fmt.Errorf("can`t create zstd reader: %s", err.Error())
 		}
+
 		return dec.IOReadCloser(), nil
 	}
 

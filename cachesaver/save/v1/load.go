@@ -79,7 +79,7 @@ func mapPoint(p *saveproto.Point) Point {
 
 func readToProto(r io.Reader, size uint32, val proto.Message) error {
 	buf := make([]byte, size)
-	n, err := r.Read(buf)
+	n, err := io.ReadAtLeast(r, buf, int(size))
 	if err != nil {
 		return fmt.Errorf("failed to read %d bytes: %w", size, err)
 	}
