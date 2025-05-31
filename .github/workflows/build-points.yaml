@@ -21,15 +21,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: "post-cis_ru"
+            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia,asia/armenia"
+            locale: "ru"
           - name: "russia"
             maps: "russia"
             locale: "offical"
           - name: "post-cis"
             maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia,asia/armenia"
             locale: "offical"
-          - name: "post-cis_ru"
-            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia,asia/armenia"
-            locale: "ru"
 
     env:
       MAPS: ${{ matrix.maps }}
