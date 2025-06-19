@@ -4,29 +4,55 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/fasthttp/router"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/sirupsen/logrus"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/metric"
+
+	meticsdk "go.opentelemetry.io/otel/sdk/metric"
 )
 
 const MaxBodySize = 32 * 1000 * 1000 // 32MB
 
+var meter = otel.Meter("github.com/royalcat/rgeocache/server")
+
 func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder) error {
+	if err := setupTelemetry(); err != nil {
+		return fmt.Errorf("failed to initialize otel metrics: %w", err)
+	}
+
 	log := logrus.New()
 
+	metricHttpAdressCallCount, err := meter.Int64Counter("http_address_call_total")
+	if err != nil {
+		return err
+	}
+	metricHttpAddressMultiCallCount, err := meter.Int64Counter("http_address_multi_call_total")
+	if err != nil {
+		return err
+	}
+	metricHttpAdressEncoded, err := meter.Int64Counter("address_encoded_total")
+	if err != nil {
+		return err
+	}
 	s := &server{
 		rgeo: rgeo,
+
+		metricHttpAddressCallCount:      metricHttpAdressCallCount,
+		metricHttpAddressMultiCallCount: metricHttpAddressMultiCallCount,
+		metricAddressesEncoded:          metricHttpAdressEncoded,
 	}
 
 	r := router.New()
@@ -57,8 +83,23 @@ func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder) error {
 	return server.ShutdownWithContext(shutdownCtx)
 }
 
+func setupTelemetry() error {
+	promExporter, err := prometheus.New(prometheus.WithNamespace("rgeocache"))
+	if err != nil {
+		return fmt.Errorf("failed to initialize prometheus exporter: %w", err)
+	}
+	metricProvider := meticsdk.NewMeterProvider(meticsdk.WithReader(promExporter))
+	otel.SetMeterProvider(metricProvider)
+
+	return nil
+}
+
 type server struct {
 	rgeo *geocoder.RGeoCoder
+
+	metricHttpAddressCallCount      metric.Int64Counter
+	metricHttpAddressMultiCallCount metric.Int64Counter
+	metricAddressesEncoded          metric.Int64Counter
 }
 
 var reqPointsPool = sync.Pool{
@@ -74,7 +115,8 @@ var bufPool = sync.Pool{
 }
 
 func (s *server) RGeoCodeHandler(ctx *fasthttp.RequestCtx) {
-	metricHttpAdressCallCount.Inc()
+	s.metricHttpAddressCallCount.Add(ctx, 1)
+	s.metricAddressesEncoded.Add(ctx, 1)
 
 	latS := ctx.UserValue("lat").(string)
 	lonS := ctx.UserValue("lon").(string)
@@ -109,7 +151,7 @@ func (s *server) RGeoCodeHandler(ctx *fasthttp.RequestCtx) {
 }
 
 func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
-	metricHttpMultiAdressCallCount.Inc()
+	s.metricHttpAddressMultiCallCount.Add(ctx, 1)
 
 	req := reqPointsPool.Get().([][2]float64) // lat, lon
 	req = req[:0]
@@ -121,6 +163,8 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 		ctx.Response.SetBodyString("failed to parse request: " + err.Error())
 		return
 	}
+
+	s.metricAddressesEncoded.Add(ctx, int64(len(req)))
 
 	res := []geomodel.Info{}
 	for _, p := range req {
@@ -138,22 +182,3 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 	ctx.Response.SetBody(data)
 	return
 }
-
-var (
-	metricHttpAdressCallCount = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: "rgeocode",
-			Subsystem: "http_address",
-			Name:      "call_count_total",
-			Help:      "count of address interactions",
-		},
-	)
-	metricHttpMultiAdressCallCount = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: "rgeocode",
-			Subsystem: "http_multi_address",
-			Name:      "call_count_total",
-			Help:      "count of address interactions",
-		},
-	)
-)
