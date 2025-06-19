@@ -18,10 +18,7 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
-
-	meticsdk "go.opentelemetry.io/otel/sdk/metric"
 )
 
 const MaxBodySize = 32 * 1000 * 1000 // 32MB
@@ -29,7 +26,7 @@ const MaxBodySize = 32 * 1000 * 1000 // 32MB
 var meter = otel.Meter("github.com/royalcat/rgeocache/server")
 
 func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder) error {
-	if err := setupTelemetry(); err != nil {
+	if err := setupTelemetry(ctx); err != nil {
 		return fmt.Errorf("failed to initialize otel metrics: %w", err)
 	}
 
@@ -81,17 +78,6 @@ func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	return server.ShutdownWithContext(shutdownCtx)
-}
-
-func setupTelemetry() error {
-	promExporter, err := prometheus.New(prometheus.WithNamespace("rgeocache"))
-	if err != nil {
-		return fmt.Errorf("failed to initialize prometheus exporter: %w", err)
-	}
-	metricProvider := meticsdk.NewMeterProvider(meticsdk.WithReader(promExporter))
-	otel.SetMeterProvider(metricProvider)
-
-	return nil
 }
 
 type server struct {
