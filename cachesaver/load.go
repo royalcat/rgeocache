@@ -10,6 +10,7 @@ import (
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
+	"github.com/sirupsen/logrus"
 )
 
 func LoadFromReader(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
@@ -21,6 +22,7 @@ func LoadFromReader(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
 
 	// If the magic bytes are not equal to the expected value, we assume it's a legacy format
 	if string(magic) != string(MAGIC_BYTES) {
+		logrus.Info("Magic bytes not detected, trying legacy format")
 		return legacyLoader(io.MultiReader(bytes.NewReader(magic), reader))
 	}
 
@@ -32,6 +34,7 @@ func LoadFromReader(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
 
 	switch compatibilityLevel {
 	case savev1.COMPATIBILITY_LEVEL:
+		logrus.Info("Loading v1 cache format")
 		return loadV1Cache(reader)
 	}
 

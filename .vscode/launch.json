@@ -39,7 +39,7 @@
         "--points",
         // "${workspaceFolder}/cache_build/points_data.gob",
         // "points_data.gob",
-        "post-cis_ru_points.gob"
+        "post-cis_ru_points.rgc.zst"
       ]
     }
   ]
