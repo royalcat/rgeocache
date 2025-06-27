@@ -132,8 +132,6 @@ func (s *server) RGeoCodeHandler(ctx *fasthttp.RequestCtx) {
 
 	ctx.Response.SetStatusCode(http.StatusOK)
 	ctx.Response.SetBody(out)
-
-	return
 }
 
 func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
@@ -152,13 +150,13 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 
 	s.metricAddressesEncoded.Add(ctx, int64(len(req)))
 
-	res := []geomodel.Info{}
+	res := geomodel.InfoList{}
 	for _, p := range req {
 		info, _ := s.rgeo.Find(p[0], p[1])
 		res = append(res, info.Info)
 	}
 
-	data, err := json.Marshal(res)
+	data, err := res.MarshalJSON()
 	if err != nil {
 		ctx.Response.SetStatusCode(http.StatusInternalServerError)
 		return
@@ -166,5 +164,4 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 
 	ctx.Response.SetStatusCode(http.StatusOK)
 	ctx.Response.SetBody(data)
-	return
 }

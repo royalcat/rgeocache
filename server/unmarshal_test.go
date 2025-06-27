@@ -63,7 +63,7 @@ func BenchmarkTestUnmarshalPoints(b *testing.B) {
 
 	b.Run("json", func(b *testing.B) {
 		var res [][2]float64
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			err := json.Unmarshal(data, &res)
 			if err != nil {
 				b.Fatalf("unexpected error: %s", err.Error())
@@ -73,7 +73,7 @@ func BenchmarkTestUnmarshalPoints(b *testing.B) {
 
 	b.Run("fast", func(b *testing.B) {
 		var res [][2]float64
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			err := unmarshalPointsListFast(data, &res)
 			if err != nil {
 				b.Fatalf("unexpected error: %s", err.Error())
