@@ -1,9 +1,10 @@
+//go:generate go tool easyjson $GOFILE
 package geomodel
 
-import (
-	_ "unsafe"
-)
+//easyjson:json
+type InfoList []Info
 
+//easyjson:json
 type Info struct {
 	Name        string `json:"name"`
 	Street      string `json:"street"`

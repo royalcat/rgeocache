@@ -1,5 +1,5 @@
 #build container
-FROM --platform=$BUILDPLATFORM golang:1.23 AS build
+FROM --platform=$BUILDPLATFORM golang:1.24 AS build
 WORKDIR /app
 
 COPY go.mod ./
@@ -17,7 +17,7 @@ RUN --mount=type=cache,mode=0777,target=/go/pkg/mod CGO_ENABLED=0 GOOS=$TARGETOS
 FROM scratch
 
 COPY --from=build /rgeocache /app/rgeocache
-ENV PATH="/app:${PATH}" 
+ENV PATH="/app:${PATH}"
 
 VOLUME [ "/data" ]
 ENTRYPOINT [ "rgeocache", "serve", "--points", "/data/points-data.gob" ]

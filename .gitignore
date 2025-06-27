@@ -7,3 +7,5 @@ data
 cache_build
 go.work
 go.work.sum
+*.out
+*.test

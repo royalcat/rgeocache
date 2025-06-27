@@ -7,45 +7,60 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+func must[T any](val T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
+
 func BenchmarkHandlers(b *testing.B) {
+	rgeo, err := geocoder.LoadGeoCoderFromFile("../test/gb_points.rgc")
+	if err != nil {
+		b.Fatalf("Failed to load geocoder: %v", err)
+	}
+
 	s := &server{
-		rgeo: geocoder.NewRGeoCoder(),
+		rgeo:                            rgeo,
+		metricHttpAddressCallCount:      must(meter.Int64Counter("http_address_call_total")),
+		metricHttpAddressMultiCallCount: must(meter.Int64Counter("http_address_multi_call_total")),
+		metricAddressesEncoded:          must(meter.Int64Counter("address_encoded_total")),
 	}
 
 	b.ResetTimer()
 
 	b.Run("RGeoMultipleCodeHandler-10", func(b *testing.B) {
-		points := genereatePoints(10)
+		points := generatePoints(10)
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			ctx := getRequestCtx(points)
 			s.RGeoMultipleCodeHandler(ctx)
 		}
 	})
 
 	b.Run("RGeoMultipleCodeHandler-1000", func(b *testing.B) {
-		points := genereatePoints(1000)
+		points := generatePoints(1000)
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			ctx := getRequestCtx(points)
 			s.RGeoMultipleCodeHandler(ctx)
 		}
 	})
 
 	b.Run("RGeoMultipleCodeHandler-10_000", func(b *testing.B) {
-		points := genereatePoints(10_000)
+		points := generatePoints(10_000)
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			ctx := getRequestCtx(points)
 			s.RGeoMultipleCodeHandler(ctx)
 		}
 	})
 }
 
-func genereatePoints(n int) string {
+func generatePoints(n int) string {
 	points := "["
 	for i := range n {
 		points += "[1.0, 1.0]"

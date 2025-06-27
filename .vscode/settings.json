@@ -1,3 +1,16 @@
 {
-    "go.testTimeout": "6000s"
+    "go.testTimeout": "6000s",
+    "go.enableCodeLens": {
+        "runtest": true
+    },
+    "gopls": {
+        "ui.codelenses": {
+            "generate": true,
+            "gc_details": true
+        },
+        "ui.diagnostic.annotations": {
+            "escape": true
+        },
+        "ui.semanticTokens": true
+    },
 }
