@@ -16,7 +16,7 @@ func (f *GeoGen) makeLineString(nodes osm.WayNodes) orb.LineString {
 		} else {
 			p, err := f.osmdb.GetNode(node.ID)
 			if err != nil {
-				f.log.WithError(err).Error("failed to get node")
+				f.log.Error("failed to get node", "id", node.ID, "error", err.Error())
 				continue
 			}
 

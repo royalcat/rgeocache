@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -15,7 +17,6 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 	_ "go.uber.org/automaxprocs"
 )
@@ -88,19 +89,19 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		logrus.Fatal(err)
+		log.Fatal(err)
 	}
 
 }
 
 func generate(ctx *cli.Context) error {
-	log := logrus.NewEntry(logrus.StandardLogger())
+	log := slog.Default()
 
 	threads := ctx.Int("threads")
 	if threads == 0 {
 		threads = runtime.GOMAXPROCS(0)
 	}
-	log = log.WithField("threads", threads)
+	log = log.With("threads", threads)
 
 	preferredLocalization := ctx.String("preferred-localization")
 	if preferredLocalization == "official" {
@@ -109,8 +110,11 @@ func generate(ctx *cli.Context) error {
 
 	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
 		go func() {
-			logrus.Info("Starting pprof server")
-			logrus.Error(http.ListenAndServe(pprofListen, nil))
+			log.Info("Starting pprof server")
+			err := http.ListenAndServe(pprofListen, nil)
+			if err != nil {
+				log.Error("Error starting pprof server", "error", err)
+			}
 		}()
 	}
 
@@ -175,17 +179,15 @@ func generate(ctx *cli.Context) error {
 func writeHeapProfile(name string) error {
 	f, err := os.Create(name + ".heap.prof")
 	if err != nil {
-		logrus.Fatal(err)
+		log.Fatal(err)
 	}
 	defer f.Close()
 	return pprof.WriteHeapProfile(f)
 }
 
 func serve(ctx *cli.Context) error {
-	log := logrus.New()
-	log.Info("Initing geocoder")
-	rgeo := &geocoder.RGeoCoder{}
-	err := rgeo.LoadFromPointsFile(ctx.String("points"))
+	slog.Info("Initing geocoder")
+	rgeo, err := geocoder.LoadGeoCoderFromFile(ctx.String("points"))
 	if err != nil {
 		return err
 	}

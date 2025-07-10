@@ -2,6 +2,7 @@ package geoparser
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"sync"
 
@@ -9,8 +10,6 @@ import (
 	"github.com/royalcat/rgeocache/bordertree"
 	"github.com/royalcat/rgeocache/osmpbfdb"
 	"golang.org/x/exp/mmap"
-
-	"github.com/sirupsen/logrus"
 )
 
 type GeoGen struct {
@@ -27,7 +26,7 @@ type GeoGen struct {
 	parsedPointsMu sync.Mutex
 	parsedPoints   []geoPoint
 
-	log *logrus.Entry
+	log *slog.Logger
 }
 
 func NewGeoGen(threads int, preferredLocalization string) (*GeoGen, error) {
@@ -41,7 +40,7 @@ func NewGeoGen(threads int, preferredLocalization string) (*GeoGen, error) {
 
 		parsedPoints: []geoPoint{},
 
-		log: logrus.NewEntry(logrus.StandardLogger()),
+		log: slog.Default(),
 	}
 
 	err := f.ResetCache()

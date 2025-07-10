@@ -1,6 +1,7 @@
 package geoparser
 
 import (
+	"log/slog"
 	"strings"
 
 	"github.com/royalcat/rgeocache/geomodel"
@@ -8,7 +9,6 @@ import (
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/planar"
 	"github.com/paulmach/osm"
-	"github.com/sirupsen/logrus"
 )
 
 func (f *GeoGen) parseObject(o osm.Object) {
@@ -65,7 +65,7 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 }
 
 func (f *GeoGen) parseWay(way *osm.Way) (geoPoint, bool) {
-	log := logrus.WithField("id", way.ID)
+	log := f.log.With("id", way.ID)
 
 	street := way.Tags.Find("addr:street")
 	housenumber := way.Tags.Find("addr:housenumber")
@@ -120,11 +120,11 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 	if tags["type"] == "multipolygon" {
 		mpoly, err := f.buildPolygon(rel.Members)
 		if err != nil {
-			logrus.Errorf("Error building polygon: %s", err.Error())
+			slog.Error("Error building polygon", "error", err.Error())
 			return points
 		}
 		if mpoly == nil && len(mpoly) == 0 {
-			logrus.Errorf("Empty polygon: %s", tags["name"])
+			slog.Error("Empty polygon", "name", tags["name"])
 			return points
 		}
 
@@ -157,7 +157,7 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 
 		way, err := f.osmdb.GetWay(osm.WayID(m.Ref))
 		if err != nil {
-			f.log.Errorf("Error getting way id %d: %s", m.Ref, err.Error())
+			f.log.Error("Error getting way", "id", m.Ref, "error", err.Error())
 			continue
 		}
 

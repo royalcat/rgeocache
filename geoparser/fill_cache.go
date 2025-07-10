@@ -14,7 +14,7 @@ import (
 )
 
 func (f *GeoGen) fillRelCache(ctx context.Context, file *os.File) error {
-	log := f.log.WithField("input", file.Name())
+	log := f.log.With("input", file.Name())
 	_, err := file.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
