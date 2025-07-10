@@ -2,11 +2,11 @@ package geoparser
 
 import (
 	"encoding/binary"
+	"log/slog"
 	"math"
 
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkb"
-	"github.com/sirupsen/logrus"
 )
 
 type cachePlace struct {
@@ -31,7 +31,7 @@ type cacheWay orb.LineString
 func (p cacheWay) ToBytes() []byte {
 	data, err := wkb.Marshal(orb.LineString(p))
 	if err != nil {
-		logrus.Errorf("error marshalling line string: %v with err: %s", p, err.Error())
+		slog.Error("error marshalling line string", "string", p, "error", err.Error())
 	}
 
 	return data
@@ -40,7 +40,7 @@ func (p cacheWay) ToBytes() []byte {
 func (p cacheWay) FromBytes(b []byte) cacheWay {
 	data, err := wkb.Unmarshal(b)
 	if err != nil {
-		logrus.Errorf("error unmarshalling line string: %v with err: %s", p, err.Error())
+		slog.Error("error unmarshalling line string", "string", p, "error", err.Error())
 	}
 	way, _ := data.(orb.LineString)
 	return cacheWay(way)

@@ -4,7 +4,7 @@ import (
 	"slices"
 
 	"github.com/paulmach/osm"
-	"github.com/sirupsen/logrus"
+	"golang.org/x/exp/slog"
 )
 
 func (f *GeoGen) cacheLocalization(tags osm.Tags) {
@@ -36,19 +36,19 @@ func (f *GeoGen) cacheRel(rel *osm.Relation) {
 func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 	name := rel.Tags.Find(nameKey)
 
-	log := logrus.WithField("id", rel.ID).WithField("name", name)
+	log := slog.With("id", rel.ID).With("name", name)
 
 	tags := rel.TagMap()
 	if tags["type"] == "multipolygon" || tags["type"] == "boundary" {
 
 		mpoly, err := f.buildPolygon(rel.Members)
 		if err != nil {
-			log.Errorf("Error building polygon for %s: %s", name, err.Error())
+			log.Error("Error building polygon", "error", err.Error())
 			return
 		}
 
 		if mpoly.Bound().IsZero() || len(mpoly) == 0 {
-			log.Warnf("Zero bound place: %s", name)
+			log.Warn("Zero bound place")
 			return
 		}
 
@@ -65,19 +65,19 @@ func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 func (f *GeoGen) cacheRelRegion(rel *osm.Relation) {
 	name := rel.Tags.Find(nameKey)
 
-	log := logrus.WithField("id", rel.ID).WithField("name", name)
+	log := slog.With("id", rel.ID).With("name", name)
 
 	tags := rel.TagMap()
 	if tags["type"] == "multipolygon" || tags["type"] == "boundary" {
 
 		mpoly, err := f.buildPolygon(rel.Members)
 		if err != nil {
-			log.Errorf("Error building polygon for %s: %s", name, err.Error())
+			log.Error("Error building polygon", "error", err.Error())
 			return
 		}
 
 		if mpoly.Bound().IsZero() || len(mpoly) == 0 {
-			log.Warnf("Zero bound place: %s", name)
+			log.Warn("Zero bound place")
 			return
 		}
 

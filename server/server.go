@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	stdlog "log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"sync"
@@ -14,7 +16,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geomodel"
-	"github.com/sirupsen/logrus"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.opentelemetry.io/otel"
@@ -30,7 +31,7 @@ func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder) error {
 		return fmt.Errorf("failed to initialize otel metrics: %w", err)
 	}
 
-	log := logrus.New()
+	log := slog.Default()
 
 	metricHttpAdressCallCount, err := meter.Int64Counter("http_address_call_total")
 	if err != nil {
@@ -62,16 +63,16 @@ func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder) error {
 		ReadTimeout:        time.Second,
 		MaxRequestBodySize: MaxBodySize,
 		Handler:            r.Handler,
-		Logger:             logrus.NewEntry(log).WithField("component", "fasthttp"),
+		// Logger:             logrus.NewEntry(log).WithField("component", "fasthttp"),
 	}
 
 	go func() {
-		log.Infof("Server listening on: %s", address)
+		log.Info("Server listening", "address", address)
 		if err := server.ListenAndServe(address); err != http.ErrServerClosed {
-			log.Fatalf("ListenAndServe(): %v", err)
+			stdlog.Fatalf("ListenAndServe(): %v", err)
 		}
 	}()
-	logrus.Info("Server started")
+	slog.Info("Server started")
 
 	// wait cancel
 	<-ctx.Done()
