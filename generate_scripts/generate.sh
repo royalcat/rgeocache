@@ -21,11 +21,11 @@ function download_maps {
                 else zflag=()
                 fi
 
-                curl --create-dirs -o "$file" "${zflag[@]}" "https://download.geofabrik.de/${file}"
+                curl --create-dirs -o "$file" "${zflag[@]}" "http://download.geofabrik.de/${file}"
             done
         popd
 
-       
+
     popd
 }
 
