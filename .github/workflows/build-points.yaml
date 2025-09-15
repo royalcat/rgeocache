@@ -30,11 +30,12 @@ jobs:
           - name: "post-cis"
             maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia,asia/armenia"
             locale: "offical"
-
     env:
       MAPS: ${{ matrix.maps }}
     runs-on: self-hosted
     steps:
+      - name: Install aria2
+        run: sudo apt-get update && sudo apt-get install -y aria2
       - name: Check out repository code
         uses: actions/checkout@v4
       - name: Set up Go
