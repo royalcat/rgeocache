@@ -34,8 +34,6 @@ jobs:
       MAPS: ${{ matrix.maps }}
     runs-on: self-hosted
     steps:
-      - name: Install aria2
-        run: sudo apt-get update && sudo apt-get install -y aria2
       - name: Check out repository code
         uses: actions/checkout@v4
       - name: Set up Go
