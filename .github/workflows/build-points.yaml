@@ -53,7 +53,7 @@ jobs:
       - name: Update maps cache
         shell: bash
         run: |
-          source ./generate_scripts/generate.sh
+          source ./generate_scripts/download_maps.sh
           download_maps $MAPS
 
       - name: Run generator
