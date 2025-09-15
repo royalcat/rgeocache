@@ -3,5 +3,5 @@ MAPS="europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/af
 
 
 mydir="${0%/*}"
-source "$mydir"/generate.sh # generate_cache function import
+source "$mydir"/download_maps.sh # generate_cache function import
 download_maps $MAPS

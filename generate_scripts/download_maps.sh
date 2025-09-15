@@ -7,10 +7,10 @@ function download_maps {
 
     MAPS=$1
 
-    mkdir $BUILD_DIR
+    mkdir -p $BUILD_DIR
     pushd $BUILD_DIR
         echo "Downloading: ${MAPS}"
-        mkdir maps
+        mkdir -p maps
         pushd maps
             export IFS=","
             for map in $MAPS; do
@@ -21,7 +21,7 @@ function download_maps {
                 else zflag=()
                 fi
 
-                curl --create-dirs -o "$file" "${zflag[@]}" "http://download.geofabrik.de/${file}"
+                aria2c -c -o "$file" "http://download.geofabrik.de/${file}"
             done
         popd
 
