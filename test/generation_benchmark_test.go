@@ -19,6 +19,8 @@ func BenchmarkGenerationLondon(b *testing.B) {
 
 	b.Log("Parsing OSM file")
 
+	b.ResetTimer()
+
 	for b.Loop() {
 		file, err := mmap.Open(londonFileName)
 		if err != nil {
