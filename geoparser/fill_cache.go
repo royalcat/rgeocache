@@ -1,92 +1,111 @@
 package geoparser
 
 import (
-	"context"
-	"io"
-	"os"
+	"iter"
+	"sync"
 	"time"
 
 	"github.com/cheggaaa/pb/v3"
-	"github.com/cheggaaa/pb/v3/termutil"
 	"github.com/paulmach/osm"
-	"github.com/paulmach/osm/osmpbf"
+	"github.com/royalcat/osmpbfdb"
 	"github.com/sourcegraph/conc/pool"
 )
 
-func (f *GeoGen) fillRelCache(ctx context.Context, file *os.File) error {
-	log := f.log.With("input", file.Name())
-	_, err := file.Seek(0, io.SeekStart)
-	if err != nil {
-		return err
-	}
-	stat, err := file.Stat()
-	if err != nil {
-		return err
-	}
-
-	scanner := osmpbf.New(ctx, file, f.threads)
-	defer scanner.Close()
-	scanner.SkipNodes = true
-	scanner.SkipWays = true
-
+func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
 	pool := pool.New().WithMaxGoroutines(f.threads)
 	defer pool.Wait()
 
-	return scanWithProgress(scanner, stat.Size(), "3/4 filling relations cache", func(object osm.Object) bool {
-		rel, ok := object.(*osm.Relation)
-		if !ok {
-			log.Error("Object does not type of relation")
+	for rel, err := range iterWithProgress(db.IterRelations(), int(db.CountRelations()), "3/4 filling relations cache") {
+		if err != nil {
+			return err
 		}
-
 		pool.Go(func() {
 			f.cacheRel(rel)
 		})
+	}
 
-		return true
-	})
+	return nil
 }
 
-func (f *GeoGen) parseDatabase(ctx context.Context, file *os.File) error {
-	// log := f.log.WithField("input", file.Name())
-	_, err := file.Seek(0, io.SeekStart)
-	if err != nil {
-		return err
-	}
-	stat, err := file.Stat()
-	if err != nil {
-		return err
-	}
-
-	// The third parameter is the number of parallel decoders to use.
-	scanner := osmpbf.New(ctx, file, f.threads)
-	defer scanner.Close()
-
+func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
 	pool := pool.New().WithMaxGoroutines(f.threads)
 	defer pool.Wait()
 
-	return scanWithProgress(scanner, stat.Size(), "4/4 generating database", func(object osm.Object) bool {
+	objectsCount := int(db.CountNodes() + db.CountWays() + db.CountRelations())
+	objectsIter := iterConcurrently[osm.Object](
+		castIterToObject(db.IterNodes()),
+		castIterToObject(db.IterWays()),
+		castIterToObject(db.IterRelations()),
+	)
+
+	for obj, err := range iterWithProgress(objectsIter, objectsCount, "4/4 generating database") {
+		if err != nil {
+			return err
+		}
 		pool.Go(func() {
-			f.parseObject(object)
+			f.parseObject(obj)
 		})
-		return true
-	})
+	}
+
+	return nil
 }
 
-func scanWithProgress(scanner *osmpbf.Scanner, size int64, name string, it func(osm.Object) bool) error {
-	bar := pb.Start64(size)
+func iterWithProgress[T any](source iter.Seq2[T, error], total int, name string) iter.Seq2[T, error] {
+	bar := pb.StartNew(total)
 	bar.Set("prefix", name)
-	bar.Set(pb.Bytes, true)
 	bar.SetRefreshRate(time.Second * 5)
-	if w, err := termutil.TerminalWidth(); w == 0 || err != nil {
-		bar.SetTemplateString(`{{with string . "prefix"}}{{.}} {{end}}{{counters . }} {{bar . }} {{percent . }} {{speed . }} {{rtime . "ETA %s"}}{{with string . "suffix"}} {{.}}{{end}}` + "\n")
+	bar.SetTemplate(pb.Full)
+
+	return func(yield func(T, error) bool) {
+		defer bar.Finish()
+
+		for item, err := range source {
+			if !yield(item, err) {
+				return
+			}
+			bar.Increment()
+		}
+	}
+}
+
+func iterConcurrently[T any](sources ...iter.Seq2[T, error]) iter.Seq2[T, error] {
+	type elem struct {
+		item T
+		err  error
 	}
 
-	for scanner.Scan() {
-		bar.SetCurrent(scanner.FullyScannedBytes())
-		obj := scanner.Object()
-		it(obj)
+	out := make(chan elem, len(sources))
+	var wg sync.WaitGroup
+	for _, source := range sources {
+		wg.Add(1)
+		go func(source iter.Seq2[T, error]) {
+			defer wg.Done()
+			for item, err := range source {
+				out <- elem{item: item, err: err}
+			}
+		}(source)
 	}
-	bar.Finish()
 
-	return scanner.Err()
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return func(yield func(T, error) bool) {
+		for val := range out {
+			if !yield(val.item, val.err) {
+				return
+			}
+		}
+	}
+}
+
+func castIterToObject[I osm.Object](source iter.Seq2[I, error]) iter.Seq2[osm.Object, error] {
+	return func(yield func(osm.Object, error) bool) {
+		for item, err := range source {
+			if !yield(item, err) {
+				return
+			}
+		}
+	}
 }

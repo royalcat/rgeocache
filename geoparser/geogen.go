@@ -1,15 +1,13 @@
 package geoparser
 
 import (
-	"context"
 	"log/slog"
-	"os"
+	"runtime"
 	"sync"
 
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/bordertree"
-	"golang.org/x/exp/mmap"
 )
 
 type GeoGen struct {
@@ -21,7 +19,7 @@ type GeoGen struct {
 
 	localizationCache *xsync.MapOf[string, string]
 
-	osmdb *osmpbfdb.DB
+	osmdb osmpbfdb.OsmDB
 
 	parsedPointsMu sync.Mutex
 	parsedPoints   []geoPoint
@@ -29,8 +27,8 @@ type GeoGen struct {
 	log *slog.Logger
 }
 
-func NewGeoGen(threads int, preferredLocalization string) (*GeoGen, error) {
-	f := &GeoGen{
+func NewGeoGen(db osmpbfdb.OsmDB, threads int, preferredLocalization string) (*GeoGen, error) {
+	return &GeoGen{
 		placeIndex:        bordertree.NewBorderTree[string](),
 		regionIndex:       bordertree.NewBorderTree[string](),
 		localizationCache: xsync.NewMapOf[string, string](),
@@ -38,50 +36,30 @@ func NewGeoGen(threads int, preferredLocalization string) (*GeoGen, error) {
 		threads:               threads,
 		preferredLocalization: preferredLocalization,
 
+		osmdb: db,
+
 		parsedPoints: []geoPoint{},
 
 		log: slog.Default(),
-	}
-
-	err := f.ResetCache()
-
-	return f, err
+	}, nil
 }
 
 func (f *GeoGen) ResetCache() error {
 	f.placeIndex = bordertree.NewBorderTree[string]()
 	f.regionIndex = bordertree.NewBorderTree[string]()
 	f.localizationCache = xsync.NewMapOf[string, string]()
+	runtime.GC()
 
 	return nil
 }
 
-func (f *GeoGen) ParseOSMFile(ctx context.Context, input string) error {
-	{
-		file, err := mmap.Open(input)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		f.osmdb, err = osmpbfdb.OpenDB(file, osmpbfdb.Config{})
-		if err != nil {
-			return err
-		}
-	}
-
-	file, err := os.Open(input)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	err = f.fillRelCache(ctx, file)
+func (f *GeoGen) ParseOSMData() error {
+	err := f.fillRelCache(f.osmdb)
 	if err != nil {
 		return err
 	}
 
-	err = f.parseDatabase(ctx, file)
+	err = f.parseDatabase(f.osmdb)
 	if err != nil {
 		return err
 	}

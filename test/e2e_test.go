@@ -1,16 +1,17 @@
 package test
 
 import (
-	"context"
 	"runtime"
 	"testing"
 
+	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
+	"golang.org/x/exp/mmap"
 )
 
 func TestLondon(t *testing.T) {
-	ctx := context.Background()
+	const pointsFile = "gb_points.rgc"
 
 	t.Log("Downloading OSM file")
 
@@ -19,16 +20,25 @@ func TestLondon(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const pointsFile = "gb_points.rgc"
-
 	t.Log("Parsing OSM file")
 
-	gg, err := geoparser.NewGeoGen(runtime.GOMAXPROCS(0), "")
+	file, err := mmap.Open(greatBritanName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	osmdb, err := osmpbfdb.OpenDB(file, osmpbfdb.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = gg.ParseOSMFile(ctx, greatBritanName)
+	gg, err := geoparser.NewGeoGen(osmdb, runtime.GOMAXPROCS(0), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = gg.ParseOSMData()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,8 +50,7 @@ func TestLondon(t *testing.T) {
 
 	t.Log("Loading points from file")
 
-	rgeo := &geocoder.RGeoCoder{}
-	err = rgeo.LoadFromPointsFile(pointsFile)
+	rgeo, err := geocoder.LoadGeoCoderFromFile(pointsFile)
 	if err != nil {
 		t.Fatal(err)
 	}

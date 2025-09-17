@@ -2,18 +2,20 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
-	"path"
 	"runtime"
 	"runtime/pprof"
 	"strings"
 
+	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
 	"github.com/royalcat/rgeocache/server"
+	"golang.org/x/exp/mmap"
 
 	_ "net/http/pprof"
 
@@ -121,7 +123,7 @@ func generate(ctx *cli.Context) error {
 	pprofHeap := ctx.Bool("pprof.heap")
 
 	if ctx.Bool("pprof.profile") {
-		f, err := os.OpenFile("profile.pprof", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		f, err := os.OpenFile("profile.cpu.pprof", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			return fmt.Errorf("error creating pprof file: %w", err)
 		}
@@ -132,31 +134,44 @@ func generate(ctx *cli.Context) error {
 		defer pprof.StopCPUProfile()
 	}
 
-	geoGen, err := geoparser.NewGeoGen(threads, preferredLocalization)
+	inputs := ctx.StringSlice("input")
+	fmt.Printf("Input maps: %v\n", inputs)
+
+	var inputsReaders []io.ReaderAt
+	for _, input := range inputs {
+		file, err := mmap.Open(input)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		inputsReaders = append(inputsReaders, file)
+	}
+
+	osmdb, err := osmpbfdb.OpenMultiDB(inputsReaders, osmpbfdb.Config{})
+	if err != nil {
+		return err
+	}
+
+	geoGen, err := geoparser.NewGeoGen(osmdb, threads, preferredLocalization)
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
 
-	inputs := ctx.StringSlice("input")
-	fmt.Printf("Input maps: %v\n", inputs)
-	for _, input := range inputs {
-		fmt.Printf("Generating database for map: %s\n", input)
-		err := geoGen.ParseOSMFile(ctx.Context, input)
-		if err != nil {
-			return fmt.Errorf("error parsing input: %s with error: %s", input, err.Error())
-		}
+	err = geoGen.ParseOSMData()
+	if err != nil {
+		return fmt.Errorf("error parsing osm with error: %s", err.Error())
+	}
 
-		if pprofHeap {
-			err := writeHeapProfile(path.Base(input))
-			if err != nil {
-				return fmt.Errorf("error writing heap profile: %s", err.Error())
-			}
-		}
-
-		err = geoGen.ResetCache()
+	if pprofHeap {
+		err := writeHeapProfile("profile")
 		if err != nil {
-			return fmt.Errorf("error flushing memory cache: %s", err.Error())
+			return fmt.Errorf("error writing heap profile: %s", err.Error())
 		}
+	}
+
+	err = geoGen.ResetCache()
+	if err != nil {
+		return fmt.Errorf("error flushing memory cache: %s", err.Error())
 	}
 
 	saveFile := ctx.String("points")
