@@ -32,30 +32,35 @@ jobs:
             locale: "offical"
     env:
       MAPS: ${{ matrix.maps }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@v1
+        with:
+          swap-size-gb: 16
       - name: Check out repository code
         uses: actions/checkout@v4
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           check-latest: true
           cache-dependency-path: go.sum
-      # - name: Cache maps
-      #   id: cache-maps
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: ./cache_build/maps
-      #     key: maps
-      #     enableCrossOsArchive: true
-
       - name: Update maps cache
         shell: bash
         run: |
           source ./generate_scripts/download_maps.sh
           download_maps $MAPS
-
       - name: Run generator
         shell: bash
         working-directory: cache_build
@@ -67,7 +72,6 @@ jobs:
           done
           unset IFS
           go run ../cmd generate -l ${{ matrix.locale }} -p ${{ matrix.name }}_points ${MAPS_FILES}
-
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}_points
