@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/bordertree"
-	"github.com/royalcat/rgeocache/osmpbfdb"
 	"golang.org/x/exp/mmap"
 )
 
@@ -64,7 +64,7 @@ func (f *GeoGen) ParseOSMFile(ctx context.Context, input string) error {
 		}
 		defer file.Close()
 
-		f.osmdb, err = osmpbfdb.OpenDB(ctx, file)
+		f.osmdb, err = osmpbfdb.OpenDB(file, osmpbfdb.Config{})
 		if err != nil {
 			return err
 		}
