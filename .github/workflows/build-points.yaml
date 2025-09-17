@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@v1
+        uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: false
           android: true
@@ -45,7 +45,7 @@ jobs:
           docker-images: true
           swap-storage: false
       - name: Set Swap Space
-        uses: pierotofy/set-swap-space@v1
+        uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 16
       - name: Check out repository code
