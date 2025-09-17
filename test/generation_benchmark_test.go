@@ -1,16 +1,15 @@
 package test
 
 import (
-	"context"
 	"runtime"
 	"testing"
 
+	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/geoparser"
+	"golang.org/x/exp/mmap"
 )
 
 func BenchmarkGenerationLondon(b *testing.B) {
-	ctx := context.Background()
-
 	b.Log("Downloading OSM file")
 
 	err := downloadTestOSMFile(londonFileURL, londonFileName)
@@ -20,24 +19,33 @@ func BenchmarkGenerationLondon(b *testing.B) {
 
 	b.Log("Parsing OSM file")
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		gg, err := geoparser.NewGeoGen(runtime.GOMAXPROCS(0), "")
+	for b.Loop() {
+		file, err := mmap.Open(londonFileName)
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		err = gg.ParseOSMFile(ctx, londonFileName)
+		osmdb, err := osmpbfdb.OpenDB(file, osmpbfdb.Config{})
 		if err != nil {
 			b.Fatal(err)
 		}
+
+		gg, err := geoparser.NewGeoGen(osmdb, runtime.GOMAXPROCS(0), "")
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		err = gg.ParseOSMData()
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		osmdb.Close()
+		file.Close()
 	}
 }
 
 func BenchmarkGenerationGreatBritan(b *testing.B) {
-	ctx := context.Background()
-
 	b.Log("Downloading OSM file")
 
 	err := downloadTestOSMFile(greatBritanURL, greatBritanName)
@@ -47,15 +55,23 @@ func BenchmarkGenerationGreatBritan(b *testing.B) {
 
 	b.Log("Parsing OSM file")
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		gg, err := geoparser.NewGeoGen(runtime.GOMAXPROCS(0), "")
+	for b.Loop() {
+		file, err := mmap.Open(greatBritanName)
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		err = gg.ParseOSMFile(ctx, greatBritanName)
+		osmdb, err := osmpbfdb.OpenDB(file, osmpbfdb.Config{})
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		gg, err := geoparser.NewGeoGen(osmdb, runtime.GOMAXPROCS(0), "")
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		err = gg.ParseOSMData()
 		if err != nil {
 			b.Fatal(err)
 		}
