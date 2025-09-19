@@ -3,6 +3,7 @@ module github.com/royalcat/rgeocache
 go 1.24.5
 
 require (
+	github.com/KimMachineGun/automemlimit v0.7.4
 	github.com/cheggaaa/pb/v3 v3.1.7
 	github.com/fasthttp/router v1.5.4
 	github.com/klauspost/compress v1.18.0
@@ -11,7 +12,7 @@ require (
 	github.com/paulmach/osm v0.8.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/puzpuzpuz/xsync/v3 v3.4.0
-	github.com/royalcat/osmpbfdb v0.0.0-20250917143436-7e59de4b2e82
+	github.com/royalcat/osmpbfdb v0.0.0-20250919115801-b4a726e0a143
 	github.com/samber/slog-logrus/v2 v2.5.2
 	github.com/samber/slog-multi v1.4.1
 	github.com/sirupsen/logrus v1.9.3

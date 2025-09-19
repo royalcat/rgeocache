@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"strings"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
@@ -147,6 +149,9 @@ func generate(ctx *cli.Context) error {
 		inputsReaders = append(inputsReaders, file)
 	}
 
+	log.Info("Tuning gc to respect only soft mem limit")
+	tuneGC()
+
 	osmdb, err := osmpbfdb.OpenMultiDB(inputsReaders, osmpbfdb.Config{})
 	if err != nil {
 		return err
@@ -208,4 +213,18 @@ func serve(ctx *cli.Context) error {
 	}
 
 	return server.Run(ctx.Context, ctx.String("listen"), rgeo)
+}
+
+func tuneGC() {
+	memlimit.SetGoMemLimitWithOpts(
+		memlimit.WithRatio(0.7),
+		memlimit.WithProvider(
+			memlimit.ApplyFallback(
+				memlimit.FromCgroup,
+				memlimit.FromSystem,
+			),
+		),
+		memlimit.WithLogger(slog.Default()),
+	)
+	debug.SetGCPercent(-1)
 }
