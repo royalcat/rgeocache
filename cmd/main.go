@@ -139,7 +139,7 @@ func generate(ctx *cli.Context) error {
 	inputs := ctx.StringSlice("input")
 	fmt.Printf("Input maps: %v\n", inputs)
 
-	var inputsReaders []io.ReaderAt
+	inputsReaders := make([]io.ReaderAt, 0, len(inputs))
 	for _, input := range inputs {
 		file, err := mmap.Open(input)
 		if err != nil {
@@ -150,7 +150,10 @@ func generate(ctx *cli.Context) error {
 	}
 
 	log.Info("Tuning gc to respect only soft mem limit")
-	tuneGC()
+	err := tuneGC()
+	if err != nil {
+		log.Error("Error tuning gc", "error", err)
+	}
 
 	osmdb, err := osmpbfdb.OpenMultiDB(inputsReaders, osmpbfdb.Config{})
 	if err != nil {
@@ -215,8 +218,8 @@ func serve(ctx *cli.Context) error {
 	return server.Run(ctx.Context, ctx.String("listen"), rgeo)
 }
 
-func tuneGC() {
-	memlimit.SetGoMemLimitWithOpts(
+func tuneGC() error {
+	_, err := memlimit.SetGoMemLimitWithOpts(
 		memlimit.WithRatio(0.7),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(
@@ -226,5 +229,10 @@ func tuneGC() {
 		),
 		memlimit.WithLogger(slog.Default()),
 	)
+	if err != nil {
+		return fmt.Errorf("error setting memory limit: %s", err.Error())
+	}
+
 	debug.SetGCPercent(-1)
+	return nil
 }

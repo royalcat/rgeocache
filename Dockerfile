@@ -10,7 +10,8 @@ RUN --mount=type=cache,mode=0777,target=/go/pkg/mod go mod download
 
 COPY . .
 
-ARG TARGETOS TARGETARCH
+ARG TARGETOS
+ARG TARGETARCH
 RUN --mount=type=cache,mode=0777,target=/go/pkg/mod CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /rgeocache ./cmd
 
 # run container

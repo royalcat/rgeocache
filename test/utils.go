@@ -3,12 +3,8 @@ package test
 import (
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"os"
-	"time"
-
-	"github.com/paulmach/osm"
 )
 
 const (
@@ -19,42 +15,7 @@ const (
 	// TODO replace with static file
 	greatBritanName = "great-britain-latest.osm.pbf"
 	greatBritanURL  = "https://download.geofabrik.de/europe/great-britain-latest.osm.pbf"
-
-	coordinatesPrecision = 1e7
 )
-
-func parseTime(s string) time.Time {
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		panic(err)
-	}
-	return t
-}
-
-func stripCoordinates(w *osm.Way) *osm.Way {
-	if w == nil {
-		return nil
-	}
-
-	ws := new(osm.Way)
-	*ws = *w
-	ws.Nodes = make(osm.WayNodes, len(w.Nodes))
-	for i, n := range w.Nodes {
-		n.Lat, n.Lon = 0, 0
-		ws.Nodes[i] = n
-	}
-	return ws
-}
-
-func roundCoordinates(w *osm.Way) {
-	if w == nil {
-		return
-	}
-	for i := range w.Nodes {
-		w.Nodes[i].Lat = math.Round(w.Nodes[i].Lat*coordinatesPrecision) / coordinatesPrecision
-		w.Nodes[i].Lon = math.Round(w.Nodes[i].Lon*coordinatesPrecision) / coordinatesPrecision
-	}
-}
 
 func downloadTestOSMFile(url, fileName string) error {
 	if _, err := os.Stat(fileName); os.IsNotExist(err) {

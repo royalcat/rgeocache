@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -92,12 +91,6 @@ type server struct {
 var reqPointsPool = sync.Pool{
 	New: func() any {
 		return [][2]float64{}
-	},
-}
-
-var bufPool = sync.Pool{
-	New: func() any {
-		return &bytes.Buffer{}
 	},
 }
 

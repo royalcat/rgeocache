@@ -8,14 +8,14 @@ import (
 // priorityQueue represents the queue
 type priorityQueue struct {
 	itemHeap *itemHeap
-	lookup   map[interface{}]*item
+	lookup   map[any]*item
 }
 
 // New initializes an empty priority queue.
 func newPriorityQueue() priorityQueue {
 	return priorityQueue{
 		itemHeap: &itemHeap{},
-		lookup:   make(map[interface{}]*item),
+		lookup:   make(map[any]*item),
 	}
 }
 
@@ -25,7 +25,7 @@ func (p *priorityQueue) Len() int {
 }
 
 // Insert inserts a new element into the queue. No action is performed on duplicate elements.
-func (p *priorityQueue) Insert(v interface{}, priority float64) {
+func (p *priorityQueue) Insert(v any, priority float64) {
 	_, ok := p.lookup[v]
 	if ok {
 		return
@@ -41,7 +41,7 @@ func (p *priorityQueue) Insert(v interface{}, priority float64) {
 
 // Pop removes the element with the highest priority from the queue and returns it.
 // In case of an empty queue, an error is returned.
-func (p *priorityQueue) Pop() (interface{}, error) {
+func (p *priorityQueue) Pop() (any, error) {
 	if len(*p.itemHeap) == 0 {
 		return nil, errors.New("empty queue")
 	}
@@ -53,7 +53,7 @@ func (p *priorityQueue) Pop() (interface{}, error) {
 
 // UpdatePriority changes the priority of a given item.
 // If the specified item is not present in the queue, no action is performed.
-func (p *priorityQueue) UpdatePriority(x interface{}, newPriority float64) {
+func (p *priorityQueue) UpdatePriority(x any, newPriority float64) {
 	item, ok := p.lookup[x]
 	if !ok {
 		return
@@ -66,7 +66,7 @@ func (p *priorityQueue) UpdatePriority(x interface{}, newPriority float64) {
 type itemHeap []*item
 
 type item struct {
-	value    interface{}
+	value    any
 	priority float64
 	index    int
 }
@@ -85,13 +85,13 @@ func (ih *itemHeap) Swap(i, j int) {
 	(*ih)[j].index = j
 }
 
-func (ih *itemHeap) Push(x interface{}) {
+func (ih *itemHeap) Push(x any) {
 	it := x.(*item)
 	it.index = len(*ih)
 	*ih = append(*ih, it)
 }
 
-func (ih *itemHeap) Pop() interface{} {
+func (ih *itemHeap) Pop() any {
 	old := *ih
 	item := old[len(old)-1]
 	*ih = old[0 : len(old)-1]
