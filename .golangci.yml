@@ -1,3 +1,4 @@
+version: "2"
 linters:
   enable:
     - revive
@@ -9,31 +10,23 @@ linters:
     - promlinter
     - prealloc
     - predeclared
-    - stylecheck
     - errcheck
   disable:
     - ineffassign
 
-linters-settings:
-  revive:
-    ignore-generated-header: true
-    severity: warning
-    rules:
-      - name: blank-imports
-        disabled: true
-  staticcheck:
-    checks:
-      - "-SA4006"
-  gosimple:
-    checks:
-      - "-S1002"
-  exhaustruct:
-    include:
-      - ".*Service"
-      - ".*Server.*"
-    exclude:
-      - ".*mutex"
-      - ".*mutex"
-  stylecheck:
-    checks:
-      - "-ST1003"
+  settings:
+    revive:
+      severity: warning
+      rules:
+        - name: blank-imports
+          disabled: true
+    staticcheck:
+      checks:
+        - "-SA4006"
+    exhaustruct:
+      include:
+        - ".*Service"
+        - ".*Server.*"
+      exclude:
+        - ".*mutex"
+        - ".*mutex"
