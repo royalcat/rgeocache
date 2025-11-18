@@ -45,6 +45,8 @@ github.com/goware/singleflight v0.3.0 h1:b+OM844fuHzanOlE84WeI+G8YMksUY636v0bdcA
 github.com/goware/singleflight v0.3.0/go.mod h1:vcmu9KY0BS9WbA3Pn+WOdUQlwT1CPZJm1Fgaz2l88Dc=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 h1:X5VWvz21y3gzm9Nw/kaUeku/1+uBhcekkmy4IkffJww=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1/go.mod h1:Zanoh4+gvIgluNqcfMVTJueD4wSS5hT7zTt4Mrutd90=
+github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=
+github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/josharian/intern v1.0.0 h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=
 github.com/josharian/intern v1.0.0/go.mod h1:5DoeVV0s6jJacbCEi61lwdGj/aVlrQvzHFFd8Hwg//Y=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
@@ -95,8 +97,8 @@ github.com/puzpuzpuz/xsync/v3 v3.4.0/go.mod h1:VjzYrABPabuM4KyBh1Ftq6u8nhwY5tBPK
 github.com/rivo/uniseg v0.2.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJtxc=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
 github.com/rivo/uniseg v0.4.7/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
-github.com/royalcat/osmpbfdb v0.0.0-20250919115801-b4a726e0a143 h1:PSO9llimUS4ew7lh5Tapo4UuCr6q8ek94xL+U9PT6Q4=
-github.com/royalcat/osmpbfdb v0.0.0-20250919115801-b4a726e0a143/go.mod h1:3yFKl7ONXRfKpVfcJBlHDb2FbSSv5px1IbuBrdGcNJ4=
+github.com/royalcat/osmpbfdb v0.0.0-20251029150859-ad9535eedfd7 h1:jQdHZ9pPOYiVzU+jp+gu9voc8z9tbHHWNsC66nQQce4=
+github.com/royalcat/osmpbfdb v0.0.0-20251029150859-ad9535eedfd7/go.mod h1:s5p9vQlUnhckHDJvNuE8+r0m/AR9tHTy2SJfDfWYNRc=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/samber/lo v1.51.0 h1:kysRYLbHy/MB7kQZf5DSN50JHmMsNEdeY24VzJFu7wI=

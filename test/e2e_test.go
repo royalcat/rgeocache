@@ -15,23 +15,29 @@ func TestLondon(t *testing.T) {
 
 	t.Log("Downloading OSM file")
 
-	err := downloadTestOSMFile(greatBritanURL, greatBritanName)
+	const osmFileName = londonFileName
+	err := downloadTestOSMFile(londonFileURL, osmFileName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Log("Parsing OSM file")
 
-	file, err := mmap.Open(greatBritanName)
+	file, err := mmap.Open(osmFileName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer file.Close()
 
-	osmdb, err := osmpbfdb.OpenDB(file, osmpbfdb.Config{})
+	osmIndexDir := t.TempDir()
+	t.Logf("OSM index directory: %s", osmIndexDir)
+	osmdb, err := osmpbfdb.OpenDB(file, osmpbfdb.Config{
+		IndexDir: osmIndexDir,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("OsmDB counts: nodes: %d ways: %d relations: %d", osmdb.CountNodes(), osmdb.CountWays(), osmdb.CountRelations())
 
 	gg, err := geoparser.NewGeoGen(osmdb, runtime.GOMAXPROCS(0), "")
 	if err != nil {
@@ -50,7 +56,7 @@ func TestLondon(t *testing.T) {
 
 	t.Log("Loading points from file")
 
-	rgeo, err := geocoder.LoadGeoCoderFromFile(pointsFile)
+	rgeo, err := geocoder.LoadGeoCoderFromFile(pointsFile, geocoder.WithSearchRadius(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +65,7 @@ func TestLondon(t *testing.T) {
 	if !ok {
 		t.Fatal("not found")
 	}
-	if i.Region != "England" || i.City != "London" || i.Street != "Cannon Row" || i.HouseNumber != "1" {
-		t.Fatalf("expected England, London, Cannon Row, 1; got %s, %s, %s, %s", i.Region, i.City, i.Street, i.HouseNumber)
+	if i.City != "Greater London" || i.Street != "Cannon Row" || i.HouseNumber != "1" {
+		t.Fatalf("expected Greater London, Cannon Row, 1; got %s, %s, %s", i.City, i.Street, i.HouseNumber)
 	}
 }

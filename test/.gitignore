@@ -7,3 +7,4 @@ mem.pprof
 test.test
 cpu.pprof
 osm-index
+*.osm.pbf

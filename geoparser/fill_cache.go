@@ -32,7 +32,7 @@ func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
 	defer pool.Wait()
 
 	objectsCount := int(db.CountNodes() + db.CountWays() + db.CountRelations())
-	objectsIter := iterConcurrently[osm.Object](
+	objectsIter := iterConcurrently(
 		castIterToObject(db.IterNodes()),
 		castIterToObject(db.IterWays()),
 		castIterToObject(db.IterRelations()),

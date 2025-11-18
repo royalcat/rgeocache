@@ -12,29 +12,45 @@ import (
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
-func NewRGeoCoder() *RGeoCoder {
+func loadOptions(opts ...Option) options {
+	options := options{
+		searchRadius: maxSearchRadius,
+	}
+	for _, o := range opts {
+		o.apply(&options)
+	}
+	return options
+}
+
+func newRGeoCoder(tree *kdbush.KDBush[geomodel.Info], opts ...Option) *RGeoCoder {
+	options := loadOptions(opts...)
 	return &RGeoCoder{
-		tree: kdbush.NewBush[geomodel.Info](nil, 256),
+		tree:         tree,
+		searchRadius: options.searchRadius,
 	}
 }
 
-func LoadGeoCoderFromReader(r io.Reader) (*RGeoCoder, error) {
+func NewRGeoCoder(opts ...Option) *RGeoCoder {
+	return newRGeoCoder(kdbush.NewBush[geomodel.Info](nil, 256), opts...)
+}
+
+func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 	points, err := cachesaver.LoadFromReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("error loading points: %s", err.Error())
 	}
 
 	tree := kdbush.NewBush(points, 256)
-	return &RGeoCoder{tree: tree}, nil
+	return newRGeoCoder(tree, opts...), nil
 }
 
-func LoadGeoCoderFromFile(file string) (*RGeoCoder, error) {
+func LoadGeoCoderFromFile(file string, opts ...Option) (*RGeoCoder, error) {
 	reader, err := openReader(file)
 	if err != nil {
 		return nil, fmt.Errorf("error opening points file: %s", err.Error())
 	}
 
-	return LoadGeoCoderFromReader(reader)
+	return LoadGeoCoderFromReader(reader, opts...)
 }
 
 // Deprecated: Use LoadGeoCoderFromFile instead.
