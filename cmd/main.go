@@ -137,7 +137,7 @@ func generate(ctx *cli.Context) error {
 	}
 
 	inputs := ctx.StringSlice("input")
-	fmt.Printf("Input maps: %v\n", inputs)
+	log.Info("Input maps", "maps", inputs)
 
 	inputsReaders := make([]io.ReaderAt, 0, len(inputs))
 	for _, input := range inputs {
@@ -187,14 +187,14 @@ func generate(ctx *cli.Context) error {
 		saveFile = saveFile + ".rgc"
 	}
 
-	fmt.Printf("Generation complete\n")
-	fmt.Printf("Saving to file: %s\n", saveFile)
+	log.Info("Generation complete")
+	log.Info("Saving to file", "file", saveFile)
 	err = geoGen.SavePointsToFile(saveFile)
 	if err != nil {
 		return fmt.Errorf("failed to save points to file: %s", err.Error())
 	}
 
-	fmt.Printf("Complete\n")
+	log.Info("Complete")
 
 	return nil
 }
