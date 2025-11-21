@@ -13,7 +13,7 @@ import (
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
-func LoadFromReader(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
+func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[geomodel.Info], error) {
 	magic := make([]byte, len(MAGIC_BYTES))
 	_, err := reader.Read(magic)
 	if err != nil {
@@ -22,7 +22,7 @@ func LoadFromReader(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
 
 	// If the magic bytes are not equal to the expected value, we assume it's a legacy format
 	if string(magic) != string(MAGIC_BYTES) {
-		slog.Info("Magic bytes not detected, trying legacy format")
+		log.Info("Magic bytes not detected, trying legacy format")
 		return legacyLoader(io.MultiReader(bytes.NewReader(magic), reader))
 	}
 
@@ -34,7 +34,7 @@ func LoadFromReader(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
 
 	switch compatibilityLevel {
 	case savev1.COMPATIBILITY_LEVEL:
-		slog.Info("Loading v1 cache format")
+		log.Info("Loading v1 cache format")
 		return loadV1Cache(reader)
 	}
 

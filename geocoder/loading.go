@@ -3,6 +3,7 @@ package geocoder
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 func loadOptions(opts ...Option) options {
 	options := options{
 		searchRadius: maxSearchRadius,
+		logger:       slog.Default(),
 	}
 	for _, o := range opts {
 		o.apply(&options)
@@ -24,9 +26,12 @@ func loadOptions(opts ...Option) options {
 
 func newRGeoCoder(tree *kdbush.KDBush[geomodel.Info], opts ...Option) *RGeoCoder {
 	options := loadOptions(opts...)
+	options.logger.Info("Initializing geocoder")
+
 	return &RGeoCoder{
 		tree:         tree,
 		searchRadius: options.searchRadius,
+		logger:       options.logger,
 	}
 }
 
@@ -35,7 +40,11 @@ func NewRGeoCoder(opts ...Option) *RGeoCoder {
 }
 
 func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
-	points, err := cachesaver.LoadFromReader(r)
+	options := loadOptions(opts...)
+	log := options.logger
+
+	log.Info("Loading geocoder points from reader")
+	points, err := cachesaver.LoadFromReader(r, log)
 	if err != nil {
 		return nil, fmt.Errorf("error loading points: %s", err.Error())
 	}
@@ -60,7 +69,7 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 		return fmt.Errorf("error opening points file: %s", err.Error())
 	}
 
-	points, err := cachesaver.LoadFromReader(reader)
+	points, err := cachesaver.LoadFromReader(reader, slog.Default())
 	if err != nil {
 		return fmt.Errorf("error loading points: %s", err.Error())
 	}

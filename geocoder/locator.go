@@ -1,6 +1,7 @@
 package geocoder
 
 import (
+	"log/slog"
 	"math"
 
 	"github.com/royalcat/rgeocache/geomodel"
@@ -11,6 +12,7 @@ type RGeoCoder struct {
 	tree *kdbush.KDBush[geomodel.Info]
 
 	searchRadius float64
+	logger       *slog.Logger
 }
 
 const maxSearchRadius float64 = 0.01
