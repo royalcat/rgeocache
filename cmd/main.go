@@ -209,13 +209,14 @@ func writeHeapProfile(name string) error {
 }
 
 func serve(ctx *cli.Context) error {
-	slog.Info("Initing geocoder")
-	rgeo, err := geocoder.LoadGeoCoderFromFile(ctx.String("points"))
+	log := slog.Default()
+
+	rgeo, err := geocoder.LoadGeoCoderFromFile(ctx.String("points"), geocoder.WithLogger(log))
 	if err != nil {
 		return err
 	}
 
-	return server.Run(ctx.Context, ctx.String("listen"), rgeo)
+	return server.Run(ctx.Context, ctx.String("listen"), rgeo, log)
 }
 
 func tuneGC() error {

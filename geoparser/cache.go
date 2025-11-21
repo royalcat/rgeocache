@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"github.com/paulmach/osm"
-	"golang.org/x/exp/slog"
 )
 
 func (f *GeoGen) cacheLocalization(tags osm.Tags) {
@@ -36,7 +35,7 @@ func (f *GeoGen) cacheRel(rel *osm.Relation) {
 func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 	name := rel.Tags.Find(nameKey)
 
-	log := slog.With("id", rel.ID).With("name", name)
+	log := f.log.With("id", rel.ID).With("name", name)
 
 	tags := rel.TagMap()
 	if tags["type"] == "multipolygon" || tags["type"] == "boundary" {
@@ -65,7 +64,7 @@ func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 func (f *GeoGen) cacheRelRegion(rel *osm.Relation) {
 	name := rel.Tags.Find(nameKey)
 
-	log := slog.With("id", rel.ID).With("name", name)
+	log := f.log.With("id", rel.ID).With("name", name)
 
 	tags := rel.TagMap()
 	if tags["type"] == "multipolygon" || tags["type"] == "boundary" {
