@@ -2,6 +2,19 @@ package geocoder
 
 import "log/slog"
 
+const defautMaxSearchRadius float64 = 0.01
+
+func loadOptions(opts ...Option) options {
+	options := options{
+		searchRadius: defautMaxSearchRadius,
+		logger:       slog.Default(),
+	}
+	for _, o := range opts {
+		o.apply(&options)
+	}
+	return options
+}
+
 type options struct {
 	searchRadius float64
 	logger       *slog.Logger
