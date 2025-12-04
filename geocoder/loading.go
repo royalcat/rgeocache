@@ -6,38 +6,13 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"unique"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/royalcat/rgeocache/cachesaver"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
-
-func loadOptions(opts ...Option) options {
-	options := options{
-		searchRadius: maxSearchRadius,
-		logger:       slog.Default(),
-	}
-	for _, o := range opts {
-		o.apply(&options)
-	}
-	return options
-}
-
-func newRGeoCoder(tree *kdbush.KDBush[*geomodel.Info], opts ...Option) *RGeoCoder {
-	options := loadOptions(opts...)
-	options.logger.Info("Initializing geocoder")
-
-	return &RGeoCoder{
-		tree:         tree,
-		searchRadius: options.searchRadius,
-		logger:       options.logger,
-	}
-}
-
-func NewRGeoCoder(opts ...Option) *RGeoCoder {
-	return newRGeoCoder(kdbush.NewBush[*geomodel.Info](nil, 256), opts...)
-}
 
 func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 	options := loadOptions(opts...)
@@ -48,18 +23,10 @@ func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error loading points: %s", err.Error())
 	}
-	points := convertPointsDataToPointer(pointsRaw)
+	points := optimizePoints(pointsRaw)
 
 	tree := kdbush.NewBush(points, 256)
 	return newRGeoCoder(tree, opts...), nil
-}
-
-func convertPointsDataToPointer[T any](points []kdbush.Point[T]) []kdbush.Point[*T] {
-	result := make([]kdbush.Point[*T], len(points))
-	for i, point := range points {
-		result[i] = kdbush.Point[*T]{X: point.X, Y: point.Y, Data: &point.Data}
-	}
-	return result
 }
 
 func LoadGeoCoderFromFile(file string, opts ...Option) (*RGeoCoder, error) {
@@ -82,10 +49,21 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 	if err != nil {
 		return fmt.Errorf("error loading points: %s", err.Error())
 	}
-	points := convertPointsDataToPointer(pointsRaw)
+	points := optimizePoints(pointsRaw)
 
 	f.tree = kdbush.NewBush(points, 256)
 	return nil
+}
+
+func newRGeoCoder(tree *kdbush.KDBush[*geoInfo], opts ...Option) *RGeoCoder {
+	options := loadOptions(opts...)
+	options.logger.Info("Initializing geocoder")
+
+	return &RGeoCoder{
+		tree:         tree,
+		searchRadius: options.searchRadius,
+		logger:       options.logger,
+	}
 }
 
 func openReader(name string) (io.ReadCloser, error) {
@@ -104,4 +82,21 @@ func openReader(name string) (io.ReadCloser, error) {
 	}
 
 	return file, nil
+}
+
+func optimizePoints(points []kdbush.Point[geomodel.Info]) []kdbush.Point[*geoInfo] {
+	result := make([]kdbush.Point[*geoInfo], len(points))
+	for i, point := range points {
+		result[i] = kdbush.Point[*geoInfo]{
+			X: point.X, Y: point.Y,
+			Data: &geoInfo{
+				Name:        point.Data.Name,
+				Street:      unique.Make(point.Data.Street),
+				HouseNumber: unique.Make(point.Data.HouseNumber),
+				City:        unique.Make(point.Data.City),
+				Region:      unique.Make(point.Data.Region),
+			},
+		}
+	}
+	return result
 }
