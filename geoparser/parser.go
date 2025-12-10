@@ -191,7 +191,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 	points := []geoPoint{}
 
 	ls := f.makeLineString(way.Nodes)
-	ls = resample.ToInterval(ls, geo.Distance, 500)
+	ls = resample.ToInterval(ls, geo.Distance, f.config.HighwayPointsDistance)
 
 	highwayName := f.localizedName(way.Tags)
 	if highwayName == "" {

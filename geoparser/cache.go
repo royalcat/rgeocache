@@ -8,7 +8,7 @@ import (
 
 func (f *GeoGen) cacheLocalization(tags osm.Tags) {
 	officialName := tags.Find(nameKey)
-	localizedName := tags.Find(nameKey + ":" + f.preferredLocalization)
+	localizedName := tags.Find(nameKey + ":" + f.config.PreferredLocalization)
 	if officialName != "" && localizedName != "" && officialName != localizedName {
 		f.localizationCache.Store(officialName, localizedName)
 	}

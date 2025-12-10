@@ -160,7 +160,10 @@ func generate(ctx *cli.Context) error {
 		return err
 	}
 
-	geoGen, err := geoparser.NewGeoGen(osmdb, threads, preferredLocalization)
+	config := geoparser.ConfigDefault()
+	config.PreferredLocalization = preferredLocalization
+
+	geoGen, err := geoparser.NewGeoGen(osmdb, config)
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}

@@ -10,8 +10,8 @@ const nameKey = "name"
 func (f *GeoGen) localizedName(tags osm.Tags) string {
 	name := tags.Find(nameKey)
 
-	if f.preferredLocalization != "" {
-		if localizedName := tags.Find(nameKey + ":" + f.preferredLocalization); localizedName != "" {
+	if f.config.PreferredLocalization != "" {
+		if localizedName := tags.Find(nameKey + ":" + f.config.PreferredLocalization); localizedName != "" {
 			return localizedName
 		}
 
@@ -28,14 +28,14 @@ const cityAddrKey = "addr:city"
 func (f *GeoGen) localizedCityAddr(tags osm.Tags, point orb.Point) string {
 	name := tags.Find(cityAddrKey)
 
-	if f.preferredLocalization == "" {
+	if f.config.PreferredLocalization == "" {
 		if name != "" {
 			return name
 		}
 		return f.calcPlace(point)
 	}
 
-	if localizedName := tags.Find(cityAddrKey + ":" + f.preferredLocalization); localizedName != "" {
+	if localizedName := tags.Find(cityAddrKey + ":" + f.config.PreferredLocalization); localizedName != "" {
 		return localizedName
 	}
 
@@ -59,11 +59,11 @@ const addrStreetKey = "addr:street"
 func (f *GeoGen) localizedStreetName(tags osm.Tags) string {
 	name := tags.Find(addrStreetKey)
 
-	if f.preferredLocalization == "" {
+	if f.config.PreferredLocalization == "" {
 		return name
 	}
 
-	if localizedName := tags.Find(addrStreetKey + ":" + f.preferredLocalization); localizedName != "" {
+	if localizedName := tags.Find(addrStreetKey + ":" + f.config.PreferredLocalization); localizedName != "" {
 		return localizedName
 	}
 

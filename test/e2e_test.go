@@ -1,7 +1,6 @@
 package test
 
 import (
-	"runtime"
 	"testing"
 
 	"github.com/royalcat/osmpbfdb"
@@ -39,7 +38,7 @@ func TestLondon(t *testing.T) {
 	}
 	t.Logf("OsmDB counts: nodes: %d ways: %d relations: %d", osmdb.CountNodes(), osmdb.CountWays(), osmdb.CountRelations())
 
-	gg, err := geoparser.NewGeoGen(osmdb, runtime.GOMAXPROCS(0), "")
+	gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
 	if err != nil {
 		t.Fatal(err)
 	}

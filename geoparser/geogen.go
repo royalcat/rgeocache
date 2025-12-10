@@ -11,8 +11,7 @@ import (
 )
 
 type GeoGen struct {
-	threads               int
-	preferredLocalization string
+	config Config
 
 	placeIndex  *bordertree.BorderTree[string]
 	regionIndex *bordertree.BorderTree[string]
@@ -27,14 +26,13 @@ type GeoGen struct {
 	log *slog.Logger
 }
 
-func NewGeoGen(db osmpbfdb.OsmDB, threads int, preferredLocalization string) (*GeoGen, error) {
+func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 	return &GeoGen{
 		placeIndex:        bordertree.NewBorderTree[string](),
 		regionIndex:       bordertree.NewBorderTree[string](),
 		localizationCache: xsync.NewMapOf[string, string](),
 
-		threads:               threads,
-		preferredLocalization: preferredLocalization,
+		config: config,
 
 		osmdb: db,
 
