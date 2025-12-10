@@ -1,7 +1,6 @@
 package test
 
 import (
-	"runtime"
 	"testing"
 
 	"github.com/royalcat/osmpbfdb"
@@ -32,7 +31,7 @@ func BenchmarkGenerationLondon(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		gg, err := geoparser.NewGeoGen(osmdb, runtime.GOMAXPROCS(0), "")
+		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -68,7 +67,7 @@ func BenchmarkGenerationGreatBritan(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		gg, err := geoparser.NewGeoGen(osmdb, runtime.GOMAXPROCS(0), "")
+		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
 		if err != nil {
 			b.Fatal(err)
 		}

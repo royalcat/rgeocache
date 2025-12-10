@@ -12,7 +12,7 @@ import (
 )
 
 func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
-	pool := pool.New().WithMaxGoroutines(f.threads)
+	pool := pool.New().WithMaxGoroutines(f.config.Threads)
 	defer pool.Wait()
 
 	for rel, err := range iterWithProgress(db.IterRelations(), int(db.CountRelations()), "3/4 filling relations cache") {
@@ -28,7 +28,7 @@ func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
 }
 
 func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
-	pool := pool.New().WithMaxGoroutines(f.threads)
+	pool := pool.New().WithMaxGoroutines(f.config.Threads)
 	defer pool.Wait()
 
 	objectsCount := int(db.CountNodes() + db.CountWays() + db.CountRelations())
