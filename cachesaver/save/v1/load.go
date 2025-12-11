@@ -9,41 +9,42 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func Load(r io.Reader) (Cache, error) {
-	cache := Cache{}
+func Load(r io.Reader) (*Cache, *saveproto.CacheMetadata, error) {
 
 	var headerSize uint32
 	err := binary.Read(r, binary.LittleEndian, &headerSize)
 	if err != nil {
-		return cache, fmt.Errorf("failed to read header size: %w", err)
+		return nil, nil, fmt.Errorf("failed to read header size: %w", err)
 	}
 
 	var header saveproto.CacheHeader
 	err = readToProto(r, headerSize, &header)
 	if err != nil {
-		return cache, fmt.Errorf("failed to read header: %w", err)
+		return nil, nil, fmt.Errorf("failed to read header: %w", err)
 	}
 
 	var metadata saveproto.CacheMetadata
 	err = readToProto(r, header.MetadataSize, &metadata)
 	if err != nil {
-		return cache, fmt.Errorf("failed to read metadata: %w", err)
+		return nil, nil, fmt.Errorf("failed to read metadata: %w", err)
 	}
 
 	var stringsCache saveproto.StringsCache
 	err = readToProto(r, header.StringsCacheSize, &stringsCache)
 	if err != nil {
-		return cache, fmt.Errorf("failed to read strings cache: %w", err)
+		return nil, nil, fmt.Errorf("failed to read strings cache: %w", err)
 	}
 
-	cache.Streets = stringsCache.Streets
-	cache.Cities = stringsCache.Cities
-	cache.Regions = stringsCache.Regions
+	cache := &Cache{
+		Streets: stringsCache.Streets,
+		Cities:  stringsCache.Cities,
+		Regions: stringsCache.Regions,
+	}
 
 	var pointsBlob saveproto.PointsBlob
 	err = readToProto(r, header.PointsBlobSizes[0], &pointsBlob)
 	if err != nil {
-		return cache, fmt.Errorf("failed to read points blob at index 0: %w", err)
+		return nil, nil, fmt.Errorf("failed to read points blob at index 0: %w", err)
 	}
 	for _, p := range pointsBlob.Points {
 		cache.Points = append(cache.Points, mapPoint(p))
@@ -55,14 +56,14 @@ func Load(r io.Reader) (Cache, error) {
 			break
 		}
 		if err != nil {
-			return cache, fmt.Errorf("failed to read points blob at index %d: %w", i, err)
+			return nil, nil, fmt.Errorf("failed to read points blob at index %d: %w", i, err)
 		}
 		for _, p := range pointsBlob.Points {
 			cache.Points = append(cache.Points, mapPoint(p))
 		}
 	}
 
-	return cache, nil
+	return cache, &metadata, nil
 }
 
 func mapPoint(p *saveproto.Point) Point {

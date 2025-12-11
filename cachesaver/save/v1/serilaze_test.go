@@ -66,7 +66,8 @@ func TestSaveLoad(t *testing.T) {
 	}
 
 	// Load cache from buffer
-	loadedCache, err := Load(&buf)
+	// TODO metadata tests
+	loadedCache, _, err := Load(&buf)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}

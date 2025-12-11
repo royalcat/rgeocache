@@ -23,12 +23,12 @@
         "ru",
         "-i",
         "cache_build/maps/europe/belarus-latest.osm.pbf",
-        "-i",
-        "cache_build/maps/europe/ukraine-latest.osm.pbf",
-        "-i",
-        "cache_build/maps/asia/azerbaijan-latest.osm.pbf",
+        // "-i",
+        // "cache_build/maps/europe/ukraine-latest.osm.pbf",
+        // "-i",
+        // "cache_build/maps/asia/azerbaijan-latest.osm.pbf",
         "--points",
-        "points_data.gob"
+        "points_data.rgc"
       ]
     },
     {
@@ -40,9 +40,8 @@
       "args": [
         "serve",
         "--points",
-        // "${workspaceFolder}/cache_build/points_data.gob",
-        // "points_data.gob",
-        "post-cis_ru_points.rgc.zst"
+        // "post-cis_ru_points.rgc.zst"
+        "points_data.rgc"
       ]
     }
   ]
