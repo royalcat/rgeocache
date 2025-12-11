@@ -15,6 +15,8 @@ type Point struct {
 	HouseNumber string
 	City        uint32
 	Region      uint32
+
+	Weight uint8
 }
 
 type Cache struct {
@@ -50,6 +52,7 @@ func CacheFromPoints(input []kdbush.Point[geomodel.Info]) Cache {
 			HouseNumber: p.Data.HouseNumber,
 			City:        uint32(cityIndex),
 			Region:      uint32(regionIndex),
+			Weight:      p.Data.Weight,
 		})
 	}
 

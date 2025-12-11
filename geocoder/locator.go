@@ -26,6 +26,7 @@ func (g *geoInfo) value() geomodel.Info {
 		HouseNumber: g.HouseNumber.Value(),
 		City:        g.City.Value(),
 		Region:      g.Region.Value(),
+		Weight:      g.Weight,
 	}
 }
 
