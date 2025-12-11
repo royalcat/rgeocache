@@ -10,6 +10,9 @@
       "request": "launch",
       "program": "${workspaceFolder}/cmd/main.go",
       "cwd": "${workspaceFolder}/bin",
+      "env": {
+        "GOMAXPROCS": "10"
+      },
       "args": [
         "generate",
         "--pprof.profile",

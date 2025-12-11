@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/paulmach/osm"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/bordertree"
@@ -23,6 +24,10 @@ type GeoGen struct {
 	parsedPointsMu sync.Mutex
 	parsedPoints   []geoPoint
 
+	parsedNodes     *set[osm.NodeID]
+	parsedWays      *set[osm.WayID]
+	parsedRelations *set[osm.RelationID]
+
 	log *slog.Logger
 }
 
@@ -31,6 +36,10 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 		placeIndex:        bordertree.NewBorderTree[string](),
 		regionIndex:       bordertree.NewBorderTree[string](),
 		localizationCache: xsync.NewMapOf[string, string](),
+
+		parsedNodes:     newSet[osm.NodeID](),
+		parsedWays:      newSet[osm.WayID](),
+		parsedRelations: newSet[osm.RelationID](),
 
 		config: config,
 
