@@ -16,6 +16,7 @@ type geoInfo struct {
 	HouseNumber unique.Handle[string]
 	City        unique.Handle[string]
 	Region      unique.Handle[string]
+	Weight      uint8
 }
 
 func (g *geoInfo) value() geomodel.Info {
@@ -48,7 +49,7 @@ func (f *RGeoCoder) FindInRadius(lat, lon float64, radius float64) (i InfoModel,
 	finDist := math.Inf(1)
 	f.tree.Within(lon, lat, radius, func(p kdbush.Point[*geoInfo]) bool {
 		dist := distanceSquared(lon, lat, p.X, p.Y)
-		if dist < finDist {
+		if dist < finDist || p.Data.Weight > finPoint.Data.Weight {
 			finPoint = p
 			finDist = dist
 		}
