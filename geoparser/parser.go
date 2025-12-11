@@ -68,6 +68,10 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 }
 
 func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
+	if f.parsedWays.ContainsAndAdd(way.ID) {
+		return []geoPoint{}
+	}
+
 	log := f.log.With("id", way.ID)
 
 	street := way.Tags.Find("addr:street")
@@ -94,8 +98,8 @@ func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
 		}}
 	}
 
-	highway := way.Tags.Find("highway")
-	if slices.Contains([]string{"motorway", "trunk", "primary", "secondary", "tertiary"}, highway) {
+	highwayTag := way.Tags.Find("highway")
+	if slices.Contains([]string{"motorway", "trunk", "primary", "secondary", "tertiary"}, highwayTag) {
 		return f.parseWayHighway(way)
 	}
 
@@ -103,7 +107,9 @@ func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
 }
 
 func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
-	points := []geoPoint{}
+	if f.parsedRelations.ContainsAndAdd(rel.ID) {
+		return []geoPoint{}
+	}
 
 	tags := rel.TagMap()
 	street := tags["addr:street"]
@@ -118,10 +124,14 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 		return f.parseRelationHighway(rel)
 	}
 
-	return points
+	return []geoPoint{}
 }
 
 func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
+	if f.parsedRelations.ContainsAndAdd(rel.ID) {
+		return []geoPoint{}
+	}
+
 	points := []geoPoint{}
 	tags := rel.TagMap()
 
@@ -155,12 +165,29 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 	return points
 }
 
+func (f *GeoGen) getHighwayName(tags osm.Tags) string {
+	highwayName := f.localizedName(tags)
+	ref := tags.Find("ref")
+
+	name := strings.Join([]string{ref, highwayName}, " ")
+
+	return name
+}
+
 func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
+	if f.parsedRelations.ContainsAndAdd(rel.ID) {
+		return []geoPoint{}
+	}
+
 	points := []geoPoint{}
 
 	for _, m := range rel.Members {
 		if m.Type != osm.TypeWay {
 			continue
+		}
+
+		if f.parsedWays.ContainsAndAdd(osm.WayID(m.Ref)) {
+			return []geoPoint{}
 		}
 
 		way, err := f.osmdb.GetWay(osm.WayID(m.Ref))
@@ -170,12 +197,13 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 		}
 
 		ls := f.makeLineString(way.Nodes)
+		// ls = resample.ToInterval(ls, geo.Distance, f.config.HighwayPointsDistance)
 
 		for _, point := range ls {
 			points = append(points, geoPoint{
 				Point: point,
 				Info: geomodel.Info{
-					Name:   f.localizedName(rel.Tags),
+					Name:   f.getHighwayName(rel.Tags),
 					Street: f.localizedStreetName(rel.Tags),
 					City:   f.localizedCityAddr(rel.Tags, point),
 					Region: f.localizedRegion(point),
@@ -188,27 +216,28 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 }
 
 func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
-	points := []geoPoint{}
+	if f.parsedWays.ContainsAndAdd(way.ID) {
+		return []geoPoint{}
+	}
 
 	ls := f.makeLineString(way.Nodes)
 	ls = resample.ToInterval(ls, geo.Distance, f.config.HighwayPointsDistance)
 
-	highwayName := f.localizedName(way.Tags)
-	if highwayName == "" {
-		highwayName = way.Tags.Find("ref")
+	if len(ls) == 0 {
+		return []geoPoint{}
 	}
 
+	out := make([]geoPoint, 0, len(ls))
 	for _, point := range ls {
-		points = append(points, geoPoint{
+		out = append(out, geoPoint{
 			Point: point,
 			Info: geomodel.Info{
-				Name:   highwayName,
+				Name:   f.getHighwayName(way.Tags),
 				Street: f.localizedStreetName(way.Tags),
 				City:   f.localizedCityAddr(way.Tags, point),
 				Region: f.localizedRegion(point),
 			},
 		})
 	}
-
-	return points
+	return out
 }
