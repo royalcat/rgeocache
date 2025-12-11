@@ -90,6 +90,7 @@ func optimizePoints(points []kdbush.Point[geomodel.Info]) []kdbush.Point[*geoInf
 		result[i] = kdbush.Point[*geoInfo]{
 			X: point.X, Y: point.Y,
 			Data: &geoInfo{
+				Weight:      uint8(point.Data.Weight),
 				Name:        point.Data.Name,
 				Street:      unique.Make(point.Data.Street),
 				HouseNumber: unique.Make(point.Data.HouseNumber),

@@ -11,4 +11,6 @@ type Info struct {
 	HouseNumber string `json:"house_number"`
 	City        string `json:"city"`
 	Region      string `json:"region"`
+
+	Weight uint8 `json:"weight"`
 }

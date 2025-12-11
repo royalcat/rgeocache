@@ -55,6 +55,7 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 		return geoPoint{
 			Point: point,
 			Info: geomodel.Info{
+				Weight:      10,
 				Name:        f.localizedName(node.Tags),
 				Street:      f.localizedStreetName(node.Tags),
 				HouseNumber: node.Tags.Find("addr:housenumber"),
@@ -90,6 +91,7 @@ func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
 	return []geoPoint{{
 		Point: point,
 		Info: geomodel.Info{
+			Weight:      10,
 			Name:        f.localizedName(way.Tags),
 			Street:      f.localizedStreetName(way.Tags),
 			HouseNumber: way.Tags.Find("addr:housenumber"),
@@ -112,6 +114,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 		out = append(out, geoPoint{
 			Point: point,
 			Info: geomodel.Info{
+				Weight: 1,
 				Name:   f.getHighwayName(way.Tags),
 				Street: f.localizedStreetName(way.Tags),
 				City:   f.localizedCityAddr(way.Tags, point),
@@ -152,6 +155,7 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 			points = append(points, geoPoint{
 				Point: p,
 				Info: geomodel.Info{
+					Weight:      10,
 					Name:        f.localizedName(rel.Tags),
 					Street:      f.localizedStreetName(rel.Tags),
 					HouseNumber: rel.Tags.Find("addr:housenumber"),

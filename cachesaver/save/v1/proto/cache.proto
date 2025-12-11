@@ -32,4 +32,6 @@ message Point {
   string house_number = 5;
   uint32 city = 6;
   uint32 region = 7;
+
+  uint32 weight = 8;
 }
