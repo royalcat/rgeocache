@@ -45,10 +45,7 @@ func Save(w io.Writer, cache Cache) error {
 	// Write points blobs
 	var pointsBlobs [][]byte
 	for i := 0; i < len(cache.Points); i += pointsChunkSize {
-		end := i + pointsChunkSize
-		if end > len(cache.Points) {
-			end = len(cache.Points)
-		}
+		end := min(i+pointsChunkSize, len(cache.Points))
 
 		chunk := cache.Points[i:end]
 		pointsProto := make([]*saveproto.Point, len(chunk))
@@ -61,6 +58,7 @@ func Save(w io.Writer, cache Cache) error {
 				HouseNumber: point.HouseNumber,
 				City:        point.City,
 				Region:      point.Region,
+				Weight:      uint32(point.Weight),
 			}
 		}
 

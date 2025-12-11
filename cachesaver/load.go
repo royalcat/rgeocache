@@ -77,6 +77,7 @@ func loadV1Cache(reader io.Reader) ([]kdbush.Point[geomodel.Info], *saveproto.Ca
 				HouseNumber: point.HouseNumber,
 				City:        cache.Cities[point.City],
 				Region:      cache.Regions[point.Region],
+				Weight:      point.Weight,
 			},
 		}
 	}

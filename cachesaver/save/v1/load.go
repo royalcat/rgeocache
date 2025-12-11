@@ -75,6 +75,7 @@ func mapPoint(p *saveproto.Point) Point {
 		HouseNumber: p.HouseNumber,
 		City:        p.City,
 		Region:      p.Region,
+		Weight:      uint8(p.Weight),
 	}
 }
 

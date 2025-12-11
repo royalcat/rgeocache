@@ -21,6 +21,7 @@ func TestSaveLoad(t *testing.T) {
 				HouseNumber: "123",
 				City:        0,
 				Region:      0,
+				Weight:      1,
 			},
 			{
 				Lat:         34.0522,
@@ -30,6 +31,7 @@ func TestSaveLoad(t *testing.T) {
 				HouseNumber: "456",
 				City:        1,
 				Region:      1,
+				Weight:      2,
 			},
 			{
 				Lat:         41.8781,
@@ -39,12 +41,13 @@ func TestSaveLoad(t *testing.T) {
 				HouseNumber: "789",
 				City:        2,
 				Region:      2,
+				Weight:      3,
 			},
 		},
 	}
 
 	// Create more points to test chunking
-	for i := 0; i < 2000; i++ {
+	for i := range 2000 {
 		originalCache.Points = append(originalCache.Points, Point{
 			Lat:         float64(i) / 1000,
 			Lon:         float64(i) / -1000,
@@ -53,6 +56,7 @@ func TestSaveLoad(t *testing.T) {
 			HouseNumber: "100",
 			City:        uint32(i % 3),
 			Region:      uint32(i % 3),
+			Weight:      uint8(i % 10),
 		})
 	}
 
@@ -105,5 +109,6 @@ func pointsEqual(a, b Point) bool {
 		a.Street == b.Street &&
 		a.HouseNumber == b.HouseNumber &&
 		a.City == b.City &&
-		a.Region == b.Region
+		a.Region == b.Region &&
+		a.Weight == b.Weight
 }
