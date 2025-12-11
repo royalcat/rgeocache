@@ -1,9 +1,27 @@
 package geoparser
 
 import (
+	"strings"
+
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
 )
+
+func (f *GeoGen) getHighwayName(tags osm.Tags) string {
+	ref := tags.Find("ref")
+	highwayName := f.localizedName(tags)
+
+	builder := strings.Builder{}
+	if ref != "" {
+		builder.WriteString(ref)
+		builder.WriteString(" ")
+	}
+	if highwayName != "" {
+		builder.WriteString(highwayName)
+	}
+
+	return builder.String()
+}
 
 const nameKey = "name"
 

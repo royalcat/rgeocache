@@ -9,6 +9,7 @@ import (
 	"log/slog"
 
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
+	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
@@ -35,7 +36,14 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[geomodel
 	switch compatibilityLevel {
 	case savev1.COMPATIBILITY_LEVEL:
 		log.Info("Loading v1 cache format")
-		return loadV1Cache(reader)
+		points, metadata, err := loadV1Cache(reader)
+		if err != nil {
+			return nil, err
+		}
+		if metadata != nil {
+			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated)
+		}
+		return points, nil
 	}
 
 	return nil, fmt.Errorf("unsupported compatibility level: %d", compatibilityLevel)
@@ -52,10 +60,10 @@ func legacyLoader(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
 	return points, nil
 }
 
-func loadV1Cache(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
-	cache, err := savev1.Load(reader)
+func loadV1Cache(reader io.Reader) ([]kdbush.Point[geomodel.Info], *saveproto.CacheMetadata, error) {
+	cache, metadata, err := savev1.Load(reader)
 	if err != nil {
-		return nil, fmt.Errorf("error loading v1 cache: %s", err.Error())
+		return nil, nil, fmt.Errorf("error loading v1 cache: %s", err.Error())
 	}
 
 	points := make([]kdbush.Point[geomodel.Info], len(cache.Points))
@@ -72,5 +80,5 @@ func loadV1Cache(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
 			},
 		}
 	}
-	return points, nil
+	return points, metadata, nil
 }

@@ -18,6 +18,11 @@ type Point struct {
 }
 
 type Cache struct {
+	// Metadata
+	Version     uint32
+	DateCreated string
+	Locale      string
+
 	// Values deduplication
 	Streets []string
 	Cities  []string

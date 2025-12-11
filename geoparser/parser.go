@@ -44,12 +44,12 @@ type geoPoint struct {
 	geomodel.Info
 }
 
-func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
-	street := node.Tags.Find("addr:street")
-	housenumber := node.Tags.Find("addr:housenumber")
-	building := node.Tags.Find("building")
+func isBuilding(tags osm.Tags) bool {
+	return tags.HasTag("addr:housenumber") && tags.HasTag("addr:street") && tags.HasTag("building")
+}
 
-	if housenumber != "" && street != "" && building != "" {
+func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
+	if isBuilding(node.Tags) {
 		point := orb.Point{node.Lon, node.Lat}
 
 		return geoPoint{
@@ -57,7 +57,7 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 			Info: geomodel.Info{
 				Name:        f.localizedName(node.Tags),
 				Street:      f.localizedStreetName(node.Tags),
-				HouseNumber: housenumber,
+				HouseNumber: node.Tags.Find("addr:housenumber"),
 				City:        f.localizedCityAddr(node.Tags, point),
 				Region:      f.localizedRegion(point),
 			},
@@ -68,59 +68,64 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 }
 
 func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
-	if f.parsedWays.ContainsAndAdd(way.ID) {
-		return []geoPoint{}
-	}
-
-	log := f.log.With("id", way.ID)
-
-	street := way.Tags.Find("addr:street")
-	housenumber := way.Tags.Find("addr:housenumber")
-	building := way.Tags.Find("building")
-
-	if housenumber != "" && street != "" && building != "" {
-		point := f.calcWayCenter(way)
-
-		if point.X() == 0 && point.Y() == 0 {
-			log.Warn("failed to calculate center for way")
-			return []geoPoint{}
-		}
-
-		return []geoPoint{{
-			Point: point,
-			Info: geomodel.Info{
-				Name:        f.localizedName(way.Tags),
-				Street:      f.localizedStreetName(way.Tags),
-				HouseNumber: housenumber,
-				City:        f.localizedCityAddr(way.Tags, point),
-				Region:      f.localizedRegion(point),
-			},
-		}}
-	}
-
-	highwayTag := way.Tags.Find("highway")
-	if slices.Contains([]string{"motorway", "trunk", "primary", "secondary", "tertiary"}, highwayTag) {
+	if isBuilding(way.Tags) {
+		f.parseWayBuilding(way)
+	} else if slices.Contains([]string{"motorway", "trunk", "primary", "secondary", "tertiary"}, way.Tags.Find("highway")) {
 		return f.parseWayHighway(way)
 	}
 
 	return []geoPoint{}
 }
 
-func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
-	if f.parsedRelations.ContainsAndAdd(rel.ID) {
+func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
+	log := f.log.With("id", way.ID)
+
+	point := f.calcWayCenter(way)
+
+	if point.X() == 0 && point.Y() == 0 {
+		log.Warn("failed to calculate center for way")
 		return []geoPoint{}
 	}
 
-	tags := rel.TagMap()
-	street := tags["addr:street"]
-	housenumber := tags["addr:housenumber"]
-	building := tags["building"]
+	return []geoPoint{{
+		Point: point,
+		Info: geomodel.Info{
+			Name:        f.localizedName(way.Tags),
+			Street:      f.localizedStreetName(way.Tags),
+			HouseNumber: way.Tags.Find("addr:housenumber"),
+			City:        f.localizedCityAddr(way.Tags, point),
+			Region:      f.localizedRegion(point),
+		},
+	}}
+}
 
-	if housenumber != "" && street != "" && building != "" {
-		return f.parseRelationBuilding(rel)
+func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
+	ls := f.makeLineString(way.Nodes)
+	ls = resample.ToInterval(ls, geo.Distance, f.config.HighwayPointsDistance)
+
+	if len(ls) == 0 {
+		return []geoPoint{}
 	}
 
-	if tags["route"] == "road" && tags["type"] == "route" && strings.Contains(tags["network"], "national") {
+	out := make([]geoPoint, 0, len(ls))
+	for _, point := range ls {
+		out = append(out, geoPoint{
+			Point: point,
+			Info: geomodel.Info{
+				Name:   f.getHighwayName(way.Tags),
+				Street: f.localizedStreetName(way.Tags),
+				City:   f.localizedCityAddr(way.Tags, point),
+				Region: f.localizedRegion(point),
+			},
+		})
+	}
+	return out
+}
+
+func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
+	if isBuilding(rel.Tags) {
+		return f.parseRelationBuilding(rel)
+	} else if rel.Tags.Find("route") == "road" && rel.Tags.Find("type") == "route" && strings.Contains(rel.Tags.Find("network"), "national") {
 		return f.parseRelationHighway(rel)
 	}
 
@@ -128,21 +133,16 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 }
 
 func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
-	if f.parsedRelations.ContainsAndAdd(rel.ID) {
-		return []geoPoint{}
-	}
-
 	points := []geoPoint{}
-	tags := rel.TagMap()
 
-	if tags["type"] == "multipolygon" {
+	if rel.Tags.Find("type") == "multipolygon" {
 		mpoly, err := f.buildPolygon(rel.Members)
 		if err != nil {
 			slog.Error("Error building polygon", "error", err.Error())
 			return points
 		}
 		if mpoly == nil && len(mpoly) == 0 {
-			slog.Error("Empty polygon", "name", tags["name"])
+			slog.Error("Empty polygon", "name", rel.Tags.Find("name"))
 			return points
 		}
 
@@ -165,29 +165,11 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 	return points
 }
 
-func (f *GeoGen) getHighwayName(tags osm.Tags) string {
-	highwayName := f.localizedName(tags)
-	ref := tags.Find("ref")
-
-	name := strings.Join([]string{ref, highwayName}, " ")
-
-	return name
-}
-
 func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
-	if f.parsedRelations.ContainsAndAdd(rel.ID) {
-		return []geoPoint{}
-	}
-
-	points := []geoPoint{}
-
+	out := []geoPoint{}
 	for _, m := range rel.Members {
 		if m.Type != osm.TypeWay {
 			continue
-		}
-
-		if f.parsedWays.ContainsAndAdd(osm.WayID(m.Ref)) {
-			return []geoPoint{}
 		}
 
 		way, err := f.osmdb.GetWay(osm.WayID(m.Ref))
@@ -196,48 +178,8 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 			continue
 		}
 
-		ls := f.makeLineString(way.Nodes)
-		// ls = resample.ToInterval(ls, geo.Distance, f.config.HighwayPointsDistance)
-
-		for _, point := range ls {
-			points = append(points, geoPoint{
-				Point: point,
-				Info: geomodel.Info{
-					Name:   f.getHighwayName(rel.Tags),
-					Street: f.localizedStreetName(rel.Tags),
-					City:   f.localizedCityAddr(rel.Tags, point),
-					Region: f.localizedRegion(point),
-				},
-			})
-		}
-
-	}
-	return points
-}
-
-func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
-	if f.parsedWays.ContainsAndAdd(way.ID) {
-		return []geoPoint{}
+		out = append(out, f.parseWayHighway(way)...)
 	}
 
-	ls := f.makeLineString(way.Nodes)
-	ls = resample.ToInterval(ls, geo.Distance, f.config.HighwayPointsDistance)
-
-	if len(ls) == 0 {
-		return []geoPoint{}
-	}
-
-	out := make([]geoPoint, 0, len(ls))
-	for _, point := range ls {
-		out = append(out, geoPoint{
-			Point: point,
-			Info: geomodel.Info{
-				Name:   f.getHighwayName(way.Tags),
-				Street: f.localizedStreetName(way.Tags),
-				City:   f.localizedCityAddr(way.Tags, point),
-				Region: f.localizedRegion(point),
-			},
-		})
-	}
 	return out
 }
