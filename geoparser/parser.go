@@ -44,6 +44,12 @@ type geoPoint struct {
 	geomodel.Info
 }
 
+const (
+	weightBuilding = 10
+	weightRoad     = 5
+	weightArea     = 3
+)
+
 func isBuilding(tags osm.Tags) bool {
 	return tags.HasTag("addr:housenumber") && tags.HasTag("addr:street") && tags.HasTag("building")
 }
@@ -55,7 +61,7 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 		return geoPoint{
 			Point: point,
 			Info: geomodel.Info{
-				Weight:      10,
+				Weight:      weightBuilding,
 				Name:        f.localizedName(node.Tags),
 				Street:      f.localizedStreetName(node.Tags),
 				HouseNumber: node.Tags.Find("addr:housenumber"),
@@ -79,7 +85,7 @@ func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
 }
 
 func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
-	log := f.log.With("id", way.ID)
+	log := f.log.With("type", "way", "id", way.ID)
 
 	point := f.calcWayCenter(way)
 
@@ -91,7 +97,7 @@ func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
 	return []geoPoint{{
 		Point: point,
 		Info: geomodel.Info{
-			Weight:      10,
+			Weight:      weightBuilding,
 			Name:        f.localizedName(way.Tags),
 			Street:      f.localizedStreetName(way.Tags),
 			HouseNumber: way.Tags.Find("addr:housenumber"),
@@ -114,7 +120,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 		out = append(out, geoPoint{
 			Point: point,
 			Info: geomodel.Info{
-				Weight: 1,
+				Weight: weightRoad,
 				Name:   f.getHighwayName(way.Tags),
 				Street: f.localizedStreetName(way.Tags),
 				City:   f.localizedCityAddr(way.Tags, point),
@@ -130,6 +136,8 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 		return f.parseRelationBuilding(rel)
 	} else if rel.Tags.Find("route") == "road" && rel.Tags.Find("type") == "route" && strings.Contains(rel.Tags.Find("network"), "national") {
 		return f.parseRelationHighway(rel)
+	} else if rel.Tags.Find("boundary") == "protected_area" && rel.Tags.Find("type") == "boundary" {
+		return f.parseRelationArea(rel)
 	}
 
 	return []geoPoint{}
@@ -155,7 +163,7 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 			points = append(points, geoPoint{
 				Point: p,
 				Info: geomodel.Info{
-					Weight:      10,
+					Weight:      weightBuilding,
 					Name:        f.localizedName(rel.Tags),
 					Street:      f.localizedStreetName(rel.Tags),
 					HouseNumber: rel.Tags.Find("addr:housenumber"),
@@ -185,5 +193,33 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 		out = append(out, f.parseWayHighway(way)...)
 	}
 
+	return out
+}
+
+func (f *GeoGen) parseRelationArea(rel *osm.Relation) []geoPoint {
+	log := f.log.With("type", "relation", "id", rel.ID)
+
+	poly, err := f.buildPolygon(rel.Members)
+	if err != nil {
+		log.Error("Error building polygon", "error", err.Error())
+		return []geoPoint{}
+	}
+
+	points := fillPolygonWithPoints(poly, 0.01)
+
+	out := []geoPoint{}
+	for _, p := range points {
+		out = append(out, geoPoint{
+			Point: p,
+			Info: geomodel.Info{
+				Weight:      weightArea,
+				Name:        f.localizedName(rel.Tags),
+				Street:      f.localizedStreetName(rel.Tags),
+				HouseNumber: rel.Tags.Find("addr:housenumber"),
+				City:        f.localizedCityAddr(rel.Tags, p),
+				Region:      f.localizedRegion(p),
+			},
+		})
+	}
 	return out
 }
