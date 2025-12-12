@@ -6,6 +6,7 @@ require (
 	github.com/KimMachineGun/automemlimit v0.7.4
 	github.com/cheggaaa/pb/v3 v3.1.7
 	github.com/fasthttp/router v1.5.4
+	github.com/fogleman/poissondisc v0.0.0-20190923201222-9b82984c50c5
 	github.com/klauspost/compress v1.18.0
 	github.com/mailru/easyjson v0.9.0
 	github.com/paulmach/orb v0.9.0
