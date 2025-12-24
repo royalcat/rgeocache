@@ -15,8 +15,6 @@ type BorderTree[Data any] struct {
 	qt        qtree.QTree
 }
 
-const offset = 90.0
-
 func NewBorderTree[Data any]() *BorderTree[Data] {
 	return &BorderTree[Data]{}
 }

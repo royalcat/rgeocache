@@ -178,9 +178,14 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 }
 
 func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
+
 	out := []geoPoint{}
 	for _, m := range rel.Members {
 		if m.Type != osm.TypeWay {
+			continue
+		}
+
+		if f.parsedWays.ContainsOrAdd(osm.WayID(m.Ref)) {
 			continue
 		}
 
