@@ -1,6 +1,7 @@
 package geoparser
 
 import (
+	"context"
 	"log/slog"
 	"slices"
 	"strings"
@@ -14,7 +15,10 @@ import (
 	"github.com/paulmach/osm"
 )
 
-func (f *GeoGen) parseObject(o osm.Object) {
+func (f *GeoGen) parseObject(ctx context.Context, o osm.Object) {
+	ctx, span := tracer.Start(ctx, "parseObject")
+	defer span.End()
+
 	switch obj := o.(type) {
 	case *osm.Node:
 		if point, ok := f.parseNode(obj); ok {

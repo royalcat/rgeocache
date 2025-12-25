@@ -1,6 +1,7 @@
 package geoparser
 
 import (
+	"context"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -9,7 +10,10 @@ import (
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/bordertree"
+	"go.opentelemetry.io/otel"
 )
+
+var tracer = otel.Tracer("github.com/royalcat/rgeocache/geoparser")
 
 type GeoGen struct {
 	config Config
@@ -60,13 +64,16 @@ func (f *GeoGen) ResetCache() error {
 	return nil
 }
 
-func (f *GeoGen) ParseOSMData() error {
-	err := f.fillRelCache(f.osmdb)
+func (f *GeoGen) ParseOSMData(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "ParseOSMData")
+	defer span.End()
+
+	err := f.fillRelCache(ctx, f.osmdb)
 	if err != nil {
 		return err
 	}
 
-	err = f.parseDatabase(f.osmdb)
+	err = f.parseDatabase(ctx, f.osmdb)
 	if err != nil {
 		return err
 	}

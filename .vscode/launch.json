@@ -11,7 +11,7 @@
       "program": "${workspaceFolder}/cmd/main.go",
       "cwd": "${workspaceFolder}/bin",
       "env": {
-        "GOMAXPROCS": "10"
+        "GOMAXPROCS": "10",
       },
       "args": [
         "generate",
@@ -28,8 +28,10 @@
         // "-i",
         // "cache_build/maps/asia/azerbaijan-latest.osm.pbf",
         "--points",
-        "points_data.rgc"
-      ]
+        "points_data.rgc",
+        // "--otel.endpoint",
+        // "localhost:4318",
+      ],
     },
     {
       "name": "Serve",
@@ -41,8 +43,8 @@
         "serve",
         "--points",
         // "post-cis_ru_points.rgc.zst"
-        "points_data.rgc"
-      ]
-    }
-  ]
+        "points_data.rgc",
+      ],
+    },
+  ],
 }

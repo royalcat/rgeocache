@@ -1,7 +1,9 @@
 package geoparser
 
 import (
+	"context"
 	"iter"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -11,7 +13,10 @@ import (
 	"github.com/sourcegraph/conc/pool"
 )
 
-func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
+func (f *GeoGen) fillRelCache(ctx context.Context, db osmpbfdb.OsmDB) error {
+	ctx, span := tracer.Start(ctx, "fillRelCache")
+	defer span.End()
+
 	pool := pool.New().WithMaxGoroutines(f.config.Threads)
 	defer pool.Wait()
 
@@ -20,14 +25,17 @@ func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
 			return err
 		}
 		pool.Go(func() {
-			f.cacheRel(rel)
+			f.cacheRel(ctx, rel)
 		})
 	}
 
 	return nil
 }
 
-func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
+func (f *GeoGen) parseDatabase(ctx context.Context, db osmpbfdb.OsmDB) error {
+	ctx, span := tracer.Start(ctx, "parseDatabase")
+	defer span.End()
+
 	pool := pool.New().WithMaxGoroutines(f.config.Threads)
 	defer pool.Wait()
 
@@ -43,7 +51,7 @@ func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
 			return err
 		}
 		pool.Go(func() {
-			f.parseObject(obj)
+			f.parseObject(ctx, obj)
 		})
 	}
 
@@ -51,12 +59,18 @@ func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
 }
 
 func iterWithProgress[T any](source iter.Seq2[T, error], total int, name string) iter.Seq2[T, error] {
-	bar := pb.StartNew(total)
+	bar := pb.New(total)
+	bar.Set(pb.Terminal, false)
 	bar.Set("prefix", name)
-	bar.SetRefreshRate(time.Second * 5)
+	bar.SetRefreshRate(time.Second)
 	bar.SetTemplate(pb.Full)
+	bar.SetWidth(80)
+	bar.SetWriter(&slogWriter{
+		logger: slog.Default(),
+	})
 
 	return func(yield func(T, error) bool) {
+		bar.Start()
 		defer bar.Finish()
 
 		for item, err := range source {
@@ -108,4 +122,14 @@ func castIterToObject[I osm.Object](source iter.Seq2[I, error]) iter.Seq2[osm.Ob
 			}
 		}
 	}
+}
+
+type slogWriter struct {
+	level  slog.Level
+	logger *slog.Logger
+}
+
+func (w *slogWriter) Write(p []byte) (n int, err error) {
+	w.logger.Log(context.Background(), w.level, string(p))
+	return len(p), nil
 }
