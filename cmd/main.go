@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -16,6 +17,7 @@ import (
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
+	"github.com/royalcat/rgeocache/internal/telemetry"
 	"github.com/royalcat/rgeocache/server"
 	"golang.org/x/exp/mmap"
 
@@ -86,6 +88,10 @@ func main() {
 						Name:        "pprof.heap",
 						DefaultText: "",
 					},
+					&cli.StringFlag{
+						Name:        "otel.endpoint",
+						DefaultText: "",
+					},
 				},
 				Action: generate,
 			},
@@ -99,6 +105,14 @@ func main() {
 }
 
 func generate(ctx *cli.Context) error {
+	telemetryClient, err := telemetry.Setup(ctx.Context, "rgeocache", ctx.String("otel.endpoint"))
+	if err != nil {
+		return fmt.Errorf("error setting up telemetry: %w", err)
+	}
+	if telemetryClient != nil {
+		defer telemetryClient.Shutdown(context.Background())
+	}
+
 	log := slog.Default()
 
 	threads := ctx.Int("threads")
@@ -150,7 +164,7 @@ func generate(ctx *cli.Context) error {
 	}
 
 	log.Info("Tuning gc to respect only soft mem limit")
-	err := tuneGC()
+	err = tuneGC()
 	if err != nil {
 		log.Error("Error tuning gc", "error", err)
 	}
@@ -168,7 +182,7 @@ func generate(ctx *cli.Context) error {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
 
-	err = geoGen.ParseOSMData()
+	err = geoGen.ParseOSMData(ctx.Context)
 	if err != nil {
 		return fmt.Errorf("error parsing osm with error: %s", err.Error())
 	}

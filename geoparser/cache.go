@@ -1,6 +1,7 @@
 package geoparser
 
 import (
+	"context"
 	"slices"
 
 	"github.com/paulmach/osm"
@@ -18,7 +19,10 @@ var cachablePlaces = []string{"city", "town", "village", "hamlet", "isolated_dwe
 
 const regionAdminLevel = "4"
 
-func (f *GeoGen) cacheRel(rel *osm.Relation) {
+func (f *GeoGen) cacheRel(ctx context.Context, rel *osm.Relation) {
+	ctx, span := tracer.Start(ctx, "cacheRel")
+	defer span.End()
+
 	if slices.Contains(cachablePlaces, rel.Tags.Find("place")) {
 		f.cacheRelPlace(rel)
 	}
