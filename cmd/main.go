@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"strings"
+	"time"
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/royalcat/osmpbfdb"
@@ -212,6 +213,12 @@ func generate(ctx *cli.Context) error {
 	}
 
 	log.Info("Complete")
+
+	time.Sleep(time.Second * 3)
+	err = telemetryClient.Flush(context.Background())
+	if err != nil {
+		log.Error("error flushing telemetry", "error", err)
+	}
 
 	return nil
 }
