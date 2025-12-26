@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/google/uuid"
 	sloglogrus "github.com/samber/slog-logrus/v2"
@@ -22,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
+	"golang.org/x/sync/errgroup"
 )
 
 type Client struct {
@@ -30,6 +32,28 @@ type Client struct {
 	tracerProvider *trace.TracerProvider
 	metricProvider *metric.MeterProvider
 	loggerProvider *log.LoggerProvider
+}
+
+func (client *Client) Flush(ctx context.Context) error {
+	g, ctx := errgroup.WithContext(ctx)
+
+	if client.metricProvider != nil {
+		g.Go(func() error {
+			return client.metricProvider.ForceFlush(ctx)
+		})
+	}
+	if client.loggerProvider != nil {
+		g.Go(func() error {
+			return client.loggerProvider.ForceFlush(ctx)
+		})
+	}
+	if client.tracerProvider != nil {
+		g.Go(func() error {
+			return client.tracerProvider.ForceFlush(ctx)
+		})
+	}
+
+	return g.Wait()
 }
 
 func (client *Client) Shutdown(ctx context.Context) {
@@ -82,7 +106,7 @@ func Setup(ctx context.Context, appName, endpoint string) (*Client, error) {
 
 	meticExporter, err := otlpmetrichttp.New(ctx,
 		otlpmetrichttp.WithEndpoint(endpoint),
-		otlpmetrichttp.WithInsecure(),
+		// otlpmetrichttp.WithInsecure(),
 		otlpmetrichttp.WithRetry(otlpmetrichttp.RetryConfig{
 			Enabled: false,
 		}),
@@ -96,9 +120,9 @@ func Setup(ctx context.Context, appName, endpoint string) (*Client, error) {
 		return nil, fmt.Errorf("failed to initialize prometheus exporter: %w", err)
 	}
 	client.metricProvider = metric.NewMeterProvider(
+		metric.WithResource(r),
 		metric.WithReader(metric.NewPeriodicReader(meticExporter)),
 		metric.WithReader(promExporter),
-		metric.WithResource(r),
 	)
 	otel.SetMeterProvider(client.metricProvider)
 
@@ -112,24 +136,25 @@ func Setup(ctx context.Context, appName, endpoint string) (*Client, error) {
 
 	traceExporter, err := otlptracehttp.New(ctx,
 		otlptracehttp.WithEndpoint(endpoint),
-		otlptracehttp.WithInsecure(),
+		// otlptracehttp.WithInsecure(),
 		otlptracehttp.WithRetry(otlptracehttp.RetryConfig{
 			Enabled: false,
 		}),
 	)
+
 	if err != nil {
 		return nil, err
 	}
 	client.tracerProvider = trace.NewTracerProvider(
-		trace.WithBatcher(traceExporter),
 		trace.WithResource(r),
+		trace.WithBatcher(traceExporter, trace.WithExportTimeout(time.Second)),
 	)
 	otel.SetTracerProvider(client.tracerProvider)
 	client.log.InfoContext(ctx, "tracing provider initialized")
 
 	logExporter, err := otlploghttp.New(ctx,
 		otlploghttp.WithEndpoint(endpoint),
-		otlploghttp.WithInsecure(),
+		// otlploghttp.WithInsecure(),
 		otlploghttp.WithRetry(otlploghttp.RetryConfig{
 			Enabled: false,
 		}),
@@ -139,7 +164,8 @@ func Setup(ctx context.Context, appName, endpoint string) (*Client, error) {
 	}
 
 	client.loggerProvider = log.NewLoggerProvider(
-		log.WithProcessor(log.NewBatchProcessor(logExporter)),
+		log.WithResource(r),
+		log.WithProcessor(log.NewBatchProcessor(logExporter, log.WithExportInterval(time.Second))),
 	)
 
 	// slog.SetDefault(slog.New(otelslog.NewHandler("", otelslog.WithLoggerProvider(client.loggerProvider))))

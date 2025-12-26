@@ -29,8 +29,8 @@
         // "cache_build/maps/asia/azerbaijan-latest.osm.pbf",
         "--points",
         "points_data.rgc",
-        // "--otel.endpoint",
-        // "localhost:4318",
+        "--otel.endpoint",
+        "otel.kmsign.ru:443",
       ],
     },
     {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/planar"
+	"github.com/paulmach/orb/simplify"
 	"github.com/tidwall/qtree"
 )
 
@@ -20,8 +21,10 @@ func NewBorderTree[Data any]() *BorderTree[Data] {
 }
 
 type border[D any] struct {
-	Data    D
-	Polygon orb.MultiPolygon
+	Data D
+
+	Polygon           orb.MultiPolygon
+	SimplifiedPolygon orb.MultiPolygon
 }
 
 func (bt *BorderTree[Data]) InsertBorder(data Data, b orb.MultiPolygon) {
@@ -30,7 +33,11 @@ func (bt *BorderTree[Data]) InsertBorder(data Data, b orb.MultiPolygon) {
 	bt.mu.Lock()
 	defer bt.mu.Unlock()
 
-	bt.borders = append(bt.borders, border[Data]{Data: data, Polygon: b})
+	bt.borders = append(bt.borders, border[Data]{
+		Data:              data,
+		Polygon:           b,
+		SimplifiedPolygon: simplify.VisvalingamKeep(100).MultiPolygon(b.Clone()),
+	})
 	bt.qt.Insert(bound.Min, bound.Max, bt.idCounter)
 	bt.idCounter++
 }
@@ -44,6 +51,10 @@ func (bt *BorderTree[Data]) QueryPoint(point orb.Point) (Data, bool) {
 
 	bt.qt.Search(point, point, func(_, _ [2]float64, data interface{}) bool {
 		id := data.(uint64)
+
+		if !planar.MultiPolygonContains(bt.borders[id].SimplifiedPolygon, point) {
+			return true
+		}
 
 		if planar.MultiPolygonContains(bt.borders[id].Polygon, point) {
 			out = bt.borders[id].Data

@@ -25,7 +25,7 @@ func (f *GeoGen) fillRelCache(ctx context.Context, db osmpbfdb.OsmDB) error {
 			return err
 		}
 		pool.Go(func() {
-			f.cacheRel(ctx, rel)
+			f.cacheRel(rel)
 		})
 	}
 
@@ -51,7 +51,7 @@ func (f *GeoGen) parseDatabase(ctx context.Context, db osmpbfdb.OsmDB) error {
 			return err
 		}
 		pool.Go(func() {
-			f.parseObject(ctx, obj)
+			f.parseObject(obj)
 		})
 	}
 
