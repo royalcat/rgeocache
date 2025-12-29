@@ -132,12 +132,19 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 }
 
 func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
-	if isBuilding(rel.Tags) {
-		return f.parseRelationBuilding(rel)
-	} else if rel.Tags.Find("route") == "road" && rel.Tags.Find("type") == "route" && strings.Contains(rel.Tags.Find("network"), "national") {
-		return f.parseRelationHighway(rel)
-	} else if rel.Tags.Find("boundary") == "protected_area" && rel.Tags.Find("type") == "boundary" {
-		return f.parseRelationArea(rel)
+	switch rel.Tags.Find("type") {
+	case "multipolygon":
+		if isBuilding(rel.Tags) {
+			return f.parseRelationBuilding(rel)
+		}
+	case "boundary":
+		if rel.Tags.Find("boundary") == "protected_area" {
+			return f.parseRelationArea(rel)
+		}
+	case "building":
+		if rel.Tags.Find("route") == "road" && strings.Contains(rel.Tags.Find("network"), "national") {
+			return f.parseRelationHighway(rel)
+		}
 	}
 
 	return []geoPoint{}
