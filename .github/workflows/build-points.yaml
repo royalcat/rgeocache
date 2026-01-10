@@ -32,7 +32,7 @@ jobs:
             locale: "offical"
     env:
       MAPS: ${{ matrix.maps }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
