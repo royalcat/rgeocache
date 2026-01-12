@@ -42,8 +42,10 @@
       "args": [
         "serve",
         "--points",
-        // "post-cis_ru_points.rgc.zst"
-        "points_data.rgc",
+        "post-cis_ru_points.rgc",
+        // "points_data.rgc",
+        "--version",
+        "1",
       ],
     },
   ],
