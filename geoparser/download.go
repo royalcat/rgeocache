@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/royalcat/rgeocache/cachesaver"
 	"github.com/royalcat/rgeocache/geomodel"
@@ -16,8 +17,6 @@ import (
 func DownloadOsm(ctx context.Context, name string) {
 
 }
-
-// Cantor pairing function
 
 func (f *GeoGen) SavePointsToFile(file string) error {
 	dataFile, err := os.Create(file)
@@ -40,7 +39,12 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		})
 	}
 
-	if err := cachesaver.Save(points, dataFile); err != nil {
+	meta := cachesaver.Metadata{
+		Version:     f.config.Version,
+		Locale:      f.config.PreferredLocalization,
+		DateCreated: time.Now(),
+	}
+	if err = cachesaver.Save(points, meta, dataFile); err != nil {
 		return err
 	}
 

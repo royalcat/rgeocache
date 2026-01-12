@@ -71,6 +71,11 @@ func main() {
 						Aliases:     []string{"t"},
 						DefaultText: "max",
 					},
+					&cli.IntFlag{
+						Name:        "version",
+						Aliases:     []string{},
+						DefaultText: "1",
+					},
 					&cli.StringFlag{
 						Name:        "preferred-localization",
 						Aliases:     []string{"l"},
@@ -127,6 +132,8 @@ func generate(ctx *cli.Context) error {
 		preferredLocalization = ""
 	}
 
+	version := ctx.Int("version")
+
 	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
 		go func() {
 			log.Info("Starting pprof server")
@@ -177,6 +184,7 @@ func generate(ctx *cli.Context) error {
 
 	config := geoparser.ConfigDefault()
 	config.PreferredLocalization = preferredLocalization
+	config.Version = uint32(version)
 
 	geoGen, err := geoparser.NewGeoGen(osmdb, config)
 	if err != nil {
