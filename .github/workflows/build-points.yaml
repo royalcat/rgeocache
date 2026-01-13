@@ -71,11 +71,18 @@ jobs:
               MAPS_FILES+="-i maps/${map}-latest.osm.pbf "
           done
           unset IFS
-          go run ../cmd generate -l ${{ matrix.locale }} -p ${{ matrix.name }}_points ${MAPS_FILES} --version ${{ github.run_id }}
+          go run ../cmd generate --pprof.profile --pprof.heap -l ${{ matrix.locale }} --version ${{ github.run_id }} -p ${{ matrix.name }}_points ${MAPS_FILES}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}_points
-          path: cache_build/${{ matrix.name }}_points.rgc
+          path: |
+            cache_build/${{ matrix.name }}_points.rgc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}_profile
+          path: |
+            cache_build/profile.cpu.prof
+            cache_build/profile.heap.prof
 
   # keepalive-job:
   #   name: Keepalive Workflow
