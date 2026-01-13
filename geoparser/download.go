@@ -20,7 +20,6 @@ func DownloadOsm(ctx context.Context, name string) {
 
 func (f *GeoGen) SavePointsToFile(file string) error {
 	dataFile, err := os.Create(file)
-
 	if err != nil {
 		return err
 	}
@@ -29,6 +28,8 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	defer f.parsedPointsMu.Unlock()
 
 	f.parsedPoints = uniqueGeoPoints(f.parsedPoints)
+
+	f.log.Info("Saving points to file", "count", len(f.parsedPoints))
 
 	points := make([]kdbush.Point[geomodel.Info], 0, len(f.parsedPoints))
 	for _, point := range f.parsedPoints {
