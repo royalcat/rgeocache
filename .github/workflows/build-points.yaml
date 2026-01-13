@@ -81,8 +81,8 @@ jobs:
         with:
           name: ${{ matrix.name }}_profile
           path: |
-            cache_build/profile.cpu.prof
-            cache_build/profile.heap.prof
+            cache_build/profile.cpu.pprof
+            cache_build/profile.heap.pprof
 
   # keepalive-job:
   #   name: Keepalive Workflow
