@@ -234,7 +234,7 @@ func generate(ctx *cli.Context) error {
 }
 
 func writeHeapProfile(name string) error {
-	f, err := os.Create(name + ".heap.prof")
+	f, err := os.Create(name + ".heap.pprof")
 	if err != nil {
 		log.Fatal(err)
 	}
