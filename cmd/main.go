@@ -18,6 +18,7 @@ import (
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
+	"github.com/royalcat/rgeocache/internal/stats"
 	"github.com/royalcat/rgeocache/internal/telemetry"
 	"github.com/royalcat/rgeocache/server"
 	"golang.org/x/exp/mmap"
@@ -98,6 +99,17 @@ func main() {
 						Name:        "otel.endpoint",
 						DefaultText: "",
 					},
+					&cli.StringFlag{
+						Name:        "stats",
+						Usage:       "Path to save runtime stats (enables stats collection when set)",
+						DefaultText: "",
+					},
+					&cli.IntFlag{
+						Name:        "stats.interval",
+						Usage:       "Stats collection interval in milliseconds",
+						Value:       60000,
+						DefaultText: "60000",
+					},
 				},
 				Action: generate,
 			},
@@ -120,6 +132,32 @@ func generate(ctx *cli.Context) error {
 	}
 
 	log := slog.Default()
+
+	// Setup stats collection if enabled
+	statsFile := ctx.String("stats")
+	var statsCollector *stats.Collector
+	if statsFile != "" {
+		interval := time.Duration(ctx.Int("stats.interval")) * time.Millisecond
+		var err error
+		statsCollector, err = stats.NewCollector(interval)
+		if err != nil {
+			log.Warn("Failed to create stats collector", "error", err)
+		} else {
+			log.Info("Starting runtime stats collection", "interval", interval, "output", statsFile)
+			statsCollector.Start()
+			defer func() {
+				runtimeStats := statsCollector.Stop()
+				log.Info("Saving runtime stats", "file", statsFile,
+					"elapsed", runtimeStats.ElapsedHuman,
+					"peak_heap_mb", runtimeStats.Summary.PeakHeapAlloc/(1024*1024),
+					"peak_rss_mb", runtimeStats.Summary.PeakProcessRSS/(1024*1024),
+					"avg_cpu_percent", runtimeStats.Summary.AvgCPUPercent)
+				if err := runtimeStats.SaveToFile(statsFile); err != nil {
+					log.Error("Failed to save runtime stats", "error", err)
+				}
+			}()
+		}
+	}
 
 	threads := ctx.Int("threads")
 	if threads == 0 {
