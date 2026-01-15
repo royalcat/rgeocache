@@ -71,7 +71,12 @@ jobs:
               MAPS_FILES+="-i maps/${map}-latest.osm.pbf "
           done
           unset IFS
-          go run ../cmd generate --pprof.profile --pprof.heap --stats stats.txt -l ${{ matrix.locale }} --version ${{ github.run_id }} -p ${{ matrix.name }}_points ${MAPS_FILES}
+          cp ../default.pgo ./default.pgo
+          go build -trimpath -ldflags="-s -w" -pgo=default.pgo -o ./rgeocache ../cmd
+          chmod +x ./rgeocache
+          ./rgeocache generate --pprof.profile --pprof.heap --stats stats.txt \
+            -l ${{ matrix.locale }} --version ${{ github.run_id }} \
+            -p ${{ matrix.name }}_points ${MAPS_FILES}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}_points
