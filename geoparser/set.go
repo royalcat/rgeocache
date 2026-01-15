@@ -32,7 +32,7 @@ func (s *set[K]) Remove(item K) {
 	delete(s.items, item)
 }
 
-func (s *set[K]) ContainsOrAdd(item K) bool {
+func (s *set[K]) AddIfAbsent(item K) (added bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.items[item]; !ok {

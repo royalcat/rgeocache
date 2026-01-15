@@ -75,6 +75,10 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 }
 
 func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
+	if !f.parsedWays.AddIfAbsent(way.ID) {
+		return []geoPoint{}
+	}
+
 	if isBuilding(way.Tags) {
 		return f.parseWayBuilding(way)
 	} else if slices.Contains([]string{"motorway", "trunk", "primary", "secondary", "tertiary"}, way.Tags.Find("highway")) {
@@ -132,6 +136,10 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 }
 
 func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
+	if !f.parsedRelations.AddIfAbsent(rel.ID) {
+		return []geoPoint{}
+	}
+
 	switch rel.Tags.Find("type") {
 	case "multipolygon":
 		if isBuilding(rel.Tags) {
@@ -185,14 +193,9 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 }
 
 func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
-
 	out := []geoPoint{}
 	for _, m := range rel.Members {
 		if m.Type != osm.TypeWay {
-			continue
-		}
-
-		if f.parsedWays.ContainsOrAdd(osm.WayID(m.Ref)) {
 			continue
 		}
 
@@ -202,7 +205,7 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 			continue
 		}
 
-		out = append(out, f.parseWayHighway(way)...)
+		out = append(out, f.parseWay(way)...)
 	}
 
 	return out
