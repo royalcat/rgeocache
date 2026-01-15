@@ -15,8 +15,8 @@
       },
       "args": [
         "generate",
-        // "--pprof.profile",
-        // "--pprof.heap",
+        "--pprof.profile",
+        "--pprof.heap",
         "--pprof.listen",
         ":8080",
         "--version",
