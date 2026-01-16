@@ -1,3 +1,5 @@
+github.com/4kills/go-libdeflate/v2 v2.2.1 h1:0nWXN0qIGg5UTPSYhJCaPenzCJEtsetvc7SoKabO1Oc=
+github.com/4kills/go-libdeflate/v2 v2.2.1/go.mod h1:hyouZv4OAhHaaMpYuejstUN0xOg8mA+yy75WE3Ty6SM=
 github.com/KimMachineGun/automemlimit v0.7.4 h1:UY7QYOIfrr3wjjOAqahFmC3IaQCLWvur9nmfIn6LnWk=
 github.com/KimMachineGun/automemlimit v0.7.4/go.mod h1:QZxpHaGOQoYvFhv/r4u3U0JTC2ZcOwbSr11UZF46UBM=
 github.com/VividCortex/ewma v1.2.0 h1:f58SaIzcDXrSy3kWaHNvuJgJ3Nmz59Zji6XoJR/q1ow=
@@ -114,6 +116,10 @@ github.com/royalcat/osmpbfdb v0.0.0-20260115223359-73ec0c1d8551 h1:NQGqjKzTa79S4
 github.com/royalcat/osmpbfdb v0.0.0-20260115223359-73ec0c1d8551/go.mod h1:u0BLjoEO/5OpexiAtGT9cI5PfjFTzjJmwyGd/f8aNAE=
 github.com/royalcat/osmpbfdb v0.0.0-20260116010254-79fb07689d21 h1:esMWFZZ8K7+MmALlVEuVdTW3U7cd6XNOyQB5MxBtTrA=
 github.com/royalcat/osmpbfdb v0.0.0-20260116010254-79fb07689d21/go.mod h1:u0BLjoEO/5OpexiAtGT9cI5PfjFTzjJmwyGd/f8aNAE=
+github.com/royalcat/osmpbfdb v0.0.0-20260116205808-e5ef886c4863 h1:HsQutf289UpmQIcc6rhd1ppMUpfs6wXpW/E8F65xaTM=
+github.com/royalcat/osmpbfdb v0.0.0-20260116205808-e5ef886c4863/go.mod h1:+NaedgUwMD2tpSQKjsRZxz1TD+rfDBt4MfW1Klq1mJM=
+github.com/royalcat/osmpbfdb v0.0.0-20260116222330-d528d3b2cd83 h1:C/FE+Cb1CxMb6+V7l7/UFN6+TXKv5FegJTU30HaA+n4=
+github.com/royalcat/osmpbfdb v0.0.0-20260116222330-d528d3b2cd83/go.mod h1:+NaedgUwMD2tpSQKjsRZxz1TD+rfDBt4MfW1Klq1mJM=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/samber/lo v1.51.0 h1:kysRYLbHy/MB7kQZf5DSN50JHmMsNEdeY24VzJFu7wI=
