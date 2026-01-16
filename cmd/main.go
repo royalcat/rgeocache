@@ -295,7 +295,7 @@ func serve(ctx *cli.Context) error {
 
 func tuneGC() error {
 	_, err := memlimit.SetGoMemLimitWithOpts(
-		memlimit.WithRatio(0.7),
+		memlimit.WithRatio(0.5),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(
 				memlimit.FromCgroup,
