@@ -215,7 +215,9 @@ func generate(ctx *cli.Context) error {
 		log.Error("Error tuning gc", "error", err)
 	}
 
-	osmdb, err := osmpbfdb.OpenMultiDB(inputsReaders, osmpbfdb.Config{})
+	osmdb, err := osmpbfdb.OpenMultiDB(inputsReaders, osmpbfdb.Config{
+		SkipInfo: true,
+	})
 	if err != nil {
 		return err
 	}
