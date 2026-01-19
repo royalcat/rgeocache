@@ -81,7 +81,7 @@ func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
 
 	if isBuilding(way.Tags) {
 		return f.parseWayBuilding(way)
-	} else if slices.Contains([]string{"motorway", "trunk", "primary", "secondary", "tertiary"}, way.Tags.Find("highway")) {
+	} else if slices.Contains([]string{"motorway", "trunk", "primary", "secondary"}, way.Tags.Find("highway")) {
 		return f.parseWayHighway(way)
 	}
 
