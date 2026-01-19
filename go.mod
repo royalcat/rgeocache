@@ -14,7 +14,7 @@ require (
 	github.com/paulmach/osm v0.8.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/puzpuzpuz/xsync/v3 v3.4.0
-	github.com/royalcat/osmpbfdb v0.0.0-20260116222330-d528d3b2cd83
+	github.com/royalcat/osmpbfdb v0.0.0-20260116222714-c8703d9a8f6a
 	github.com/samber/slog-logrus/v2 v2.5.2
 	github.com/samber/slog-multi v1.4.1
 	github.com/shirou/gopsutil/v4 v4.25.12
