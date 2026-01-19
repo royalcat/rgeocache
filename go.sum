@@ -120,6 +120,8 @@ github.com/royalcat/osmpbfdb v0.0.0-20260116205808-e5ef886c4863 h1:HsQutf289UpmQ
 github.com/royalcat/osmpbfdb v0.0.0-20260116205808-e5ef886c4863/go.mod h1:+NaedgUwMD2tpSQKjsRZxz1TD+rfDBt4MfW1Klq1mJM=
 github.com/royalcat/osmpbfdb v0.0.0-20260116222330-d528d3b2cd83 h1:C/FE+Cb1CxMb6+V7l7/UFN6+TXKv5FegJTU30HaA+n4=
 github.com/royalcat/osmpbfdb v0.0.0-20260116222330-d528d3b2cd83/go.mod h1:+NaedgUwMD2tpSQKjsRZxz1TD+rfDBt4MfW1Klq1mJM=
+github.com/royalcat/osmpbfdb v0.0.0-20260116222714-c8703d9a8f6a h1:NDKwOa7rK7S6/NGs9QXW24csF8puSqRlca+A+76QLzw=
+github.com/royalcat/osmpbfdb v0.0.0-20260116222714-c8703d9a8f6a/go.mod h1:+NaedgUwMD2tpSQKjsRZxz1TD+rfDBt4MfW1Klq1mJM=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/samber/lo v1.51.0 h1:kysRYLbHy/MB7kQZf5DSN50JHmMsNEdeY24VzJFu7wI=
