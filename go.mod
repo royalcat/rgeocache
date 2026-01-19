@@ -51,7 +51,6 @@ require (
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
-	github.com/datadog/czlib v0.0.0-20160811164712-4bc9a24e37f2 // indirect
 	github.com/ebitengine/purego v0.9.1 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
