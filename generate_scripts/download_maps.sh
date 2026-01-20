@@ -21,7 +21,8 @@ function download_maps {
                 else zflag=()
                 fi
 
-                aria2c -c -o "$file" "http://download.geofabrik.de/${file}"
+                aria2c -c --conditional-get --auto-file-renaming=false --allow-overwrite=true \
+                       -o "$file" "http://download.geofabrik.de/${file}"
             done
         popd
 
