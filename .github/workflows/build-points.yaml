@@ -76,7 +76,7 @@ jobs:
           done
           unset IFS
           cp ../default.pgo ./default.pgo
-          go build -trimpath -ldflags="-s -w" -pgo=default.pgo -o ./rgeocache ../cmd
+          GOARM64="v9.0,lse" go build -trimpath -ldflags="-s -w" -pgo=default.pgo -o ./rgeocache ../cmd
           chmod +x ./rgeocache
           ./rgeocache generate --pprof.profile --pprof.heap --stats stats.txt \
             -l ${{ matrix.locale }} --version ${{ github.run_id }} \
