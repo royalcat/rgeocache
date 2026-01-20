@@ -14,7 +14,7 @@ require (
 	github.com/paulmach/osm v0.8.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/puzpuzpuz/xsync/v3 v3.4.0
-	github.com/royalcat/osmpbfdb v0.0.0-20260116222714-c8703d9a8f6a
+	github.com/royalcat/osmpbfdb v0.0.0-20260120105145-43d321448397
 	github.com/samber/slog-logrus/v2 v2.5.2
 	github.com/samber/slog-multi v1.4.1
 	github.com/shirou/gopsutil/v4 v4.25.12
@@ -37,7 +37,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.38.0
 	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f
-	golang.org/x/sync v0.18.0
+	golang.org/x/sync v0.19.0
 	google.golang.org/protobuf v1.36.11
 )
 

@@ -216,7 +216,8 @@ func generate(ctx *cli.Context) error {
 	}
 
 	osmdb, err := osmpbfdb.OpenMultiDB(inputsReaders, osmpbfdb.Config{
-		SkipInfo: true,
+		SkipInfo:  true,
+		CacheType: osmpbfdb.CacheTypeWeak,
 	})
 	if err != nil {
 		return err
@@ -295,7 +296,7 @@ func serve(ctx *cli.Context) error {
 
 func tuneGC() error {
 	_, err := memlimit.SetGoMemLimitWithOpts(
-		memlimit.WithRatio(0.5),
+		memlimit.WithRatio(0.7),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(
 				memlimit.FromCgroup,
