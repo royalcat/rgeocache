@@ -1,0 +1,59 @@
+[
+  {
+    "adapter": "Delve",
+    "label": "Generate database",
+    "request": "launch",
+    "mode": "exec",
+    "build": {
+      "command": "go",
+      "args": ["build", "-o", "bin/rgeocache", "cmd/main.go"]
+    },
+    "program": "${ZED_WORKTREE_ROOT}/bin/rgeocache",
+    "cwd": "${ZED_WORKTREE_ROOT}/bin",
+    "env": {
+      "GOMAXPROCS": "10",
+      "GOMEMLIMIT": "8362536960"
+    },
+    "args": [
+      "generate",
+      "--pprof.profile",
+      "--pprof.heap",
+      "--pprof.listen",
+      ":8080",
+      "--version",
+      "1",
+      "-l",
+      "ru",
+      "-i",
+      "cache_build/maps/russia-latest.osm.pbf",
+      "-i",
+      "cache_build/maps/europe/belarus-latest.osm.pbf",
+      "-i",
+      "cache_build/maps/europe/ukraine-latest.osm.pbf",
+      "-i",
+      "cache_build/maps/europe/finland-latest.osm.pbf",
+      "-i",
+      "cache_build/maps/europe/georgia-latest.osm.pbf",
+      "-i",
+      "cache_build/maps/asia/azerbaijan-latest.osm.pbf",
+      "-i",
+      "cache_build/maps/asia/armenia-latest.osm.pbf",
+      "--points",
+      "points_data.rgc",
+      "--otel.endpoint",
+      "otel.kmsign.ru:443",
+      "--stats",
+      "stats.txt"
+    ]
+  },
+  {
+    "adapter": "Delve",
+    "label": "Serve",
+    "request": "launch",
+    "mode": "debug",
+    "buildFlags": [],
+    "program": "${ZED_WORKTREE_ROOT}/cmd/main.go",
+    "cwd": "${ZED_WORKTREE_ROOT}/bin",
+    "args": ["serve", "--points", "points_data.rgc"]
+  }
+]
