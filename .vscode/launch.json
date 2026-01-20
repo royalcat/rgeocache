@@ -11,9 +11,10 @@
       "program": "${workspaceFolder}/cmd/main.go",
       "cwd": "${workspaceFolder}/bin",
       "env": {
-        // "GODEBUG": "gctrace=1",
+        "GOAMD64": "v3",
+        "GODEBUG": "gctrace=1",
         "GOMAXPROCS": "10",
-        "GOMEMLIMIT": "8362536960",
+        "GOMEMLIMIT": "11707554611",
       },
       "args": [
         "generate",
