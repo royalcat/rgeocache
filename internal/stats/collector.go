@@ -2,6 +2,7 @@ package stats
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -148,6 +149,8 @@ func (c *Collector) sample() {
 	if systemCPU, err := cpu.Percent(0, true); err == nil {
 		point.SystemCPU = systemCPU
 	}
+
+	slog.Info("Collected runtime stats", "HeapAlloc", formatBytes(point.HeapInuse), "Stack", formatBytes(point.StackInuse), "Sys", formatBytes(point.Sys), "ProcessRSSBytes", formatBytes(point.ProcessRSSBytes), "NumGC", point.NumGC, "NumGoroutine", point.NumGoroutine)
 
 	c.mu.Lock()
 	c.stats.Samples = append(c.stats.Samples, point)
