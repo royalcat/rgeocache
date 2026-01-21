@@ -5,14 +5,25 @@
     "request": "launch",
     "mode": "exec",
     "build": {
+      "env": {
+        "CGO_ENABLED": "0",
+        "GOAMD64": "v3",
+      },
       "command": "go",
-      "args": ["build", "-o", "bin/rgeocache", "cmd/main.go"]
+      "args": [
+        "build",
+        "-pgo=default.pgo",
+        "-o",
+        "bin/rgeocache",
+        "cmd/main.go",
+      ],
     },
     "program": "${ZED_WORKTREE_ROOT}/bin/rgeocache",
     "cwd": "${ZED_WORKTREE_ROOT}/bin",
     "env": {
+      "GODEBUG": "gctrace=1",
       "GOMAXPROCS": "10",
-      "GOMEMLIMIT": "8362536960"
+      "GOMEMLIMIT": "8362536960",
     },
     "args": [
       "generate",
@@ -43,8 +54,8 @@
       "--otel.endpoint",
       "otel.kmsign.ru:443",
       "--stats",
-      "stats.txt"
-    ]
+      "stats.txt",
+    ],
   },
   {
     "adapter": "Delve",
@@ -54,6 +65,6 @@
     "buildFlags": [],
     "program": "${ZED_WORKTREE_ROOT}/cmd/main.go",
     "cwd": "${ZED_WORKTREE_ROOT}/bin",
-    "args": ["serve", "--points", "points_data.rgc"]
-  }
+    "args": ["serve", "--points", "points_data.rgc"],
+  },
 ]
