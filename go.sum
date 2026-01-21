@@ -109,8 +109,6 @@ github.com/prometheus/procfs v0.16.1 h1:hZ15bTNuirocR6u0JZ6BAHHmwS1p8B4P6MRqxtzM
 github.com/prometheus/procfs v0.16.1/go.mod h1:teAbpZRB1iIAJYREa1LsoWUXykVXA1KlTmWl8x/U+Is=
 github.com/puzpuzpuz/xsync/v3 v3.4.0 h1:DuVBAdXuGFHv8adVXjWWZ63pJq+NRXOWVXlKDBZ+mJ4=
 github.com/puzpuzpuz/xsync/v3 v3.4.0/go.mod h1:VjzYrABPabuM4KyBh1Ftq6u8nhwY5tBPKP9jpmh0nnA=
-github.com/royalcat/osmpbfdb v0.0.0-20260120105145-43d321448397 h1:E7CJVVmrZbzNRFx3KZd61tCHCSZqcy3MFCdtp0ybd+E=
-github.com/royalcat/osmpbfdb v0.0.0-20260120105145-43d321448397/go.mod h1:htDeMtgLDO7/wmjLaa2BW0fRm7KoxE1YfBe51XbIZOw=
 github.com/royalcat/osmpbfdb v0.0.0-20260120181231-f1700e020c9a h1:oqge3uv4IZjoN2RFdm7JadDwCfIlMRmUHDMWyRiW9Zc=
 github.com/royalcat/osmpbfdb v0.0.0-20260120181231-f1700e020c9a/go.mod h1:htDeMtgLDO7/wmjLaa2BW0fRm7KoxE1YfBe51XbIZOw=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=

@@ -47,7 +47,7 @@ jobs:
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 16
+          swap-size-gb: 1
       - name: Check out repository code
         uses: actions/checkout@v4
       - name: Set up Go
