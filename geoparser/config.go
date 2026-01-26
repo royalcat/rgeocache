@@ -14,6 +14,6 @@ func ConfigDefault() Config {
 		Threads:               runtime.GOMAXPROCS(-1),
 		Version:               1,
 		PreferredLocalization: "",
-		HighwayPointsDistance: 100,
+		HighwayPointsDistance: 150,
 	}
 }
