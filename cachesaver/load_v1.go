@@ -11,25 +11,28 @@ import (
 )
 
 func loadV1Cache(reader io.Reader) ([]kdbush.Point[Info], *saveproto.CacheMetadata, error) {
-	cache, metadata, err := savev1.Load(reader)
+	pointsIter, strings, metadata, err := savev1.Load(reader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error loading v1 cache: %s", err.Error())
 	}
 
-	points := make([]kdbush.Point[Info], len(cache.Points))
-	for i, point := range cache.Points {
-		points[i] = kdbush.Point[Info]{
+	points := make([]kdbush.Point[Info], 0, 128)
+	for point, err := range pointsIter {
+		if err != nil {
+			return nil, nil, fmt.Errorf("error reading point: %s", err.Error())
+		}
+		points = append(points, kdbush.Point[Info]{
 			X: point.Lat,
 			Y: point.Lon,
 			Data: Info{
 				Name:        point.Name,
-				Street:      unique.Make(cache.Streets[point.Street]),
+				Street:      unique.Make(strings.Streets[point.Street]),
 				HouseNumber: unique.Make(point.HouseNumber),
-				City:        unique.Make(cache.Cities[point.City]),
-				Region:      unique.Make(cache.Regions[point.Region]),
+				City:        unique.Make(strings.Cities[point.City]),
+				Region:      unique.Make(strings.Regions[point.Region]),
 				Weight:      point.Weight,
 			},
-		}
+		})
 	}
 	return points, metadata, nil
 }
