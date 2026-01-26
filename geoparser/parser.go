@@ -220,7 +220,7 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation) []geoPoint {
 		return []geoPoint{}
 	}
 
-	points := fillPolygonWithPoints(poly, 0.01)
+	points := fillPolygonWithPoints(poly, 0.05)
 
 	out := []geoPoint{}
 	for _, p := range points {
