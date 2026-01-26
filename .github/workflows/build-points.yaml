@@ -60,11 +60,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libdeflate-dev libdeflate0
-      - name: Cache maps
-        uses: actions/cache@v4
-        with:
-          path: cache_build/maps
-          key: maps-${{ matrix.maps }}
+      # - name: Cache maps
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: cache_build/maps
+      #     key: maps-${{ matrix.maps }}
       - name: Update maps cache
         shell: bash
         run: |
