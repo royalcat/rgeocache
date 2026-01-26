@@ -23,7 +23,7 @@
     "env": {
       "GODEBUG": "gctrace=1",
       "GOMAXPROCS": "10",
-      "GOMEMLIMIT": "8362536960",
+      // "GOMEMLIMIT": "8362536960",
     },
     "args": [
       "generate",
@@ -50,8 +50,7 @@
       "-i",
       "cache_build/maps/asia/armenia-latest.osm.pbf",
       "--points",
-      "post-cis_ru_points.rgc",
-      // "points_data.rgc",
+      "points_data.rgc",
       "--otel.endpoint",
       "otel.kmsign.ru:443",
       "--stats",
@@ -66,6 +65,12 @@
     "buildFlags": [],
     "program": "${ZED_WORKTREE_ROOT}/cmd/main.go",
     "cwd": "${ZED_WORKTREE_ROOT}/bin",
-    "args": ["serve", "--pprof.listen", ":8089", "--points", "points_data.rgc"],
+    "args": [
+      "serve",
+      "--pprof.listen",
+      ":8089",
+      "--points",
+      "post-cis_ru_points.rgc",
+    ],
   },
 ]
