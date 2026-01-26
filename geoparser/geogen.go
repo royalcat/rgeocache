@@ -1,18 +1,22 @@
 package geoparser
 
 import (
+	"context"
 	"log/slog"
 	"runtime"
 	"sync"
 
+	"github.com/paulmach/osm"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/bordertree"
+	"go.opentelemetry.io/otel"
 )
 
+var tracer = otel.Tracer("github.com/royalcat/rgeocache/geoparser")
+
 type GeoGen struct {
-	threads               int
-	preferredLocalization string
+	config Config
 
 	placeIndex  *bordertree.BorderTree[string]
 	regionIndex *bordertree.BorderTree[string]
@@ -24,17 +28,24 @@ type GeoGen struct {
 	parsedPointsMu sync.Mutex
 	parsedPoints   []geoPoint
 
+	parsedNodes     *set[osm.NodeID]
+	parsedWays      *set[osm.WayID]
+	parsedRelations *set[osm.RelationID]
+
 	log *slog.Logger
 }
 
-func NewGeoGen(db osmpbfdb.OsmDB, threads int, preferredLocalization string) (*GeoGen, error) {
+func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 	return &GeoGen{
 		placeIndex:        bordertree.NewBorderTree[string](),
 		regionIndex:       bordertree.NewBorderTree[string](),
 		localizationCache: xsync.NewMapOf[string, string](),
 
-		threads:               threads,
-		preferredLocalization: preferredLocalization,
+		parsedNodes:     newSet[osm.NodeID](),
+		parsedWays:      newSet[osm.WayID](),
+		parsedRelations: newSet[osm.RelationID](),
+
+		config: config,
 
 		osmdb: db,
 
@@ -53,13 +64,16 @@ func (f *GeoGen) ResetCache() error {
 	return nil
 }
 
-func (f *GeoGen) ParseOSMData() error {
-	err := f.fillRelCache(f.osmdb)
+func (f *GeoGen) ParseOSMData(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "ParseOSMData")
+	defer span.End()
+
+	err := f.fillRelCache(ctx, f.osmdb)
 	if err != nil {
 		return err
 	}
 
-	err = f.parseDatabase(f.osmdb)
+	err = f.parseDatabase(ctx, f.osmdb)
 	if err != nil {
 		return err
 	}

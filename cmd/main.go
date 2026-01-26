@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -11,11 +12,14 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"strings"
+	"time"
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
+	"github.com/royalcat/rgeocache/internal/stats"
+	"github.com/royalcat/rgeocache/internal/telemetry"
 	"github.com/royalcat/rgeocache/server"
 	"golang.org/x/exp/mmap"
 
@@ -39,6 +43,10 @@ func main() {
 						Aliases:   []string{"p"},
 						Required:  true,
 						TakesFile: true,
+					},
+					&cli.StringFlag{
+						Name:        "pprof.listen",
+						DefaultText: "",
 					},
 					&cli.StringFlag{
 						Name:  "listen",
@@ -68,6 +76,11 @@ func main() {
 						Aliases:     []string{"t"},
 						DefaultText: "max",
 					},
+					&cli.IntFlag{
+						Name:        "version",
+						Aliases:     []string{},
+						DefaultText: "1",
+					},
 					&cli.StringFlag{
 						Name:        "preferred-localization",
 						Aliases:     []string{"l"},
@@ -86,6 +99,21 @@ func main() {
 						Name:        "pprof.heap",
 						DefaultText: "",
 					},
+					&cli.StringFlag{
+						Name:        "otel.endpoint",
+						DefaultText: "",
+					},
+					&cli.StringFlag{
+						Name:        "stats",
+						Usage:       "Path to save runtime stats (enables stats collection when set)",
+						DefaultText: "",
+					},
+					&cli.IntFlag{
+						Name:        "stats.interval",
+						Usage:       "Stats collection interval in milliseconds",
+						Value:       60000,
+						DefaultText: "60000",
+					},
 				},
 				Action: generate,
 			},
@@ -99,7 +127,41 @@ func main() {
 }
 
 func generate(ctx *cli.Context) error {
+	telemetryClient, err := telemetry.Setup(ctx.Context, "rgeocache", ctx.String("otel.endpoint"))
+	if err != nil {
+		return fmt.Errorf("error setting up telemetry: %w", err)
+	}
+	if telemetryClient != nil {
+		defer telemetryClient.Shutdown(context.Background())
+	}
+
 	log := slog.Default()
+
+	// Setup stats collection if enabled
+	statsFile := ctx.String("stats")
+	var statsCollector *stats.Collector
+	if statsFile != "" {
+		interval := time.Duration(ctx.Int("stats.interval")) * time.Millisecond
+		var err error
+		statsCollector, err = stats.NewCollector(interval)
+		if err != nil {
+			log.Warn("Failed to create stats collector", "error", err)
+		} else {
+			log.Info("Starting runtime stats collection", "interval", interval, "output", statsFile)
+			statsCollector.Start()
+			defer func() {
+				runtimeStats := statsCollector.Stop()
+				log.Info("Saving runtime stats", "file", statsFile,
+					"elapsed", runtimeStats.ElapsedHuman,
+					"peak_heap_mb", runtimeStats.Summary.PeakHeapAlloc/(1024*1024),
+					"peak_rss_mb", runtimeStats.Summary.PeakProcessRSS/(1024*1024),
+					"avg_cpu_percent", runtimeStats.Summary.AvgCPUPercent)
+				if err := runtimeStats.SaveToFile(statsFile); err != nil {
+					log.Error("Failed to save runtime stats", "error", err)
+				}
+			}()
+		}
+	}
 
 	threads := ctx.Int("threads")
 	if threads == 0 {
@@ -111,6 +173,8 @@ func generate(ctx *cli.Context) error {
 	if preferredLocalization == "official" {
 		preferredLocalization = ""
 	}
+
+	version := ctx.Int("version")
 
 	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
 		go func() {
@@ -150,22 +214,29 @@ func generate(ctx *cli.Context) error {
 	}
 
 	log.Info("Tuning gc to respect only soft mem limit")
-	err := tuneGC()
+	err = tuneGC()
 	if err != nil {
 		log.Error("Error tuning gc", "error", err)
 	}
 
-	osmdb, err := osmpbfdb.OpenMultiDB(inputsReaders, osmpbfdb.Config{})
+	osmdb, err := osmpbfdb.OpenMultiDB(inputsReaders, osmpbfdb.Config{
+		SkipInfo:  true,
+		CacheType: osmpbfdb.CacheTypeWeak,
+	})
 	if err != nil {
 		return err
 	}
 
-	geoGen, err := geoparser.NewGeoGen(osmdb, threads, preferredLocalization)
+	config := geoparser.ConfigDefault()
+	config.PreferredLocalization = preferredLocalization
+	config.Version = uint32(version)
+
+	geoGen, err := geoparser.NewGeoGen(osmdb, config)
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
 
-	err = geoGen.ParseOSMData()
+	err = geoGen.ParseOSMData(ctx.Context)
 	if err != nil {
 		return fmt.Errorf("error parsing osm with error: %s", err.Error())
 	}
@@ -196,11 +267,19 @@ func generate(ctx *cli.Context) error {
 
 	log.Info("Complete")
 
+	time.Sleep(time.Second * 3)
+	if telemetryClient != nil {
+		err = telemetryClient.Flush(context.Background())
+		if err != nil {
+			log.Error("error flushing telemetry", "error", err)
+		}
+	}
+
 	return nil
 }
 
 func writeHeapProfile(name string) error {
-	f, err := os.Create(name + ".heap.prof")
+	f, err := os.Create(name + ".heap.pprof")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -216,12 +295,24 @@ func serve(ctx *cli.Context) error {
 		return err
 	}
 
+	runtime.GC()
+
+	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
+		go func() {
+			log.Info("Starting pprof server")
+			err := http.ListenAndServe(pprofListen, nil)
+			if err != nil {
+				log.Error("Error starting pprof server", "error", err)
+			}
+		}()
+	}
+
 	return server.Run(ctx.Context, ctx.String("listen"), rgeo, log)
 }
 
 func tuneGC() error {
 	_, err := memlimit.SetGoMemLimitWithOpts(
-		memlimit.WithRatio(0.7),
+		memlimit.WithRatio(0.5),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(
 				memlimit.FromCgroup,
