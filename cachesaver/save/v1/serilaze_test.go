@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestSaveLoad(t *testing.T) {
 	// Create test data
 	originalCache := Cache{
-		Streets: []string{"Main St", "Broadway", "Park Ave"},
-		Cities:  []string{"New York", "Los Angeles", "Chicago"},
-		Regions: []string{"NY", "CA", "IL"},
+		Version:     123,
+		DateCreated: time.Unix(1609459200, 0).String(),
+		Locale:      "en",
+		Streets:     []string{"Main St", "Broadway", "Park Ave"},
+		Cities:      []string{"New York", "Los Angeles", "Chicago"},
+		Regions:     []string{"NY", "CA", "IL"},
 		Points: []Point{
 			{
 				Lat:         40.7128,
@@ -71,29 +75,50 @@ func TestSaveLoad(t *testing.T) {
 
 	// Load cache from buffer
 	// TODO metadata tests
-	loadedCache, _, err := Load(&buf)
+	pointsIter, strings, metadata, err := Load(&buf)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
 
 	// Compare the original and loaded caches
-	if !reflect.DeepEqual(originalCache.Streets, loadedCache.Streets) {
-		t.Errorf("Streets don't match:\nOriginal: %v\nLoaded: %v", originalCache.Streets, loadedCache.Streets)
+	if !reflect.DeepEqual(originalCache.Locale, metadata.Locale) {
+		t.Errorf("Locale don't match:\nOriginal: %v\nLoaded: %v", originalCache.Locale, metadata.Locale)
 	}
 
-	if !reflect.DeepEqual(originalCache.Cities, loadedCache.Cities) {
-		t.Errorf("Cities don't match:\nOriginal: %v\nLoaded: %v", originalCache.Cities, loadedCache.Cities)
+	if !reflect.DeepEqual(originalCache.DateCreated, metadata.DateCreated) {
+		t.Errorf("DateCreated don't match:\nOriginal: %v\nLoaded: %v", originalCache.DateCreated, metadata.DateCreated)
 	}
 
-	if !reflect.DeepEqual(originalCache.Regions, loadedCache.Regions) {
-		t.Errorf("Regions don't match:\nOriginal: %v\nLoaded: %v", originalCache.Regions, loadedCache.Regions)
+	if !reflect.DeepEqual(originalCache.Version, metadata.Version) {
+		t.Errorf("Version don't match:\nOriginal: %v\nLoaded: %v", originalCache.Version, metadata.Version)
 	}
 
-	if len(originalCache.Points) != len(loadedCache.Points) {
-		t.Errorf("Points count doesn't match: expected %d, got %d", len(originalCache.Points), len(loadedCache.Points))
+	if !reflect.DeepEqual(originalCache.Streets, strings.Streets) {
+		t.Errorf("Streets don't match:\nOriginal: %v\nLoaded: %v", originalCache.Streets, strings.Streets)
+	}
+
+	if !reflect.DeepEqual(originalCache.Cities, strings.Cities) {
+		t.Errorf("Cities don't match:\nOriginal: %v\nLoaded: %v", originalCache.Cities, strings.Cities)
+	}
+
+	if !reflect.DeepEqual(originalCache.Regions, strings.Regions) {
+		t.Errorf("Regions don't match:\nOriginal: %v\nLoaded: %v", originalCache.Regions, strings.Regions)
+	}
+
+	points := []Point{}
+	for point, err := range pointsIter {
+		if err != nil {
+			t.Errorf("Error iterating points: %v", err)
+			break
+		}
+		points = append(points, point)
+	}
+
+	if len(originalCache.Points) != len(points) {
+		t.Errorf("Points count doesn't match: expected %d, got %d", len(originalCache.Points), len(points))
 	} else {
 		for i, originalPoint := range originalCache.Points {
-			loadedPoint := loadedCache.Points[i]
+			loadedPoint := points[i]
 			if !pointsEqual(originalPoint, loadedPoint) {
 				t.Errorf("Point %d doesn't match:\nOriginal: %+v\nLoaded: %+v", i, originalPoint, loadedPoint)
 				break
