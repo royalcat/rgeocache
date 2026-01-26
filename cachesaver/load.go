@@ -3,18 +3,15 @@ package cachesaver
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"log/slog"
 
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
-	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
-	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
-func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[geomodel.Info], error) {
+func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[Info], error) {
 	magic := make([]byte, len(MAGIC_BYTES))
 	_, err := reader.Read(magic)
 	if err != nil {
@@ -48,38 +45,4 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[geomodel
 
 	return nil, fmt.Errorf("unsupported compatibility level: %d", compatibilityLevel)
 
-}
-
-func legacyLoader(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
-	decoder := gob.NewDecoder(reader)
-	var points []kdbush.Point[geomodel.Info]
-	err := decoder.Decode(&points)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding points: %s", err.Error())
-	}
-	return points, nil
-}
-
-func loadV1Cache(reader io.Reader) ([]kdbush.Point[geomodel.Info], *saveproto.CacheMetadata, error) {
-	cache, metadata, err := savev1.Load(reader)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error loading v1 cache: %s", err.Error())
-	}
-
-	points := make([]kdbush.Point[geomodel.Info], len(cache.Points))
-	for i, point := range cache.Points {
-		points[i] = kdbush.Point[geomodel.Info]{
-			X: point.Lat,
-			Y: point.Lon,
-			Data: geomodel.Info{
-				Name:        point.Name,
-				Street:      cache.Streets[point.Street],
-				HouseNumber: point.HouseNumber,
-				City:        cache.Cities[point.City],
-				Region:      cache.Regions[point.Region],
-				Weight:      point.Weight,
-			},
-		}
-	}
-	return points, metadata, nil
 }

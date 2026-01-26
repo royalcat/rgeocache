@@ -45,6 +45,10 @@ func main() {
 						TakesFile: true,
 					},
 					&cli.StringFlag{
+						Name:        "pprof.listen",
+						DefaultText: "",
+					},
+					&cli.StringFlag{
 						Name:  "listen",
 						Value: ":8080",
 					},
@@ -289,6 +293,18 @@ func serve(ctx *cli.Context) error {
 	rgeo, err := geocoder.LoadGeoCoderFromFile(ctx.String("points"), geocoder.WithLogger(log))
 	if err != nil {
 		return err
+	}
+
+	runtime.GC()
+
+	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
+		go func() {
+			log.Info("Starting pprof server")
+			err := http.ListenAndServe(pprofListen, nil)
+			if err != nil {
+				log.Error("Error starting pprof server", "error", err)
+			}
+		}()
 	}
 
 	return server.Run(ctx.Context, ctx.String("listen"), rgeo, log)
