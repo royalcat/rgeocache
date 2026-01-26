@@ -32,7 +32,7 @@ jobs:
             locale: "offical"
     env:
       MAPS: ${{ matrix.maps }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
@@ -47,15 +47,24 @@ jobs:
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 16
+          swap-size-gb: 1
       - name: Check out repository code
         uses: actions/checkout@v4
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.25"
           check-latest: true
-          cache-dependency-path: go.sum
+          cache: true
+      - name: Install libdeflate
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdeflate-dev libdeflate0
+      # - name: Cache maps
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: cache_build/maps
+      #     key: maps-${{ matrix.maps }}
       - name: Update maps cache
         shell: bash
         run: |
@@ -71,11 +80,24 @@ jobs:
               MAPS_FILES+="-i maps/${map}-latest.osm.pbf "
           done
           unset IFS
-          go run ../cmd generate -l ${{ matrix.locale }} -p ${{ matrix.name }}_points ${MAPS_FILES}
+          cp ../default.pgo ./default.pgo
+          GOARM64="v9.0,lse" go build -trimpath -ldflags="-s -w" -pgo=default.pgo -o ./rgeocache ../cmd
+          chmod +x ./rgeocache
+          ./rgeocache generate --pprof.profile --pprof.heap --stats stats.txt \
+            -l ${{ matrix.locale }} --version ${{ github.run_id }} \
+            -p ${{ matrix.name }}_points ${MAPS_FILES}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}_points
-          path: cache_build/${{ matrix.name }}_points.rgc
+          path: |
+            cache_build/${{ matrix.name }}_points.rgc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}_profile
+          path: |
+            cache_build/profile.cpu.pprof
+            cache_build/profile.heap.pprof
+            cache_build/stats.txt
 
   # keepalive-job:
   #   name: Keepalive Workflow

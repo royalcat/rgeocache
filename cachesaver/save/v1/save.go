@@ -3,7 +3,6 @@ package savev1
 import (
 	"encoding/binary"
 	"io"
-	"time"
 
 	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 	"google.golang.org/protobuf/proto"
@@ -23,8 +22,9 @@ func Save(w io.Writer, cache Cache) error {
 
 	// Prepare metadata (currently empty in the load function, keeping it for future use)
 	metadata := &saveproto.CacheMetadata{
-		Version:     1,
-		DateCreated: time.Now().Format(time.RFC3339),
+		Version:     cache.Version,
+		DateCreated: cache.DateCreated,
+		Locale:      cache.Locale,
 	}
 	metadataBytes, err := proto.Marshal(metadata)
 	if err != nil {
@@ -45,10 +45,7 @@ func Save(w io.Writer, cache Cache) error {
 	// Write points blobs
 	var pointsBlobs [][]byte
 	for i := 0; i < len(cache.Points); i += pointsChunkSize {
-		end := i + pointsChunkSize
-		if end > len(cache.Points) {
-			end = len(cache.Points)
-		}
+		end := min(i+pointsChunkSize, len(cache.Points))
 
 		chunk := cache.Points[i:end]
 		pointsProto := make([]*saveproto.Point, len(chunk))
@@ -61,6 +58,7 @@ func Save(w io.Writer, cache Cache) error {
 				HouseNumber: point.HouseNumber,
 				City:        point.City,
 				Region:      point.Region,
+				Weight:      uint32(point.Weight),
 			}
 		}
 

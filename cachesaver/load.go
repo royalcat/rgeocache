@@ -3,17 +3,15 @@ package cachesaver
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"log/slog"
 
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
-	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
-func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[geomodel.Info], error) {
+func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[Info], error) {
 	magic := make([]byte, len(MAGIC_BYTES))
 	_, err := reader.Read(magic)
 	if err != nil {
@@ -35,42 +33,16 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[geomodel
 	switch compatibilityLevel {
 	case savev1.COMPATIBILITY_LEVEL:
 		log.Info("Loading v1 cache format")
-		return loadV1Cache(reader)
+		points, metadata, err := loadV1Cache(reader)
+		if err != nil {
+			return nil, err
+		}
+		if metadata != nil {
+			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated)
+		}
+		return points, nil
 	}
 
 	return nil, fmt.Errorf("unsupported compatibility level: %d", compatibilityLevel)
 
-}
-
-func legacyLoader(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
-	decoder := gob.NewDecoder(reader)
-	var points []kdbush.Point[geomodel.Info]
-	err := decoder.Decode(&points)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding points: %s", err.Error())
-	}
-	return points, nil
-}
-
-func loadV1Cache(reader io.Reader) ([]kdbush.Point[geomodel.Info], error) {
-	cache, err := savev1.Load(reader)
-	if err != nil {
-		return nil, fmt.Errorf("error loading v1 cache: %s", err.Error())
-	}
-
-	points := make([]kdbush.Point[geomodel.Info], len(cache.Points))
-	for i, point := range cache.Points {
-		points[i] = kdbush.Point[geomodel.Info]{
-			X: point.Lat,
-			Y: point.Lon,
-			Data: geomodel.Info{
-				Name:        point.Name,
-				Street:      cache.Streets[point.Street],
-				HouseNumber: point.HouseNumber,
-				City:        cache.Cities[point.City],
-				Region:      cache.Regions[point.Region],
-			},
-		}
-	}
-	return points, nil
 }

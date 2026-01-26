@@ -6,11 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"unique"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/royalcat/rgeocache/cachesaver"
-	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
@@ -84,17 +82,18 @@ func openReader(name string) (io.ReadCloser, error) {
 	return file, nil
 }
 
-func optimizePoints(points []kdbush.Point[geomodel.Info]) []kdbush.Point[*geoInfo] {
+func optimizePoints(points []kdbush.Point[cachesaver.Info]) []kdbush.Point[*geoInfo] {
 	result := make([]kdbush.Point[*geoInfo], len(points))
 	for i, point := range points {
 		result[i] = kdbush.Point[*geoInfo]{
 			X: point.X, Y: point.Y,
 			Data: &geoInfo{
+				Weight:      uint8(point.Data.Weight),
 				Name:        point.Data.Name,
-				Street:      unique.Make(point.Data.Street),
-				HouseNumber: unique.Make(point.Data.HouseNumber),
-				City:        unique.Make(point.Data.City),
-				Region:      unique.Make(point.Data.Region),
+				Street:      point.Data.Street,
+				HouseNumber: point.Data.HouseNumber,
+				City:        point.Data.City,
+				Region:      point.Data.Region,
 			},
 		}
 	}

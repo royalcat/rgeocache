@@ -1,8 +1,11 @@
 package geoparser
 
 import (
+	"cmp"
 	"context"
 	"os"
+	"slices"
+	"time"
 
 	"github.com/royalcat/rgeocache/cachesaver"
 	"github.com/royalcat/rgeocache/geomodel"
@@ -17,7 +20,6 @@ func DownloadOsm(ctx context.Context, name string) {
 
 func (f *GeoGen) SavePointsToFile(file string) error {
 	dataFile, err := os.Create(file)
-
 	if err != nil {
 		return err
 	}
@@ -25,7 +27,9 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	f.parsedPointsMu.Lock()
 	defer f.parsedPointsMu.Unlock()
 
-	f.parsedPoints = uniq(f.parsedPoints)
+	f.parsedPoints = uniqueGeoPoints(f.parsedPoints)
+
+	f.log.Info("Saving points to file", "count", len(f.parsedPoints))
 
 	points := make([]kdbush.Point[geomodel.Info], 0, len(f.parsedPoints))
 	for _, point := range f.parsedPoints {
@@ -36,23 +40,32 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		})
 	}
 
-	if err := cachesaver.Save(points, dataFile); err != nil {
+	meta := cachesaver.Metadata{
+		Version:     f.config.Version,
+		Locale:      f.config.PreferredLocalization,
+		DateCreated: time.Now(),
+	}
+	if err = cachesaver.Save(points, meta, dataFile); err != nil {
 		return err
 	}
 
 	return dataFile.Close()
 }
 
-func uniq[T comparable](s []T) []T {
-	seen := make(map[T]struct{}, len(s))
-	j := 0
-	for _, v := range s {
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		s[j] = v
-		j++
+func uniqueGeoPoints(points []geoPoint) []geoPoint {
+	// go requires strict weak ordering but struct not directry comparable, so we use a Cantor pairing function for cooridates with fixed precision
+	const precisionAmplifier = 1_000_000
+	cantorPairFunc := func(xf, yf float64) int64 {
+		x := int64(xf * precisionAmplifier)
+		y := int64(yf * precisionAmplifier)
+
+		return (x+y)*(x+y+1)/2 + y
 	}
-	return s[:j]
+	slices.SortFunc(points, func(a, b geoPoint) int {
+		if a == b {
+			return 0
+		}
+		return cmp.Compare(cantorPairFunc(a.X(), a.Y()), cantorPairFunc(b.X(), b.Y()))
+	})
+	return slices.Compact(points)
 }

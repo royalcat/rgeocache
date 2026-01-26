@@ -1,34 +1,31 @@
 package geoparser
 
 import (
-	"slices"
-
 	"github.com/paulmach/osm"
 )
 
 func (f *GeoGen) cacheLocalization(tags osm.Tags) {
 	officialName := tags.Find(nameKey)
-	localizedName := tags.Find(nameKey + ":" + f.preferredLocalization)
+	localizedName := tags.Find(nameKey + ":" + f.config.PreferredLocalization)
 	if officialName != "" && localizedName != "" && officialName != localizedName {
 		f.localizationCache.Store(officialName, localizedName)
 	}
 }
 
-var cachablePlaces = []string{"city", "town", "village", "hamlet", "isolated_dwelling", "farm"}
-
-const regionAdminLevel = "4"
-
 func (f *GeoGen) cacheRel(rel *osm.Relation) {
-	if slices.Contains(cachablePlaces, rel.Tags.Find("place")) {
-		f.cacheRelPlace(rel)
-	}
+	const regionAdminLevel = "4"
 
-	if rel.Tags.Find("type") == "associatedStreet" {
+	switch rel.Tags.Find("type") {
+	case "boundary":
+		if rel.Tags.Find("admin_level") == regionAdminLevel {
+			f.cacheRelRegion(rel)
+		}
+		switch rel.Tags.Find("place") {
+		case "city", "town", "village", "hamlet", "isolated_dwelling", "farm":
+			f.cacheRelPlace(rel)
+		}
+	case "associatedStreet", "route":
 		f.cacheLocalization(rel.Tags)
-	}
-
-	if rel.Tags.Find("admin_level") == regionAdminLevel {
-		f.cacheRelRegion(rel)
 	}
 }
 

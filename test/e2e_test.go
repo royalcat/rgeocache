@@ -1,7 +1,7 @@
 package test
 
 import (
-	"runtime"
+	"context"
 	"testing"
 
 	"github.com/royalcat/osmpbfdb"
@@ -11,6 +11,7 @@ import (
 )
 
 func TestLondon(t *testing.T) {
+	ctx := context.Background()
 	const pointsFile = "gb_points.rgc"
 
 	t.Log("Downloading OSM file")
@@ -39,12 +40,12 @@ func TestLondon(t *testing.T) {
 	}
 	t.Logf("OsmDB counts: nodes: %d ways: %d relations: %d", osmdb.CountNodes(), osmdb.CountWays(), osmdb.CountRelations())
 
-	gg, err := geoparser.NewGeoGen(osmdb, runtime.GOMAXPROCS(0), "")
+	gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = gg.ParseOSMData()
+	err = gg.ParseOSMData(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

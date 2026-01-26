@@ -5,6 +5,7 @@ import (
 
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/planar"
+	"github.com/paulmach/orb/simplify"
 	"github.com/tidwall/qtree"
 )
 
@@ -15,14 +16,13 @@ type BorderTree[Data any] struct {
 	qt        qtree.QTree
 }
 
-const offset = 90.0
-
 func NewBorderTree[Data any]() *BorderTree[Data] {
 	return &BorderTree[Data]{}
 }
 
 type border[D any] struct {
-	Data    D
+	Data D
+
 	Polygon orb.MultiPolygon
 }
 
@@ -32,7 +32,10 @@ func (bt *BorderTree[Data]) InsertBorder(data Data, b orb.MultiPolygon) {
 	bt.mu.Lock()
 	defer bt.mu.Unlock()
 
-	bt.borders = append(bt.borders, border[Data]{Data: data, Polygon: b})
+	bt.borders = append(bt.borders, border[Data]{
+		Data:    data,
+		Polygon: simplify.DouglasPeucker(0.01).MultiPolygon(b.Clone()),
+	})
 	bt.qt.Insert(bound.Min, bound.Max, bt.idCounter)
 	bt.idCounter++
 }
