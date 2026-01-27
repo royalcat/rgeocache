@@ -81,7 +81,7 @@ func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
 
 	if isBuilding(way.Tags) {
 		return f.parseWayBuilding(way)
-	} else if slices.Contains([]string{"motorway", "trunk", "primary", "secondary"}, way.Tags.Find("highway")) {
+	} else if slices.Contains([]string{"motorway", "trunk", "primary", "secondary", "tertiary"}, way.Tags.Find("highway")) {
 		return f.parseWayHighway(way)
 	}
 
@@ -121,12 +121,19 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 
 	out := make([]geoPoint, 0, len(ls))
 	for _, point := range ls {
+		name := f.getHighwayName(way.Tags)
+		street := f.localizedStreetName(way.Tags)
+		if street == "" {
+			street = name
+			name = ""
+		}
+
 		out = append(out, geoPoint{
 			Point: point,
 			Info: geomodel.Info{
 				Weight: weightRoad,
-				Name:   f.getHighwayName(way.Tags),
-				Street: f.localizedStreetName(way.Tags),
+				Name:   name,
+				Street: street,
 				City:   f.localizedCityAddr(way.Tags, point),
 				Region: f.localizedRegion(point),
 			},
