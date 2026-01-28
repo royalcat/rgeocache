@@ -13,10 +13,7 @@ import (
 	"github.com/sourcegraph/conc/pool"
 )
 
-func (f *GeoGen) fillRelCache(ctx context.Context, db osmpbfdb.OsmDB) error {
-	ctx, span := tracer.Start(ctx, "fillRelCache")
-	defer span.End()
-
+func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
 	pool := pool.New().WithMaxGoroutines(f.config.Threads)
 	defer pool.Wait()
 
@@ -32,10 +29,7 @@ func (f *GeoGen) fillRelCache(ctx context.Context, db osmpbfdb.OsmDB) error {
 	return nil
 }
 
-func (f *GeoGen) parseDatabase(ctx context.Context, db osmpbfdb.OsmDB) error {
-	ctx, span := tracer.Start(ctx, "parseDatabase")
-	defer span.End()
-
+func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
 	pool := pool.New().WithMaxGoroutines(f.config.Threads)
 	defer pool.Wait()
 

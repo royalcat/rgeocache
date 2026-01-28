@@ -1,7 +1,6 @@
 package test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/royalcat/osmpbfdb"
@@ -10,8 +9,6 @@ import (
 )
 
 func BenchmarkGenerationLondon(b *testing.B) {
-	ctx := context.Background()
-
 	b.Log("Downloading OSM file")
 
 	err := downloadTestOSMFile(londonFileURL, londonFileName)
@@ -39,7 +36,7 @@ func BenchmarkGenerationLondon(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		err = gg.ParseOSMData(ctx)
+		err = gg.ParseOSMData()
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -50,8 +47,6 @@ func BenchmarkGenerationLondon(b *testing.B) {
 }
 
 func BenchmarkGenerationGreatBritan(b *testing.B) {
-	ctx := context.Background()
-
 	b.Log("Downloading OSM file")
 
 	err := downloadTestOSMFile(greatBritanURL, greatBritanName)
@@ -77,7 +72,7 @@ func BenchmarkGenerationGreatBritan(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		err = gg.ParseOSMData(ctx)
+		err = gg.ParseOSMData()
 		if err != nil {
 			b.Fatal(err)
 		}

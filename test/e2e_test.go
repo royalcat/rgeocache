@@ -1,7 +1,6 @@
 package test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/royalcat/osmpbfdb"
@@ -11,7 +10,6 @@ import (
 )
 
 func TestLondon(t *testing.T) {
-	ctx := context.Background()
 	const pointsFile = "gb_points.rgc"
 
 	t.Log("Downloading OSM file")
@@ -45,7 +43,7 @@ func TestLondon(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = gg.ParseOSMData(ctx)
+	err = gg.ParseOSMData()
 	if err != nil {
 		t.Fatal(err)
 	}
