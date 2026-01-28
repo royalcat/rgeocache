@@ -152,6 +152,10 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 		if isBuilding(rel.Tags) {
 			return f.parseRelationBuilding(rel)
 		}
+		switch rel.Tags.Find("landuse") {
+		case "quarry", "industrial":
+			f.parseRelationArea(rel)
+		}
 	case "boundary":
 		if rel.Tags.Find("boundary") == "protected_area" {
 			return f.parseRelationArea(rel)

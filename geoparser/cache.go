@@ -16,7 +16,7 @@ func (f *GeoGen) cacheRel(rel *osm.Relation) {
 	const regionAdminLevel = "4"
 
 	switch rel.Tags.Find("type") {
-	case "boundary":
+	case "boundary", "multipolygon":
 		if rel.Tags.Find("admin_level") == regionAdminLevel {
 			f.cacheRelRegion(rel)
 			return
@@ -24,11 +24,7 @@ func (f *GeoGen) cacheRel(rel *osm.Relation) {
 		switch rel.Tags.Find("place") {
 		case "city", "town", "village", "hamlet", "isolated_dwelling", "farm":
 			f.cacheRelPlace(rel)
-		}
-	case "multipolygon":
-		switch rel.Tags.Find("place") {
-		case "city", "town", "village", "hamlet", "isolated_dwelling", "farm":
-			f.cacheRelPlace(rel)
+			return
 		}
 	case "associatedStreet", "route":
 		f.cacheLocalization(rel.Tags)
