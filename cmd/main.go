@@ -44,6 +44,11 @@ func main() {
 						Required:  true,
 						TakesFile: true,
 					},
+					&cli.Float64Flag{
+						Name:        "search-radius",
+						Usage:       "search radius in degrees",
+						DefaultText: "0.01",
+					},
 					&cli.StringFlag{
 						Name:        "pprof.listen",
 						DefaultText: "",
@@ -287,10 +292,20 @@ func writeHeapProfile(name string) error {
 	return pprof.WriteHeapProfile(f)
 }
 
+const defaultSearchRadius = 0.01
+
 func serve(ctx *cli.Context) error {
 	log := slog.Default()
 
-	rgeo, err := geocoder.LoadGeoCoderFromFile(ctx.String("points"), geocoder.WithLogger(log))
+	radius := ctx.Float64("search-radius")
+	if radius <= 0 || radius > 180 {
+		log.Error("Invalid radius detected using default", "input", radius, "default", 0.01)
+		radius = defaultSearchRadius
+	} else if radius != defaultSearchRadius {
+		log.Info("Using custom search radius", "radius", radius)
+	}
+
+	rgeo, err := geocoder.LoadGeoCoderFromFile(ctx.String("points"), geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
 	if err != nil {
 		return err
 	}
