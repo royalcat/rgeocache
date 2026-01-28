@@ -45,9 +45,10 @@ type geoPoint struct {
 }
 
 const (
-	weightBuilding = 10
-	weightRoad     = 5
-	weightArea     = 3
+	weightBuilding       = 10
+	weightRoad           = 5
+	weightAreaIndustrial = 3
+	weightAreaProtected  = 2
 )
 
 func isBuilding(tags osm.Tags) bool {
@@ -148,17 +149,16 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 	}
 
 	switch rel.Tags.Find("type") {
-	case "multipolygon":
+	case "multipolygon", "boundary":
 		if isBuilding(rel.Tags) {
 			return f.parseRelationBuilding(rel)
 		}
 		switch rel.Tags.Find("landuse") {
 		case "quarry", "industrial":
-			f.parseRelationArea(rel)
+			return f.parseRelationArea(rel, weightAreaIndustrial)
 		}
-	case "boundary":
 		if rel.Tags.Find("boundary") == "protected_area" {
-			return f.parseRelationArea(rel)
+			return f.parseRelationArea(rel, weightAreaProtected)
 		}
 	case "building":
 		if rel.Tags.Find("route") == "road" && strings.Contains(rel.Tags.Find("network"), "national") {
@@ -222,7 +222,7 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 	return out
 }
 
-func (f *GeoGen) parseRelationArea(rel *osm.Relation) []geoPoint {
+func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 	log := f.log.With("type", "relation", "id", rel.ID)
 
 	poly, err := f.buildPolygon(rel.Members)
@@ -238,7 +238,7 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation) []geoPoint {
 		out = append(out, geoPoint{
 			Point: p,
 			Info: geomodel.Info{
-				Weight:      weightArea,
+				Weight:      weight,
 				Name:        f.localizedName(rel.Tags),
 				Street:      f.localizedStreetName(rel.Tags),
 				HouseNumber: rel.Tags.Find("addr:housenumber"),
