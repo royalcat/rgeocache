@@ -150,15 +150,15 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 
 	switch rel.Tags.Find("type") {
 	case "multipolygon", "boundary":
-		if isBuilding(rel.Tags) {
-			return f.parseRelationBuilding(rel)
-		}
 		switch rel.Tags.Find("landuse") {
 		case "quarry", "industrial":
 			return f.parseRelationArea(rel, weightAreaIndustrial)
 		}
 		if rel.Tags.Find("boundary") == "protected_area" {
 			return f.parseRelationArea(rel, weightAreaProtected)
+		}
+		if isBuilding(rel.Tags) {
+			return f.parseRelationBuilding(rel)
 		}
 	case "building":
 		if rel.Tags.Find("route") == "road" && strings.Contains(rel.Tags.Find("network"), "national") {
@@ -225,23 +225,28 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 	log := f.log.With("type", "relation", "id", rel.ID)
 
+	name := f.localizedName(rel.Tags)
+	if name == "" {
+		return []geoPoint{}
+	}
+
 	poly, err := f.buildPolygon(rel.Members)
 	if err != nil {
 		log.Error("Error building polygon", "error", err.Error())
 		return []geoPoint{}
 	}
 
-	points := fillPolygonWithPoints(poly, 0.05)
+	points := fillPolygonWithPoints(poly, 0.01/2)
 
-	out := []geoPoint{}
+	out := make([]geoPoint, 0, len(points))
 	for _, p := range points {
 		out = append(out, geoPoint{
 			Point: p,
 			Info: geomodel.Info{
 				Weight:      weight,
-				Name:        f.localizedName(rel.Tags),
-				Street:      f.localizedStreetName(rel.Tags),
-				HouseNumber: rel.Tags.Find("addr:housenumber"),
+				Name:        name,
+				Street:      "",
+				HouseNumber: "",
 				City:        f.localizedCityAddr(rel.Tags, p),
 				Region:      f.localizedRegion(p),
 			},

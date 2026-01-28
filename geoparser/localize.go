@@ -38,7 +38,7 @@ func (f *GeoGen) localizedName(tags osm.Tags) string {
 		}
 	}
 
-	return tags.Find(nameKey)
+	return name
 }
 
 const cityAddrKey = "addr:city"

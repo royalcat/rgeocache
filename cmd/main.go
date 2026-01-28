@@ -241,7 +241,7 @@ func generate(ctx *cli.Context) error {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
 
-	err = geoGen.ParseOSMData(ctx.Context)
+	err = geoGen.ParseOSMData()
 	if err != nil {
 		return fmt.Errorf("error parsing osm with error: %s", err.Error())
 	}
@@ -297,6 +297,16 @@ const defaultSearchRadius = 0.01
 func serve(ctx *cli.Context) error {
 	log := slog.Default()
 
+	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
+		go func() {
+			log.Info("Starting pprof server")
+			err := http.ListenAndServe(pprofListen, nil)
+			if err != nil {
+				log.Error("Error starting pprof server", "error", err)
+			}
+		}()
+	}
+
 	radius := ctx.Float64("search-radius")
 	if radius <= 0 || radius > 180 {
 		log.Error("Invalid radius detected using default", "input", radius, "default", 0.01)
@@ -311,16 +321,6 @@ func serve(ctx *cli.Context) error {
 	}
 
 	runtime.GC()
-
-	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
-		go func() {
-			log.Info("Starting pprof server")
-			err := http.ListenAndServe(pprofListen, nil)
-			if err != nil {
-				log.Error("Error starting pprof server", "error", err)
-			}
-		}()
-	}
 
 	return server.Run(ctx.Context, ctx.String("listen"), rgeo, log)
 }
