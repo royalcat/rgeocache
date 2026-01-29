@@ -59,7 +59,27 @@
   },
   {
     "adapter": "Delve",
-    "label": "Serve",
+    "label": "Serve debug generated",
+    "request": "launch",
+    "mode": "debug",
+    "buildFlags": [],
+    "program": "${ZED_WORKTREE_ROOT}/cmd/main.go",
+    "cwd": "${ZED_WORKTREE_ROOT}/bin",
+    "env": {
+      "GODEBUG": "gctrace=1",
+    },
+    "args": [
+      "serve",
+      "--pprof.listen",
+      ":8089",
+      "--search-radius=0.02",
+      "--points",
+      "points_data.rgc",
+    ],
+  },
+  {
+    "adapter": "Delve",
+    "label": "Serve downloaded",
     "request": "launch",
     "mode": "debug",
     "buildFlags": [],
@@ -70,7 +90,7 @@
       "--pprof.listen",
       ":8089",
       "--points",
-      "post-cis_ru_points.rgc",
+      "post-cis_ru_points.rgc.zst",
     ],
   },
 ]
