@@ -1,9 +1,13 @@
 package server
 
 import (
+	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/royalcat/rgeocache/geocoder"
+	"github.com/royalcat/rgeocache/test"
+	"github.com/thejerf/slogassert"
 	"github.com/valyala/fasthttp"
 )
 
@@ -15,7 +19,27 @@ func must[T any](val T, err error) T {
 }
 
 func BenchmarkHandlers(b *testing.B) {
-	rgeo, err := geocoder.LoadGeoCoderFromFile("../test/gb_points.rgc")
+	slogassert.NewDefault(b)
+	pointsFile := filepath.Join(b.TempDir(), "gb_points.rgc")
+	osmPbfName := filepath.Join(b.TempDir(), "db.osm.pbf")
+
+	b.Log("Downloading OSM file")
+
+	err := test.DownloadTestOSMFile(test.LondonFileURL, osmPbfName)
+	if err != nil {
+		b.Fatalf("Failed to download test OSM file: %v", err)
+	}
+
+	b.Log("Generating points")
+
+	err = test.GeneratePoints(osmPbfName, pointsFile, b.TempDir())
+	if err != nil {
+		b.Fatalf("Failed to generate points: %v", err)
+	}
+
+	b.Log("Loading geocoder")
+
+	rgeo, err := geocoder.LoadGeoCoderFromFile(pointsFile)
 	if err != nil {
 		b.Fatalf("Failed to load geocoder: %v", err)
 	}
@@ -27,37 +51,32 @@ func BenchmarkHandlers(b *testing.B) {
 		metricAddressesEncoded:          must(meter.Int64Counter("address_encoded_total")),
 	}
 
+	b.Log("Warming up")
+
+	// Warm up the server by making a few requests
+	for range 10 {
+		ctx := getRequestCtx(generatePoints(100))
+		s.RGeoMultipleCodeHandler(ctx)
+	}
+
+	b.Log("Staring benchmark")
+
 	b.ResetTimer()
 
-	b.Run("RGeoMultipleCodeHandler-10", func(b *testing.B) {
-		points := generatePoints(10)
-		b.ResetTimer()
+	var pointsPerCall = []int{10, 1000, 10_000}
 
-		for b.Loop() {
-			ctx := getRequestCtx(points)
-			s.RGeoMultipleCodeHandler(ctx)
-		}
-	})
-
-	b.Run("RGeoMultipleCodeHandler-1000", func(b *testing.B) {
-		points := generatePoints(1000)
-		b.ResetTimer()
-
-		for b.Loop() {
-			ctx := getRequestCtx(points)
-			s.RGeoMultipleCodeHandler(ctx)
-		}
-	})
-
-	b.Run("RGeoMultipleCodeHandler-10_000", func(b *testing.B) {
-		points := generatePoints(10_000)
-		b.ResetTimer()
-
-		for b.Loop() {
-			ctx := getRequestCtx(points)
-			s.RGeoMultipleCodeHandler(ctx)
-		}
-	})
+	for _, pointCount := range pointsPerCall {
+		var pointTotal = 0
+		b.Run(fmt.Sprintf("RGeoMultipleCodeHandler_%d", pointCount), func(b *testing.B) {
+			points := generatePoints(pointCount)
+			for b.Loop() {
+				ctx := getRequestCtx(points)
+				s.RGeoMultipleCodeHandler(ctx)
+				pointTotal += len(points)
+			}
+			b.ReportMetric(float64(pointTotal)/float64(b.Elapsed().Seconds()), "points/s")
+		})
+	}
 }
 
 func generatePoints(n int) string {
