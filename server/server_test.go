@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/royalcat/rgeocache/geocoder"
@@ -27,37 +28,28 @@ func BenchmarkHandlers(b *testing.B) {
 		metricAddressesEncoded:          must(meter.Int64Counter("address_encoded_total")),
 	}
 
+	// Warm up the server by making a few requests
+	for range 10 {
+		ctx := getRequestCtx(generatePoints(100))
+		s.RGeoMultipleCodeHandler(ctx)
+	}
+
 	b.ResetTimer()
 
-	b.Run("RGeoMultipleCodeHandler-10", func(b *testing.B) {
-		points := generatePoints(10)
-		b.ResetTimer()
+	var pointsPerCall = []int{10, 1000, 10_000}
 
-		for b.Loop() {
-			ctx := getRequestCtx(points)
-			s.RGeoMultipleCodeHandler(ctx)
-		}
-	})
-
-	b.Run("RGeoMultipleCodeHandler-1000", func(b *testing.B) {
-		points := generatePoints(1000)
-		b.ResetTimer()
-
-		for b.Loop() {
-			ctx := getRequestCtx(points)
-			s.RGeoMultipleCodeHandler(ctx)
-		}
-	})
-
-	b.Run("RGeoMultipleCodeHandler-10_000", func(b *testing.B) {
-		points := generatePoints(10_000)
-		b.ResetTimer()
-
-		for b.Loop() {
-			ctx := getRequestCtx(points)
-			s.RGeoMultipleCodeHandler(ctx)
-		}
-	})
+	for _, pointCount := range pointsPerCall {
+		var pointTotal = 0
+		b.Run(fmt.Sprintf("RGeoMultipleCodeHandler_%d", pointCount), func(b *testing.B) {
+			points := generatePoints(pointCount)
+			for b.Loop() {
+				ctx := getRequestCtx(points)
+				s.RGeoMultipleCodeHandler(ctx)
+				pointTotal += len(points)
+			}
+			b.ReportMetric(float64(pointTotal)/float64(b.Elapsed().Seconds()), "points/s")
+		})
+	}
 }
 
 func generatePoints(n int) string {
