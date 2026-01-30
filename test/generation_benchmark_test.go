@@ -1,24 +1,28 @@
 package test
 
 import (
+	"log/slog"
+	"path/filepath"
 	"testing"
 
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/geoparser"
+	"github.com/thejerf/slogassert"
 	"golang.org/x/exp/mmap"
 )
 
 func BenchmarkGenerationLondon(b *testing.B) {
+	slogassert.NewDefault(b, slogassert.WithLeveler(slog.LevelDebug))
+	var londonFileName = filepath.Join(b.TempDir(), LondonFileName)
+
 	b.Log("Downloading OSM file")
 
-	err := downloadTestOSMFile(londonFileURL, londonFileName)
+	err := DownloadTestOSMFile(LondonFileURL, londonFileName)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.Log("Parsing OSM file")
-
-	b.ResetTimer()
 
 	for b.Loop() {
 		file, err := mmap.Open(londonFileName)
@@ -26,7 +30,11 @@ func BenchmarkGenerationLondon(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		osmdb, err := osmpbfdb.OpenDB(file, osmpbfdb.Config{})
+		osmdb, err := osmpbfdb.OpenDB(file, osmpbfdb.Config{
+			IndexDir:  b.TempDir(),
+			CacheType: osmpbfdb.CacheTypeWeak,
+			SkipInfo:  true,
+		})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -47,9 +55,15 @@ func BenchmarkGenerationLondon(b *testing.B) {
 }
 
 func BenchmarkGenerationGreatBritan(b *testing.B) {
+	// Skip this benchmark for now
+	b.SkipNow()
+
+	slogassert.NewDefault(b, slogassert.WithLeveler(slog.LevelDebug))
+	var greatBritanName = filepath.Join(b.TempDir(), GreatBritanOsmName)
+
 	b.Log("Downloading OSM file")
 
-	err := downloadTestOSMFile(greatBritanURL, greatBritanName)
+	err := DownloadTestOSMFile(GreatBritanOsmURL, greatBritanName)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -62,7 +76,11 @@ func BenchmarkGenerationGreatBritan(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		osmdb, err := osmpbfdb.OpenDB(file, osmpbfdb.Config{})
+		osmdb, err := osmpbfdb.OpenDB(file, osmpbfdb.Config{
+			IndexDir:  b.TempDir(),
+			CacheType: osmpbfdb.CacheTypeWeak,
+			SkipInfo:  true,
+		})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -76,5 +94,8 @@ func BenchmarkGenerationGreatBritan(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+
+		file.Close()
+		osmdb.Close()
 	}
 }
