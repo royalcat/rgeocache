@@ -45,10 +45,11 @@ type geoPoint struct {
 }
 
 const (
-	weightBuilding       = 10
-	weightRoad           = 5
-	weightAreaIndustrial = 3
-	weightAreaProtected  = 2
+	weightBuilding           = 10
+	weightRoad               = 5
+	weightAreaIndustrial     = 3
+	weightAreaProtected      = 2
+	weightAreaAdministrative = 1
 )
 
 func isBuilding(tags osm.Tags) bool {
@@ -159,6 +160,11 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 		}
 		if isBuilding(rel.Tags) {
 			return f.parseRelationBuilding(rel)
+		}
+		if rel.Tags.Find("boundary") == "administrative" {
+			if rel.Tags.Find("administrative") == "4" {
+				return f.parseRelationArea(rel, weightAreaAdministrative)
+			}
 		}
 	case "building":
 		if rel.Tags.Find("route") == "road" && strings.Contains(rel.Tags.Find("network"), "national") {
