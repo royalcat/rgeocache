@@ -2,9 +2,12 @@ package server
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/royalcat/rgeocache/geocoder"
+	"github.com/royalcat/rgeocache/test"
+	"github.com/thejerf/slogassert"
 	"github.com/valyala/fasthttp"
 )
 
@@ -16,7 +19,27 @@ func must[T any](val T, err error) T {
 }
 
 func BenchmarkHandlers(b *testing.B) {
-	rgeo, err := geocoder.LoadGeoCoderFromFile("../test/gb_points.rgc")
+	slogassert.NewDefault(b)
+	pointsFile := filepath.Join(b.TempDir(), "gb_points.rgc")
+	osmPbfName := filepath.Join(b.TempDir(), "db.osm.pbf")
+
+	b.Log("Downloading OSM file")
+
+	err := test.DownloadTestOSMFile(test.LondonFileURL, osmPbfName)
+	if err != nil {
+		b.Fatalf("Failed to download test OSM file: %v", err)
+	}
+
+	b.Log("Generating points")
+
+	err = test.GeneratePoints(osmPbfName, pointsFile, b.TempDir())
+	if err != nil {
+		b.Fatalf("Failed to generate points: %v", err)
+	}
+
+	b.Log("Loading geocoder")
+
+	rgeo, err := geocoder.LoadGeoCoderFromFile(pointsFile)
 	if err != nil {
 		b.Fatalf("Failed to load geocoder: %v", err)
 	}
@@ -28,11 +51,15 @@ func BenchmarkHandlers(b *testing.B) {
 		metricAddressesEncoded:          must(meter.Int64Counter("address_encoded_total")),
 	}
 
+	b.Log("Warming up")
+
 	// Warm up the server by making a few requests
 	for range 10 {
 		ctx := getRequestCtx(generatePoints(100))
 		s.RGeoMultipleCodeHandler(ctx)
 	}
+
+	b.Log("Staring benchmark")
 
 	b.ResetTimer()
 
