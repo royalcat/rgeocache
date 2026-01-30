@@ -1,21 +1,24 @@
 package test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
+	"github.com/thejerf/slogassert"
 	"golang.org/x/exp/mmap"
 )
 
 func TestLondon(t *testing.T) {
-	const pointsFile = "gb_points.rgc"
+	slogassert.NewDefault(t)
+	var pointsFile = filepath.Join(t.TempDir(), "gb_points.rgc")
 
 	t.Log("Downloading OSM file")
 
-	const osmFileName = londonFileName
-	err := downloadTestOSMFile(londonFileURL, osmFileName)
+	const osmFileName = LondonFileName
+	err := DownloadTestOSMFile(LondonFileURL, osmFileName)
 	if err != nil {
 		t.Fatal(err)
 	}

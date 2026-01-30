@@ -1,0 +1,72 @@
+name: benches
+
+on:
+  push:
+
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  benchmarks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-24.04", "ubuntu-24.04-arm"]
+        cgo: [0, 1]
+        # TODO
+        # include:
+        #   - os: "ubuntu-24.04-arm"
+        #     GOARM64: ""
+        #   - os: "ubuntu-24.04-arm"
+        #     GOARM64: "8.0,lse"
+        #   - os: "ubuntu-24.04-arm"
+        #     GOARM64: "9.0,lse"
+        #   - os: "ubuntu-24.04"
+        #     GOARM64: ""
+        #   - os: "ubuntu-24.04"
+        #     GOAMD64: "v1"
+        #   - os: "ubuntu-24.04"
+        #     GOAMD64: "v2"
+        #   - os: "ubuntu-24.04"
+        #     GOAMD64: "v3"
+        #   - os: "ubuntu-24.04"
+        #     GOAMD64: "v4"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install libdeflate
+        if: matrix.cgo == '1'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdeflate-dev libdeflate0
+      - name: Get branch name
+        shell: bash
+        id: get-branch-name
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "BRANCH_NAME=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "BRANCH_NAME=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+          fi
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          check-latest: true
+          cache: true
+      - name: Run benchmark
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+          GOARM64: ${{ matrix.GOARM64 }}
+          GOAMD64: ${{ matrix.GOAMD64 }}
+        run: go test -run='^$' -bench '.' -benchtime 10s -benchmem -cpu=1,4 ./... | tee output.txt
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          tool: "go"
+          output-file-path: output.txt
+          benchmark-data-dir-path: "bench/branch/${{ steps.get-branch-name.outputs.BRANCH_NAME }}/${{ matrix.os }}/cgo-${{ matrix.cgo }}/${{ matrix.GOAMD64 || matrix.GOARM64 || 'default' }}/"
+          auto-push: true

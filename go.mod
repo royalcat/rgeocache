@@ -20,6 +20,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.12
 	github.com/sirupsen/logrus v1.9.3
 	github.com/sourcegraph/conc v0.3.0
+	github.com/thejerf/slogassert v0.3.4
 	github.com/tidwall/qtree v0.1.0
 	github.com/urfave/cli/v3 v3.0.0-alpha2
 	github.com/valyala/fasthttp v1.62.0
