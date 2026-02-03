@@ -45,11 +45,11 @@ type geoPoint struct {
 }
 
 const (
-	weightBuilding           = 10
-	weightRoad               = 5
-	weightAreaIndustrial     = 3
-	weightAreaProtected      = 2
-	weightAreaAdministrative = 1
+	weightAreaAdministrative uint8 = 1
+	weightAreaProtected      uint8 = 2
+	weightAreaIndustrial     uint8 = 3
+	weightRoad               uint8 = 5
+	weightBuilding           uint8 = 16
 )
 
 func isBuilding(tags osm.Tags) bool {
@@ -228,6 +228,8 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 	return out
 }
 
+const regionPointDistance = 0.01 / 2
+
 func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 	log := f.log.With("type", "relation", "id", rel.ID)
 
@@ -242,7 +244,7 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 		return []geoPoint{}
 	}
 
-	points := fillPolygonWithPoints(poly, 0.01/2)
+	points := fillPolygonWithPoints(poly, regionPointDistance)
 
 	out := make([]geoPoint, 0, len(points))
 	for _, p := range points {

@@ -20,11 +20,11 @@ func Save(w io.Writer, cache Cache) error {
 		return err
 	}
 
-	// Prepare metadata (currently empty in the load function, keeping it for future use)
 	metadata := &saveproto.CacheMetadata{
-		Version:     cache.Version,
-		DateCreated: cache.DateCreated,
-		Locale:      cache.Locale,
+		Version:                 cache.Version,
+		DateCreated:             cache.DateCreated,
+		Locale:                  cache.Locale,
+		RecommendedSearchRadius: cache.RecommendedSearchRadius,
 	}
 	metadataBytes, err := proto.Marshal(metadata)
 	if err != nil {

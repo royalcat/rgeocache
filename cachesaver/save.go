@@ -11,9 +11,10 @@ import (
 )
 
 type Metadata struct {
-	Version     uint32
-	Locale      string
-	DateCreated time.Time
+	Version                 uint32
+	Locale                  string
+	DateCreated             time.Time
+	RecommendedSearchRadius float64
 }
 
 func Save(points []kdbush.Point[geomodel.Info], meta Metadata, w io.Writer) error {

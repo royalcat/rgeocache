@@ -10,12 +10,13 @@ import (
 func TestSaveLoad(t *testing.T) {
 	// Create test data
 	originalCache := Cache{
-		Version:     123,
-		DateCreated: time.Unix(1609459200, 0).String(),
-		Locale:      "en",
-		Streets:     []string{"Main St", "Broadway", "Park Ave"},
-		Cities:      []string{"New York", "Los Angeles", "Chicago"},
-		Regions:     []string{"NY", "CA", "IL"},
+		Version:                 123,
+		DateCreated:             time.Unix(1609459200, 0).String(),
+		Locale:                  "en",
+		RecommendedSearchRadius: 0.03,
+		Streets:                 []string{"Main St", "Broadway", "Park Ave"},
+		Cities:                  []string{"New York", "Los Angeles", "Chicago"},
+		Regions:                 []string{"NY", "CA", "IL"},
 		Points: []Point{
 			{
 				Lat:         40.7128,
@@ -91,6 +92,10 @@ func TestSaveLoad(t *testing.T) {
 
 	if !reflect.DeepEqual(originalCache.Version, metadata.Version) {
 		t.Errorf("Version don't match:\nOriginal: %v\nLoaded: %v", originalCache.Version, metadata.Version)
+	}
+
+	if !reflect.DeepEqual(originalCache.RecommendedSearchRadius, metadata.RecommendedSearchRadius) {
+		t.Errorf("RecommendedSearchRadius don't match:\nOriginal: %v\nLoaded: %v", originalCache.RecommendedSearchRadius, metadata.RecommendedSearchRadius)
 	}
 
 	if !reflect.DeepEqual(originalCache.Streets, strings.Streets) {

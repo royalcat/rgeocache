@@ -38,7 +38,7 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[Info], e
 			return nil, err
 		}
 		if metadata != nil {
-			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated)
+			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated, "recommended_search_radius", metadata.RecommendedSearchRadius)
 		}
 		return points, nil
 	}

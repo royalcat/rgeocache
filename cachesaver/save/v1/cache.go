@@ -21,9 +21,10 @@ type Point struct {
 
 type Cache struct {
 	// Metadata
-	Version     uint32
-	DateCreated string
-	Locale      string
+	Version                 uint32
+	DateCreated             string
+	Locale                  string
+	RecommendedSearchRadius float64
 
 	// Values deduplication
 	Streets []string
