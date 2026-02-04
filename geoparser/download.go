@@ -44,7 +44,7 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		Version:                 f.config.Version,
 		Locale:                  f.config.PreferredLocalization,
 		DateCreated:             time.Now(),
-		RecommendedSearchRadius: regionPointDistance,
+		RecommendedSearchRadius: f.config.RegionPointsAngleDistance,
 	}
 	if err = cachesaver.Save(points, meta, dataFile); err != nil {
 		return err

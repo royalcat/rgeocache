@@ -228,8 +228,6 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 	return out
 }
 
-const regionPointDistance = 0.01 / 2
-
 func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 	log := f.log.With("type", "relation", "id", rel.ID)
 
@@ -244,7 +242,7 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 		return []geoPoint{}
 	}
 
-	points := fillPolygonWithPoints(poly, regionPointDistance)
+	points := fillPolygonWithPoints(poly, f.config.RegionPointsAngleDistance)
 
 	out := make([]geoPoint, 0, len(points))
 	for _, p := range points {
