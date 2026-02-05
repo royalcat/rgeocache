@@ -162,7 +162,7 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 			return f.parseRelationBuilding(rel)
 		}
 		if rel.Tags.Find("boundary") == "administrative" {
-			if rel.Tags.Find("administrative") == "4" {
+			if rel.Tags.Find("admin_level") == "4" {
 				return f.parseRelationArea(rel, weightAreaAdministrative)
 			}
 		}
