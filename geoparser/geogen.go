@@ -3,7 +3,6 @@ package geoparser
 import (
 	"log/slog"
 	"runtime"
-	"sync"
 
 	"github.com/paulmach/osm"
 	"github.com/puzpuzpuz/xsync/v3"
@@ -21,8 +20,7 @@ type GeoGen struct {
 
 	osmdb osmpbfdb.OsmDB
 
-	parsedPointsMu sync.Mutex
-	parsedPoints   []geoPoint
+	parsedPoints []geoPoint
 
 	parsedNodes     *set[osm.NodeID]
 	parsedWays      *set[osm.WayID]

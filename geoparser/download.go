@@ -24,9 +24,6 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		return err
 	}
 
-	f.parsedPointsMu.Lock()
-	defer f.parsedPointsMu.Unlock()
-
 	f.parsedPoints = uniqueGeoPoints(f.parsedPoints)
 
 	f.log.Info("Saving points to file", "count", len(f.parsedPoints))

@@ -30,8 +30,6 @@ func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
 }
 
 func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
-	pool := pool.New().WithMaxGoroutines(f.config.Threads)
-	defer pool.Wait()
 
 	objectsCount := int(db.CountNodes() + db.CountWays() + db.CountRelations())
 	objectsIter := iterConcurrently(
@@ -40,16 +38,31 @@ func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
 		castIterToObject(db.IterRelations()),
 	)
 
-	for obj, err := range iterWithProgress(objectsIter, objectsCount, "4/4 generating database") {
-		if err != nil {
-			return err
+	out := make(chan geoPoint, 10)
+	var groupErr error
+	go func() {
+		pool := pool.New().WithMaxGoroutines(f.config.Threads)
+		defer func() {
+			close(out)
+		}()
+		defer pool.Wait()
+
+		for obj, err := range iterWithProgress(objectsIter, objectsCount, "4/4 generating database") {
+			if err != nil {
+				groupErr = err
+				return
+			}
+			pool.Go(func() {
+				f.parseObject(obj, out)
+			})
 		}
-		pool.Go(func() {
-			f.parseObject(obj)
-		})
+	}()
+
+	for p := range out {
+		f.parsedPoints = append(f.parsedPoints, p)
 	}
 
-	return nil
+	return groupErr
 }
 
 func iterWithProgress[T any](source iter.Seq2[T, error], total int, name string) iter.Seq2[T, error] {

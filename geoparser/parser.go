@@ -1,6 +1,7 @@
 package geoparser
 
 import (
+	"iter"
 	"log/slog"
 	"slices"
 	"strings"
@@ -14,27 +15,25 @@ import (
 	"github.com/paulmach/osm"
 )
 
-func (f *GeoGen) parseObject(o osm.Object) {
+func (f *GeoGen) parseObject(o osm.Object, out chan<- geoPoint) {
 	switch obj := o.(type) {
 	case *osm.Node:
 		if point, ok := f.parseNode(obj); ok {
-			f.parsedPointsMu.Lock()
-			defer f.parsedPointsMu.Unlock()
-			f.parsedPoints = append(f.parsedPoints, point)
+			out <- point
 		}
 	case *osm.Way:
 		points := f.parseWay(obj)
-		if len(points) > 0 {
-			f.parsedPointsMu.Lock()
-			defer f.parsedPointsMu.Unlock()
-			f.parsedPoints = append(f.parsedPoints, points...)
+		for _, point := range points {
+			out <- point
 		}
 	case *osm.Relation:
 		rels := f.parseRelation(obj)
-		if len(rels) > 0 {
-			f.parsedPointsMu.Lock()
-			defer f.parsedPointsMu.Unlock()
-			f.parsedPoints = append(f.parsedPoints, rels...)
+		if rels == nil {
+			return
+		}
+
+		for point := range rels {
+			out <- point
 		}
 	}
 }
@@ -144,9 +143,9 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 	return out
 }
 
-func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
+func (f *GeoGen) parseRelation(rel *osm.Relation) iter.Seq[geoPoint] {
 	if !f.parsedRelations.AddIfAbsent(rel.ID) {
-		return []geoPoint{}
+		return nil
 	}
 
 	switch rel.Tags.Find("type") {
@@ -172,91 +171,100 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 		}
 	}
 
-	return []geoPoint{}
+	return nil
 }
 
-func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
-	points := []geoPoint{}
+func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) iter.Seq[geoPoint] {
+	return func(yield func(geoPoint) bool) {
+		if rel.Tags.Find("type") == "multipolygon" {
+			mpoly, err := f.buildPolygon(rel.Members)
+			if err != nil {
+				slog.Error("Error building polygon", "error", err.Error())
+				return
+			}
+			if mpoly == nil && len(mpoly) == 0 {
+				slog.Error("Empty polygon", "name", rel.Tags.Find("name"))
+				return
+			}
 
-	if rel.Tags.Find("type") == "multipolygon" {
-		mpoly, err := f.buildPolygon(rel.Members)
+			for _, poly := range mpoly {
+				p, _ := planar.CentroidArea(poly)
+
+				point := geoPoint{
+					Point: p,
+					Info: geomodel.Info{
+						Weight:      weightBuilding,
+						Name:        f.localizedName(rel.Tags),
+						Street:      f.localizedStreetName(rel.Tags),
+						HouseNumber: rel.Tags.Find("addr:housenumber"),
+						City:        f.localizedCityAddr(rel.Tags, p),
+						Region:      f.localizedRegion(p),
+					},
+				}
+				if !yield(point) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func (f *GeoGen) parseRelationHighway(rel *osm.Relation) iter.Seq[geoPoint] {
+	return func(yield func(geoPoint) bool) {
+		for _, m := range rel.Members {
+			if m.Type != osm.TypeWay {
+				continue
+			}
+
+			way, err := f.osmdb.GetWay(osm.WayID(m.Ref))
+			if err != nil {
+				f.log.Error("Error getting way", "id", m.Ref, "error", err.Error())
+				continue
+			}
+
+			for _, p := range f.parseWay(way) {
+				if !yield(p) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) iter.Seq[geoPoint] {
+	log := f.log.With("type", "relation", "id", rel.ID)
+
+	return func(yield func(geoPoint) bool) {
+
+		name := f.localizedName(rel.Tags)
+		if name == "" {
+			return
+		}
+
+		poly, err := f.buildPolygon(rel.Members)
 		if err != nil {
-			slog.Error("Error building polygon", "error", err.Error())
-			return points
-		}
-		if mpoly == nil && len(mpoly) == 0 {
-			slog.Error("Empty polygon", "name", rel.Tags.Find("name"))
-			return points
+			log.Error("Error building polygon", "error", err.Error())
+			return
 		}
 
-		for _, poly := range mpoly {
-			p, _ := planar.CentroidArea(poly)
+		points := fillPolygonWithPoints(poly, f.config.RegionPointsAngleDistance)
 
-			points = append(points, geoPoint{
+		for _, p := range points {
+			point := geoPoint{
 				Point: p,
 				Info: geomodel.Info{
-					Weight:      weightBuilding,
-					Name:        f.localizedName(rel.Tags),
-					Street:      f.localizedStreetName(rel.Tags),
-					HouseNumber: rel.Tags.Find("addr:housenumber"),
+					Weight:      weight,
+					Name:        name,
+					Street:      "",
+					HouseNumber: "",
 					City:        f.localizedCityAddr(rel.Tags, p),
 					Region:      f.localizedRegion(p),
 				},
-			})
+			}
+			if !yield(point) {
+				return
+			}
 		}
 	}
 
-	return points
-}
-
-func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
-	out := []geoPoint{}
-	for _, m := range rel.Members {
-		if m.Type != osm.TypeWay {
-			continue
-		}
-
-		way, err := f.osmdb.GetWay(osm.WayID(m.Ref))
-		if err != nil {
-			f.log.Error("Error getting way", "id", m.Ref, "error", err.Error())
-			continue
-		}
-
-		out = append(out, f.parseWay(way)...)
-	}
-
-	return out
-}
-
-func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
-	log := f.log.With("type", "relation", "id", rel.ID)
-
-	name := f.localizedName(rel.Tags)
-	if name == "" {
-		return []geoPoint{}
-	}
-
-	poly, err := f.buildPolygon(rel.Members)
-	if err != nil {
-		log.Error("Error building polygon", "error", err.Error())
-		return []geoPoint{}
-	}
-
-	points := fillPolygonWithPoints(poly, f.config.RegionPointsAngleDistance)
-
-	out := make([]geoPoint, 0, len(points))
-	for _, p := range points {
-		out = append(out, geoPoint{
-			Point: p,
-			Info: geomodel.Info{
-				Weight:      weight,
-				Name:        name,
-				Street:      "",
-				HouseNumber: "",
-				City:        f.localizedCityAddr(rel.Tags, p),
-				Region:      f.localizedRegion(p),
-			},
-		})
-	}
-	return out
 }
