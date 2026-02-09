@@ -30,7 +30,6 @@ func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
 }
 
 func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
-
 	objectsCount := int(db.CountNodes() + db.CountWays() + db.CountRelations())
 	objectsIter := iterConcurrently(
 		castIterToObject(db.IterNodes()),
@@ -53,7 +52,9 @@ func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
 				return
 			}
 			pool.Go(func() {
-				f.parseObject(obj, out)
+				for p := range f.parseObject(obj) {
+					out <- p
+				}
 			})
 		}
 	}()

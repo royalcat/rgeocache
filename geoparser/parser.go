@@ -15,27 +15,26 @@ import (
 	"github.com/paulmach/osm"
 )
 
-func (f *GeoGen) parseObject(o osm.Object, out chan<- geoPoint) {
-	switch obj := o.(type) {
-	case *osm.Node:
-		if point, ok := f.parseNode(obj); ok {
-			out <- point
-		}
-	case *osm.Way:
-		points := f.parseWay(obj)
-		for _, point := range points {
-			out <- point
-		}
-	case *osm.Relation:
-		rels := f.parseRelation(obj)
-		if rels == nil {
-			return
-		}
-
-		for point := range rels {
-			out <- point
+func (f *GeoGen) parseObject(o osm.Object) iter.Seq[geoPoint] {
+	return func(yield func(geoPoint) bool) {
+		switch obj := o.(type) {
+		case *osm.Node:
+			if point, ok := f.parseNode(obj); ok {
+				if !yield(point) {
+					return
+				}
+			}
+		case *osm.Way:
+			if !yieldConsume(f.parseWay(obj), yield) {
+				return
+			}
+		case *osm.Relation:
+			if !yieldConsume(f.parseRelation(obj), yield) {
+				return
+			}
 		}
 	}
+
 }
 
 type geoPoint struct {
@@ -75,18 +74,24 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 	return geoPoint{}, false
 }
 
-func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
+func (f *GeoGen) parseWay(way *osm.Way) iter.Seq[geoPoint] {
 	if !f.parsedWays.AddIfAbsent(way.ID) {
-		return []geoPoint{}
+		return nil
 	}
 
 	if isBuilding(way.Tags) {
-		return f.parseWayBuilding(way)
+		return func(yield func(geoPoint) bool) {
+			for _, p := range f.parseWayBuilding(way) {
+				if !yield(p) {
+					break
+				}
+			}
+		}
 	} else if slices.Contains([]string{"motorway", "trunk", "primary", "secondary", "tertiary"}, way.Tags.Find("highway")) {
 		return f.parseWayHighway(way)
 	}
 
-	return []geoPoint{}
+	return nil
 }
 
 func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
@@ -112,35 +117,38 @@ func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
 	}}
 }
 
-func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
+func (f *GeoGen) parseWayHighway(way *osm.Way) iter.Seq[geoPoint] {
 	ls := f.makeLineString(way.Nodes)
 	ls = resample.ToInterval(ls, geo.Distance, f.config.HighwayPointsDistance)
 
 	if len(ls) == 0 {
-		return []geoPoint{}
+		return nil
 	}
 
-	out := make([]geoPoint, 0, len(ls))
-	for _, point := range ls {
-		name := f.getHighwayName(way.Tags)
-		street := f.localizedStreetName(way.Tags)
-		if street == "" {
-			street = name
-			name = ""
+	return func(yield func(geoPoint) bool) {
+		for _, point := range ls {
+			name := f.getHighwayName(way.Tags)
+			street := f.localizedStreetName(way.Tags)
+			if street == "" {
+				street = name
+				name = ""
+			}
+
+			if !yield(geoPoint{
+				Point: point,
+				Info: geomodel.Info{
+					Weight: weightRoad,
+					Name:   name,
+					Street: street,
+					City:   f.localizedCityAddr(way.Tags, point),
+					Region: f.localizedRegion(point),
+				},
+			}) {
+				return
+			}
 		}
-
-		out = append(out, geoPoint{
-			Point: point,
-			Info: geomodel.Info{
-				Weight: weightRoad,
-				Name:   name,
-				Street: street,
-				City:   f.localizedCityAddr(way.Tags, point),
-				Region: f.localizedRegion(point),
-			},
-		})
 	}
-	return out
+
 }
 
 func (f *GeoGen) parseRelation(rel *osm.Relation) iter.Seq[geoPoint] {
@@ -190,7 +198,7 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) iter.Seq[geoPoint] {
 			for _, poly := range mpoly {
 				p, _ := planar.CentroidArea(poly)
 
-				point := geoPoint{
+				if !yield(geoPoint{
 					Point: p,
 					Info: geomodel.Info{
 						Weight:      weightBuilding,
@@ -200,8 +208,7 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) iter.Seq[geoPoint] {
 						City:        f.localizedCityAddr(rel.Tags, p),
 						Region:      f.localizedRegion(p),
 					},
-				}
-				if !yield(point) {
+				}) {
 					return
 				}
 			}
@@ -222,10 +229,8 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) iter.Seq[geoPoint] {
 				continue
 			}
 
-			for _, p := range f.parseWay(way) {
-				if !yield(p) {
-					return
-				}
+			if !yieldConsume(f.parseWay(way), yield) {
+				return
 			}
 		}
 	}
@@ -235,7 +240,6 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) iter.Seq[geo
 	log := f.log.With("type", "relation", "id", rel.ID)
 
 	return func(yield func(geoPoint) bool) {
-
 		name := f.localizedName(rel.Tags)
 		if name == "" {
 			return
@@ -247,9 +251,7 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) iter.Seq[geo
 			return
 		}
 
-		points := fillPolygonWithPoints(poly, f.config.RegionPointsAngleDistance)
-
-		for _, p := range points {
+		for p := range fillPolygonWithPoints(poly, f.config.RegionPointsAngleDistance) {
 			point := geoPoint{
 				Point: p,
 				Info: geomodel.Info{
@@ -267,4 +269,18 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) iter.Seq[geo
 		}
 	}
 
+}
+
+func yieldConsume[V any](it iter.Seq[V], yield func(V) bool) bool {
+	if it == nil {
+		return true
+	}
+
+	for v := range it {
+		if !yield(v) {
+			return false
+		}
+	}
+
+	return true
 }
