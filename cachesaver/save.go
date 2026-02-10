@@ -16,6 +16,12 @@ type Metadata struct {
 	DateCreated time.Time
 }
 
+type Zone struct {
+	Name    string
+	Bounds  [4]float64     // [minX, minY, maxX, maxY]
+	Polygon [][][2]float64 // orb multipolygon
+}
+
 func Save(points []kdbush.Point[geomodel.Info], meta Metadata, w io.Writer) error {
 	_, err := w.Write(MAGIC_BYTES)
 	if err != nil {
