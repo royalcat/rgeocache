@@ -9,12 +9,6 @@ import (
 	"github.com/paulmach/orb/encoding/wkb"
 )
 
-type cachePlace struct {
-	Name         string
-	Bound        orb.Bound
-	MultiPolygon orb.MultiPolygon
-}
-
 type cachePoint orb.Point
 
 func (p cachePoint) ToBytes() []byte {

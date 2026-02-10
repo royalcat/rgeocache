@@ -9,6 +9,7 @@ import (
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/bordertree"
+	"github.com/royalcat/rgeocache/cachesaver"
 )
 
 type GeoGen struct {
@@ -23,6 +24,8 @@ type GeoGen struct {
 
 	parsedPointsMu sync.Mutex
 	parsedPoints   []geoPoint
+
+	zones []cachesaver.Zone
 
 	parsedNodes     *set[osm.NodeID]
 	parsedWays      *set[osm.WayID]
@@ -46,6 +49,7 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 		osmdb: db,
 
 		parsedPoints: []geoPoint{},
+		zones:        []cachesaver.Zone{},
 
 		log: slog.Default(),
 	}, nil
