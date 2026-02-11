@@ -170,7 +170,7 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) iter.Seq[geoPoint] {
 		}
 		if rel.Tags.Find("boundary") == "administrative" {
 			if rel.Tags.Find("admin_level") == "4" {
-				return f.parseRelationArea(rel, weightAreaAdministrative)
+				return f.parseRelationRegion(rel)
 			}
 		}
 	case "building":
@@ -244,6 +244,9 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) iter.Seq[geo
 		if name == "" {
 			return
 		}
+		if rel.Tags.Find("boundary") != "administrative" {
+			name = f.localizedName(rel.Tags)
+		}
 
 		poly, err := f.buildPolygon(rel.Members)
 		if err != nil {
@@ -261,6 +264,37 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) iter.Seq[geo
 					HouseNumber: "",
 					City:        f.localizedCityAddr(rel.Tags, p),
 					Region:      f.localizedRegion(p),
+				},
+			}
+			if !yield(point) {
+				return
+			}
+		}
+	}
+}
+
+func (f *GeoGen) parseRelationRegion(rel *osm.Relation) iter.Seq[geoPoint] {
+	log := f.log.With("type", "relation", "id", rel.ID)
+
+	return func(yield func(geoPoint) bool) {
+		name := f.localizedName(rel.Tags)
+
+		poly, err := f.buildPolygon(rel.Members)
+		if err != nil {
+			log.Error("Error building polygon", "error", err.Error())
+			return
+		}
+
+		for p := range fillPolygonWithPoints(poly, f.config.RegionPointsAngleDistance) {
+			point := geoPoint{
+				Point: p,
+				Info: geomodel.Info{
+					Weight:      weightAreaAdministrative,
+					Name:        "",
+					Street:      "",
+					HouseNumber: "",
+					City:        f.localizedCityAddr(rel.Tags, p),
+					Region:      name,
 				},
 			}
 			if !yield(point) {

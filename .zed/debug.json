@@ -90,7 +90,9 @@
       "--pprof.listen",
       ":8089",
       "--points",
-      "post-cis_ru_points.rgc.zst",
+      // "post-cis_ru_points.rgc.zst",
+      "russia_points.rgc",
+      "--search-radius=0.02",
     ],
   },
 ]
