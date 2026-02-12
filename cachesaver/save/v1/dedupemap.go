@@ -32,7 +32,7 @@ func (uq *uniqueMap) Get(val string) int {
 }
 
 func (uq *uniqueMap) Slice() []string {
-	s := make([]string, 0, uq.i)
+	s := make([]string, uq.i)
 	for v, i := range uq.m {
 		s[i] = v
 	}
