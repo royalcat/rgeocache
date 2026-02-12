@@ -11,7 +11,7 @@ import (
 
 // internal memory-optimized representation of geomodel.Info
 type geoInfo struct {
-	Name        string
+	Name        unique.Handle[string]
 	Street      unique.Handle[string]
 	HouseNumber unique.Handle[string]
 	City        unique.Handle[string]
@@ -21,7 +21,7 @@ type geoInfo struct {
 
 func (g *geoInfo) value() geomodel.Info {
 	return geomodel.Info{
-		Name:        g.Name,
+		Name:        g.Name.Value(),
 		Street:      g.Street.Value(),
 		HouseNumber: g.HouseNumber.Value(),
 		City:        g.City.Value(),

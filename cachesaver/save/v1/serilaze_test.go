@@ -2,110 +2,94 @@ package savev1
 
 import (
 	"bytes"
-	"reflect"
+	"strconv"
 	"testing"
 	"time"
+	"unique"
+
+	"github.com/paulmach/orb"
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 )
 
 func TestSaveLoad(t *testing.T) {
-	// Create test data
-	originalCache := Cache{
-		Version:     123,
-		DateCreated: time.Unix(1609459200, 0).String(),
-		Locale:      "en",
-		Streets:     []string{"Main St", "Broadway", "Park Ave"},
-		Cities:      []string{"New York", "Los Angeles", "Chicago"},
-		Regions:     []string{"NY", "CA", "IL"},
-		Points: []Point{
-			{
-				Lat:         40.7128,
-				Lon:         -74.0060,
-				Name:        "Point 1",
-				Street:      0,
-				HouseNumber: "123",
-				City:        0,
-				Region:      0,
+	originalPoints := []cachemodel.Point{
+		{
+			X: 40.7128,
+			Y: -74.0060,
+			Data: cachemodel.Info{
+				Name:        unique.Make("Point 1"),
+				Street:      unique.Make("Street 1"),
+				HouseNumber: unique.Make("123"),
+				City:        unique.Make("City 1"),
+				Region:      unique.Make("Region 1"),
 				Weight:      1,
 			},
-			{
-				Lat:         34.0522,
-				Lon:         -118.2437,
-				Name:        "Point 2",
-				Street:      1,
-				HouseNumber: "456",
-				City:        1,
-				Region:      1,
+		},
+		{
+			X: 34.0522,
+			Y: -118.2437,
+			Data: cachemodel.Info{
+				Name:        unique.Make("Point 2"),
+				Street:      unique.Make("Street 2"),
+				HouseNumber: unique.Make("456"),
+				City:        unique.Make("City 2"),
+				Region:      unique.Make("Region 2"),
 				Weight:      2,
-			},
-			{
-				Lat:         41.8781,
-				Lon:         -87.6298,
-				Name:        "Point 3",
-				Street:      2,
-				HouseNumber: "789",
-				City:        2,
-				Region:      2,
-				Weight:      3,
 			},
 		},
 	}
-
 	// Create more points to test chunking
 	for i := range 2000 {
-		originalCache.Points = append(originalCache.Points, Point{
-			Lat:         float64(i) / 1000,
-			Lon:         float64(i) / -1000,
-			Name:        "Extra Point",
-			Street:      uint32(i % 3),
-			HouseNumber: "100",
-			City:        uint32(i % 3),
-			Region:      uint32(i % 3),
-			Weight:      uint8(i % 10),
+		originalPoints = append(originalPoints, cachemodel.Point{
+			X: float64(i) / 1000,
+			Y: float64(i) / -1000,
+			Data: cachemodel.Info{
+				Name:        unique.Make("Extra Point"),
+				Street:      unique.Make(strconv.Itoa(i)),
+				HouseNumber: unique.Make(strconv.Itoa(i)),
+				City:        unique.Make(strconv.Itoa(i)),
+				Region:      unique.Make(strconv.Itoa(i)),
+				Weight:      uint8(i % 10),
+			},
 		})
+	}
+	originalZones := []cachemodel.Zone{}
+	originalMeta := cachemodel.Metadata{
+		Version:     123,
+		DateCreated: time.Unix(1609459200, 0),
+		Locale:      "en",
 	}
 
 	// Create a buffer to store the serialized data
 	var buf bytes.Buffer
 
 	// Save cache to buffer
-	err := Save(&buf, originalCache)
+	err := Save(&buf, originalPoints, originalZones, originalMeta)
 	if err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
 	// Load cache from buffer
-	// TODO metadata tests
-	pointsIter, strings, metadata, err := Load(&buf)
+	// TODO originalMetadata tests
+	pointsIter, zonesIter, metadata, err := Load(&buf)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
 
 	// Compare the original and loaded caches
-	if !reflect.DeepEqual(originalCache.Locale, metadata.Locale) {
-		t.Errorf("Locale don't match:\nOriginal: %v\nLoaded: %v", originalCache.Locale, metadata.Locale)
+	if originalMeta.Locale != metadata.Locale {
+		t.Errorf("Locale don't match:\nOriginal: %v\nLoaded: %v", originalMeta.Locale, metadata.Locale)
 	}
 
-	if !reflect.DeepEqual(originalCache.DateCreated, metadata.DateCreated) {
-		t.Errorf("DateCreated don't match:\nOriginal: %v\nLoaded: %v", originalCache.DateCreated, metadata.DateCreated)
+	if !originalMeta.DateCreated.Equal(metadata.DateCreated) {
+		t.Errorf("DateCreated don't match:\nOriginal: %v\nLoaded: %v", originalMeta.DateCreated, metadata.DateCreated)
 	}
 
-	if !reflect.DeepEqual(originalCache.Version, metadata.Version) {
-		t.Errorf("Version don't match:\nOriginal: %v\nLoaded: %v", originalCache.Version, metadata.Version)
+	if originalMeta.Version != metadata.Version {
+		t.Errorf("Version don't match:\nOriginal: %v\nLoaded: %v", originalMeta.Version, metadata.Version)
 	}
 
-	if !reflect.DeepEqual(originalCache.Streets, strings.Streets) {
-		t.Errorf("Streets don't match:\nOriginal: %v\nLoaded: %v", originalCache.Streets, strings.Streets)
-	}
-
-	if !reflect.DeepEqual(originalCache.Cities, strings.Cities) {
-		t.Errorf("Cities don't match:\nOriginal: %v\nLoaded: %v", originalCache.Cities, strings.Cities)
-	}
-
-	if !reflect.DeepEqual(originalCache.Regions, strings.Regions) {
-		t.Errorf("Regions don't match:\nOriginal: %v\nLoaded: %v", originalCache.Regions, strings.Regions)
-	}
-
-	points := []Point{}
+	points := []cachemodel.Point{}
 	for point, err := range pointsIter {
 		if err != nil {
 			t.Errorf("Error iterating points: %v", err)
@@ -113,11 +97,10 @@ func TestSaveLoad(t *testing.T) {
 		}
 		points = append(points, point)
 	}
-
-	if len(originalCache.Points) != len(points) {
-		t.Errorf("Points count doesn't match: expected %d, got %d", len(originalCache.Points), len(points))
+	if len(originalPoints) != len(points) {
+		t.Errorf("Points count doesn't match: expected %d, got %d", len(originalPoints), len(points))
 	} else {
-		for i, originalPoint := range originalCache.Points {
+		for i, originalPoint := range originalPoints {
 			loadedPoint := points[i]
 			if !pointsEqual(originalPoint, loadedPoint) {
 				t.Errorf("Point %d doesn't match:\nOriginal: %+v\nLoaded: %+v", i, originalPoint, loadedPoint)
@@ -125,15 +108,29 @@ func TestSaveLoad(t *testing.T) {
 			}
 		}
 	}
+
+	zones := []cachemodel.Zone{}
+	for zone, err := range zonesIter {
+		if err != nil {
+			t.Errorf("Error iterating points: %v", err)
+			break
+		}
+		zones = append(zones, zone)
+	}
+
+	if len(originalZones) != len(zones) {
+		t.Errorf("Zones count doesn't match: expected %d, got %d", len(originalZones), len(zones))
+	} else {
+		for i, originalZone := range originalZones {
+			loadedZone := zones[i]
+			if originalZone.Name == loadedZone.Name && originalZone.Bounds == loadedZone.Bounds && orb.Equal(originalZone.Polygon, loadedZone.Polygon) {
+				t.Errorf("Zone %d doesn't match:\nOriginal: %+v\nLoaded: %+v", i, originalZone, loadedZone)
+				break
+			}
+		}
+	}
 }
 
-func pointsEqual(a, b Point) bool {
-	return a.Lat == b.Lat &&
-		a.Lon == b.Lon &&
-		a.Name == b.Name &&
-		a.Street == b.Street &&
-		a.HouseNumber == b.HouseNumber &&
-		a.City == b.City &&
-		a.Region == b.Region &&
-		a.Weight == b.Weight
+func pointsEqual(a, b cachemodel.Point) bool {
+	return a == b
 }

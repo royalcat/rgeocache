@@ -4,10 +4,18 @@ package cachesaver.save.v1;
 
 option go_package = "./saveproto";
 
+// The total file structure of file is
+//  32 bits [headerSize]
+//  headerSize [CacheHeader]
+//  metadata_size [CacheMetadata]
+//  strings_cache_size [StringsCache]
+//  points_blob_sizes [PointsBlob]'s
+
 message CacheHeader {
   uint32 metadata_size = 1;
   uint32 strings_cache_size = 2;
   repeated uint32 points_blob_sizes = 3;
+  repeated uint32 zones_blob_sizes = 4;
 }
 
 message CacheMetadata {
@@ -17,12 +25,15 @@ message CacheMetadata {
 }
 
 message StringsCache {
+  reserved 1; // may be used in future versions for global string cache
   repeated string streets = 2;
   repeated string cities = 3;
   repeated string regions = 4;
 }
 
-message PointsBlob { repeated Point points = 1; }
+message PointsBlob {
+  repeated Point points = 1;
+}
 
 message Point {
   double latitude = 1;
@@ -34,4 +45,44 @@ message Point {
   uint32 region = 7;
 
   uint32 weight = 8;
+}
+
+enum ZoneType {
+  ZONE_TYPE_UNSPECIFIED = 0;
+  ZONE_TYPE_REGION = 1;
+}
+
+message ZonesBlob {
+  ZoneType type = 1;
+  repeated Zone zones = 2;
+}
+
+message Zone {
+  uint32 name = 1;
+  Bounds bounds = 2;
+  MultiPolygon multi_polygon = 3;
+}
+
+message Bounds {
+  LatLon max = 1;
+  LatLon min = 2;
+}
+
+// just a set of polygons
+message MultiPolygon {
+  repeated Polygon polygons = 1;
+}
+
+// first ring is outer, others are holes
+message Polygon {
+  repeated Ring rings = 1;
+}
+
+message Ring {
+  repeated LatLon points = 1;
+}
+
+message LatLon {
+  float lat = 1;
+  float lon = 2;
 }

@@ -2,7 +2,7 @@ package geoparser
 
 import (
 	"github.com/paulmach/osm"
-	"github.com/royalcat/rgeocache/cachesaver"
+	"github.com/royalcat/rgeocache/geomodel"
 )
 
 func (f *GeoGen) cacheLocalization(tags osm.Tags) {
@@ -87,21 +87,10 @@ func (f *GeoGen) cacheRelRegion(rel *osm.Relation) {
 		f.cacheLocalization(rel.Tags)
 		f.regionIndex.InsertBorder(name, mpoly)
 
-		rawMPoly := make([][][2]float64, 0, len(mpoly))
-		for _, poly := range mpoly {
-			rawPoly := make([][2]float64, 0, len(poly))
-			for _, ring := range poly {
-				for _, point := range ring {
-					rawPoly = append(rawPoly, [2]float64{point.X(), point.Y()})
-				}
-			}
-			rawMPoly = append(rawMPoly, rawPoly)
-		}
-		bound := mpoly.Bound()
-		f.zones = append(f.zones, cachesaver.Zone{
+		f.zones = append(f.zones, geomodel.Zone{
 			Name:    name,
-			Bounds:  [4]float64{bound.Min.X(), bound.Min.Y(), bound.Max.X(), bound.Max.Y()},
-			Polygon: rawMPoly,
+			Bounds:  mpoly.Bound(),
+			Polygon: mpoly,
 		})
 	}
 }

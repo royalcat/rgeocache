@@ -9,6 +9,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/royalcat/rgeocache/cachesaver"
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
@@ -82,7 +83,7 @@ func openReader(name string) (io.ReadCloser, error) {
 	return file, nil
 }
 
-func optimizePoints(points []kdbush.Point[cachesaver.Info]) []kdbush.Point[*geoInfo] {
+func optimizePoints(points []cachemodel.Point) []kdbush.Point[*geoInfo] {
 	result := make([]kdbush.Point[*geoInfo], len(points))
 	for i, point := range points {
 		result[i] = kdbush.Point[*geoInfo]{
