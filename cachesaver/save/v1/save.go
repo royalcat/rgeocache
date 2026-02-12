@@ -4,11 +4,14 @@ import (
 	"encoding/binary"
 	"io"
 
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 	"google.golang.org/protobuf/proto"
 )
 
-func Save(w io.Writer, cache Cache) error {
+func Save(w io.Writer, points []cachemodel.Point, zones []cachemodel.Zone, metadata cachemodel.Metadata) error {
+	cache := cacheFromPoints(points, zones, metadata)
+
 	// Prepare strings cache
 	stringsCache := &saveproto.StringsCache{
 		Streets: cache.Streets,
@@ -20,13 +23,12 @@ func Save(w io.Writer, cache Cache) error {
 		return err
 	}
 
-	// Prepare metadata (currently empty in the load function, keeping it for future use)
-	metadata := &saveproto.CacheMetadata{
+	protoMetadata := &saveproto.CacheMetadata{
 		Version:     cache.Version,
 		DateCreated: cache.DateCreated,
 		Locale:      cache.Locale,
 	}
-	metadataBytes, err := proto.Marshal(metadata)
+	metadataBytes, err := proto.Marshal(protoMetadata)
 	if err != nil {
 		return err
 	}
@@ -47,23 +49,8 @@ func Save(w io.Writer, cache Cache) error {
 	for i := 0; i < len(cache.Points); i += pointsChunkSize {
 		end := min(i+pointsChunkSize, len(cache.Points))
 
-		chunk := cache.Points[i:end]
-		pointsProto := make([]*saveproto.Point, len(chunk))
-		for j, point := range chunk {
-			pointsProto[j] = &saveproto.Point{
-				Latitude:    point.Lat,
-				Longitude:   point.Lon,
-				Name:        point.Name,
-				Street:      point.Street,
-				HouseNumber: point.HouseNumber,
-				City:        point.City,
-				Region:      point.Region,
-				Weight:      uint32(point.Weight),
-			}
-		}
-
 		pointsBlob := &saveproto.PointsBlob{
-			Points: pointsProto,
+			Points: slicePtr(cache.Points[i:end]),
 		}
 
 		blobBytes, err := proto.Marshal(pointsBlob)
@@ -115,4 +102,12 @@ func Save(w io.Writer, cache Cache) error {
 	}
 
 	return nil
+}
+
+func slicePtr[T any](slice []T) []*T {
+	ptrs := make([]*T, len(slice))
+	for i, v := range slice {
+		ptrs[i] = &v
+	}
+	return ptrs
 }

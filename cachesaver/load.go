@@ -7,11 +7,12 @@ import (
 	"io"
 	"log/slog"
 
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
-func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[Info], error) {
+func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemodel.Info], error) {
 	magic := make([]byte, len(MAGIC_BYTES))
 	_, err := reader.Read(magic)
 	if err != nil {

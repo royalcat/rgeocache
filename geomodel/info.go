@@ -1,6 +1,8 @@
 //go:generate go tool easyjson $GOFILE
 package geomodel
 
+import "github.com/paulmach/orb"
+
 //easyjson:json
 type InfoList []Info
 
@@ -13,4 +15,10 @@ type Info struct {
 	Region      string `json:"region"`
 
 	Weight uint8 `json:"weight"`
+}
+
+type Zone struct {
+	Name    string
+	Bounds  orb.Bound
+	Polygon orb.MultiPolygon
 }
