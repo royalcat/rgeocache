@@ -10,7 +10,7 @@ func mapToMultiPolygon(mpolygon orb.MultiPolygon) *saveproto.MultiPolygon {
 	for _, poly := range mpolygon {
 		rings := make([]*saveproto.Ring, 0, len(poly))
 		for _, ring := range poly {
-			points := make([]*saveproto.LatLon, 0, len(ring))
+			points := make([]*saveproto.LatLon, len(ring))
 			for i, point := range ring {
 				points[i] = &saveproto.LatLon{
 					Lat: float32(point[1]),
