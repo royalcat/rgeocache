@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1770745400615,
+  "lastUpdate": 1770879300950,
   "repoUrl": "https://github.com/royalcat/rgeocache",
   "entries": {
     "Benchmark": [
@@ -346,6 +346,78 @@ window.BENCHMARK_DATA = {
           {
             "name": "BenchmarkGenerationLondon - allocs/op",
             "value": 320099578,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "k.adamovich20@gmail.com",
+            "name": "royalcat",
+            "username": "royalcat"
+          },
+          "committer": {
+            "email": "k.adamovich20@gmail.com",
+            "name": "royalcat",
+            "username": "royalcat"
+          },
+          "distinct": true,
+          "id": "851c84486fab721a09c249e705ecda1dc7d4f9b6",
+          "message": "cache zones",
+          "timestamp": "2026-02-12T10:51:28+04:00",
+          "tree_id": "9053939e34e1814666826da2f025126769f2d63a",
+          "url": "https://github.com/royalcat/rgeocache/commit/851c84486fab721a09c249e705ecda1dc7d4f9b6"
+        },
+        "date": 1770879300251,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkGenerationLondon",
+            "value": 52792423373,
+            "unit": "ns/op\t176040489984 B/op\t319489552 allocs/op",
+            "extra": "1 times"
+          },
+          {
+            "name": "BenchmarkGenerationLondon - ns/op",
+            "value": 52792423373,
+            "unit": "ns/op",
+            "extra": "1 times"
+          },
+          {
+            "name": "BenchmarkGenerationLondon - B/op",
+            "value": 176040489984,
+            "unit": "B/op",
+            "extra": "1 times"
+          },
+          {
+            "name": "BenchmarkGenerationLondon - allocs/op",
+            "value": 319489552,
+            "unit": "allocs/op",
+            "extra": "1 times"
+          },
+          {
+            "name": "BenchmarkGenerationLondon",
+            "value": 53602176527,
+            "unit": "ns/op\t184287361168 B/op\t322409009 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGenerationLondon - ns/op",
+            "value": 53602176527,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGenerationLondon - B/op",
+            "value": 184287361168,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGenerationLondon - allocs/op",
+            "value": 322409009,
             "unit": "allocs/op",
             "extra": "1 times\n4 procs"
           }
