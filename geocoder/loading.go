@@ -24,13 +24,14 @@ func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error loading points: %s", err.Error())
 	}
+
+	points := optimizePoints(pointsRaw)
+	tree := kdbush.NewBush(points, 256)
+
 	regions := bordertree.NewBorderTree[unique.Handle[string]]()
 	for _, zone := range zonesRaw {
 		regions.InsertBorder(zone.Name, zone.Polygon)
 	}
-
-	points := optimizePoints(pointsRaw)
-	tree := kdbush.NewBush(points, 256)
 
 	return newRGeoCoder(tree, regions, opts...), nil
 }
@@ -103,12 +104,12 @@ func optimizePoints(points []cachemodel.Point) []kdbush.Point[*geoInfo] {
 		result[i] = kdbush.Point[*geoInfo]{
 			X: point.X, Y: point.Y,
 			Data: &geoInfo{
-				Weight:      uint8(point.Data.Weight),
 				Name:        point.Data.Name,
 				Street:      point.Data.Street,
 				HouseNumber: point.Data.HouseNumber,
 				City:        point.Data.City,
 				Region:      point.Data.Region,
+				Weight:      uint8(point.Data.Weight),
 			},
 		}
 	}
