@@ -69,7 +69,7 @@ func (f *RGeoCoder) FindInRadius(lat, lon float64, radius float64) (i InfoModel,
 	}
 
 	if f.regions != nil {
-		region, ok := f.regions.QueryPoint(orb.Point{lat, lon})
+		region, ok := f.regions.QueryPoint(orb.Point{lon, lat})
 		if ok {
 			return InfoModel{Info: geomodel.Info{Region: region.Value()}}, true
 		}
