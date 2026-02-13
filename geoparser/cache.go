@@ -2,7 +2,6 @@ package geoparser
 
 import (
 	"github.com/paulmach/osm"
-	"github.com/royalcat/rgeocache/geomodel"
 )
 
 func (f *GeoGen) cacheLocalization(tags osm.Tags) {
@@ -86,11 +85,5 @@ func (f *GeoGen) cacheRelRegion(rel *osm.Relation) {
 
 		f.cacheLocalization(rel.Tags)
 		f.regionIndex.InsertBorder(name, mpoly)
-
-		f.zones = append(f.zones, geomodel.Zone{
-			Name:    name,
-			Bounds:  mpoly.Bound(),
-			Polygon: mpoly,
-		})
 	}
 }

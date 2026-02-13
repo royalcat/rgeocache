@@ -5,7 +5,27 @@ import (
 	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 )
 
-func mapToMultiPolygon(mpolygon orb.MultiPolygon) *saveproto.MultiPolygon {
+func mapBoundsFromOrb(bounds orb.Bound) *saveproto.Bounds {
+	return &saveproto.Bounds{
+		Max: &saveproto.LatLon{
+			Lat: float32(bounds.Max.Lat()),
+			Lon: float32(bounds.Max.Lon()),
+		},
+		Min: &saveproto.LatLon{
+			Lat: float32(bounds.Min.Lat()),
+			Lon: float32(bounds.Min.Lon()),
+		},
+	}
+}
+
+func mapBoundsToOrb(bounds *saveproto.Bounds) orb.Bound {
+	return orb.Bound{
+		Max: orb.Point{float64(bounds.Max.Lon), float64(bounds.Max.Lat)},
+		Min: orb.Point{float64(bounds.Min.Lon), float64(bounds.Min.Lat)},
+	}
+}
+
+func mapMultiPolygonFromOrb(mpolygon orb.MultiPolygon) *saveproto.MultiPolygon {
 	polygons := make([]*saveproto.Polygon, 0, len(mpolygon))
 	for _, poly := range mpolygon {
 		rings := make([]*saveproto.Ring, 0, len(poly))

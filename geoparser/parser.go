@@ -11,6 +11,7 @@ import (
 	"github.com/paulmach/orb/geo"
 	"github.com/paulmach/orb/planar"
 	"github.com/paulmach/orb/resample"
+	"github.com/paulmach/orb/simplify"
 	"github.com/paulmach/osm"
 )
 
@@ -160,6 +161,9 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 		if isBuilding(rel.Tags) {
 			return f.parseRelationBuilding(rel)
 		}
+		if rel.Tags.Find("boundary") == "administrative" && rel.Tags.Find("admin_level") == "4" {
+			return f.parseRelationRegion(rel)
+		}
 	case "building":
 		if rel.Tags.Find("route") == "road" && strings.Contains(rel.Tags.Find("network"), "national") {
 			return f.parseRelationHighway(rel)
@@ -253,4 +257,31 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 		})
 	}
 	return out
+}
+
+func (f *GeoGen) parseRelationRegion(rel *osm.Relation) []geoPoint {
+	log := f.log.With("func", "parseRelationRegion", "type", "relation", "id", rel.ID)
+	name := f.localizedName(rel.Tags)
+	if name == "" {
+		return []geoPoint{}
+	}
+
+	poly, err := f.buildPolygon(rel.Members)
+	if err != nil {
+		log.Error("Error building polygon", "error", err.Error())
+		return []geoPoint{}
+	}
+
+	poly = simplify.DouglasPeucker(0.01).MultiPolygon(poly)
+
+	f.zonesMu.Lock()
+	defer f.zonesMu.Unlock()
+
+	f.zones = append(f.zones, geomodel.Zone{
+		Name:    name,
+		Bounds:  poly.Bound(),
+		Polygon: poly,
+	})
+
+	return []geoPoint{}
 }

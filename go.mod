@@ -5,6 +5,7 @@ go 1.24.5
 require (
 	github.com/KimMachineGun/automemlimit v0.7.4
 	github.com/cheggaaa/pb/v3 v3.1.7
+	github.com/dustin/go-humanize v1.0.1
 	github.com/fasthttp/router v1.5.4
 	github.com/fogleman/poissondisc v0.0.0-20190923201222-9b82984c50c5
 	github.com/google/uuid v1.6.0
@@ -15,6 +16,7 @@ require (
 	github.com/prometheus/client_golang v1.22.0
 	github.com/puzpuzpuz/xsync/v3 v3.4.0
 	github.com/royalcat/osmpbfdb v0.0.0-20260121065150-99fb315aa563
+	github.com/rs/zerolog v1.34.0
 	github.com/samber/slog-logrus/v2 v2.5.2
 	github.com/samber/slog-multi v1.4.1
 	github.com/shirou/gopsutil/v4 v4.25.12

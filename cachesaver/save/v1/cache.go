@@ -16,24 +16,23 @@ type cache struct {
 	Locale      string
 
 	// Values deduplication
-	Streets    []string
-	Cities     []string
-	Regions    []string
-	ZonesNames []string
+	Streets []string
+	Cities  []string
+	Regions []string
 
 	Points []saveproto.Point
 	Zones  []saveproto.Zone
 }
 
-func cacheFromPoints(inputPoints []cachemodel.Point, inputZones []cachemodel.Zone, metadata cachemodel.Metadata) cache {
+func cacheFromPoints(inputPoints []cachemodel.Point, inputRegions []cachemodel.Zone, metadata cachemodel.Metadata) cache {
 	points := []saveproto.Point{}
-	streets := newUniqueMap(1)
-	cities := newUniqueMap(1)
-	regions := newUniqueMap(1)
+	streets := newUniqueMap()
+	cities := newUniqueMap()
+	regionsNames := newUniqueMap()
 	for _, p := range inputPoints {
 		streetIndex := streets.Add(p.Data.Street.Value())
 		cityIndex := cities.Add(p.Data.City.Value())
-		regionIndex := regions.Add(p.Data.Region.Value())
+		regionIndex := regionsNames.Add(p.Data.Region.Value())
 
 		points = append(points, saveproto.Point{
 			Latitude:    p.X,
@@ -47,22 +46,13 @@ func cacheFromPoints(inputPoints []cachemodel.Point, inputZones []cachemodel.Zon
 		})
 	}
 
-	zones := []saveproto.Zone{}
-	zoneNames := newUniqueMap(1)
-	for _, z := range inputZones {
-		zones = append(zones, saveproto.Zone{
-			Name: uint32(zoneNames.Add(z.Name.Value())),
-			Bounds: &saveproto.Bounds{
-				Max: &saveproto.LatLon{
-					Lat: float32(z.Bounds.Max.Lat()),
-					Lon: float32(z.Bounds.Max.Lon()),
-				},
-				Min: &saveproto.LatLon{
-					Lat: float32(z.Bounds.Min.Lat()),
-					Lon: float32(z.Bounds.Min.Lon()),
-				},
-			},
-			MultiPolygon: mapToMultiPolygon(z.Polygon),
+	regions := []saveproto.Zone{}
+	for _, z := range inputRegions {
+		nameIndex := regionsNames.Add(z.Name.Value())
+		regions = append(regions, saveproto.Zone{
+			Name:         uint32(nameIndex),
+			Bounds:       mapBoundsFromOrb(z.Bounds),
+			MultiPolygon: mapMultiPolygonFromOrb(z.Polygon),
 		})
 	}
 
@@ -71,12 +61,11 @@ func cacheFromPoints(inputPoints []cachemodel.Point, inputZones []cachemodel.Zon
 		Locale:      metadata.Locale,
 		DateCreated: metadata.DateCreated.Format(time.RFC3339),
 
-		Streets:    streets.Slice(),
-		Cities:     cities.Slice(),
-		Regions:    regions.Slice(),
-		ZonesNames: zoneNames.Slice(),
+		Streets: streets.Slice(),
+		Cities:  cities.Slice(),
+		Regions: regionsNames.Slice(),
 
 		Points: points,
-		Zones:  zones,
+		Zones:  regions,
 	}
 }
