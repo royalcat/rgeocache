@@ -1,25 +1,25 @@
 package savev1
 
 type uniqueMap struct {
-	startIndex int
-	m          map[string]int
-	i          int
+	m map[string]int
+	i int
 }
 
-func newUniqueMap(startIndex int) *uniqueMap {
+func newUniqueMap() *uniqueMap {
 	return &uniqueMap{
-		startIndex: startIndex,
-		m:          make(map[string]int),
-		i:          startIndex,
+		m: map[string]int{
+			"": 0,
+		},
+		i: 0,
 	}
 }
 
 func (uq *uniqueMap) Add(val string) int {
 	i, ok := uq.m[val]
 	if !ok {
-		uq.m[val] = uq.i
 		uq.i++
-		return uq.i - 1
+		uq.m[val] = uq.i
+		return uq.i
 	}
 	return i
 }
@@ -32,7 +32,7 @@ func (uq *uniqueMap) Get(val string) int {
 }
 
 func (uq *uniqueMap) Slice() []string {
-	s := make([]string, uq.i)
+	s := make([]string, uq.i+1)
 	for v, i := range uq.m {
 		s[i] = v
 	}

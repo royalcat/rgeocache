@@ -63,6 +63,27 @@ func Save(w io.Writer, points []cachemodel.Point, zones []cachemodel.Zone, metad
 		header.PointsBlobSizes = append(header.PointsBlobSizes, uint32(len(blobBytes)))
 	}
 
+	var zonesBlobs [][]byte
+	for i := 0; i < len(cache.Zones); i += pointsChunkSize {
+		end := min(i+pointsChunkSize, len(cache.Zones))
+
+		zonesBlob := &saveproto.ZonesBlob{
+			Type:  saveproto.ZoneType_ZONE_TYPE_REGION,
+			Zones: slicePtr(cache.Zones[i:end]),
+		}
+
+		blobBytes, err := proto.Marshal(zonesBlob)
+		if err != nil {
+			return err
+		}
+
+		zonesBlobs = append(zonesBlobs, blobBytes)
+
+		header.ZonesBlobSizes = append(header.ZonesBlobSizes, uint32(len(blobBytes)))
+	}
+
+	PrintCacheSizeAnalysis(header)
+
 	// Serialize header
 	headerBytes, err := proto.Marshal(header)
 	if err != nil {
@@ -95,6 +116,13 @@ func Save(w io.Writer, points []cachemodel.Point, zones []cachemodel.Zone, metad
 
 	// Write points blobs
 	for _, blobBytes := range pointsBlobs {
+		_, err = w.Write(blobBytes)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, blobBytes := range zonesBlobs {
 		_, err = w.Write(blobBytes)
 		if err != nil {
 			return err

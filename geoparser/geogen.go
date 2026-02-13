@@ -25,7 +25,8 @@ type GeoGen struct {
 	parsedPointsMu sync.Mutex
 	parsedPoints   []geoPoint
 
-	zones []geomodel.Zone
+	zonesMu sync.Mutex
+	zones   []geomodel.Zone
 
 	parsedNodes     *set[osm.NodeID]
 	parsedWays      *set[osm.WayID]

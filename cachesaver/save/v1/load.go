@@ -8,7 +8,6 @@ import (
 	"time"
 	"unique"
 
-	"github.com/paulmach/orb"
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 	"google.golang.org/protobuf/proto"
@@ -27,6 +26,8 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to read header: %w", err)
 	}
+
+	PrintCacheSizeAnalysis(&header)
 
 	var metadata saveproto.CacheMetadata
 	err = readToProto(r, header.MetadataSize, &metadata)
@@ -111,8 +112,9 @@ func mapZone(t saveproto.ZoneType, z *saveproto.Zone, stringsCache *saveproto.St
 	switch t {
 	case saveproto.ZoneType_ZONE_TYPE_REGION:
 		return cachemodel.Zone{
-			Name:   unique.Make(stringsCache.Regions[z.Name]),
-			Bounds: orb.Bound{},
+			Name:    unique.Make(stringsCache.Regions[z.Name]),
+			Bounds:  mapBoundsToOrb(z.Bounds),
+			Polygon: mapMultiPolygonToOrb(z.MultiPolygon),
 		}, true
 	default:
 		return cachemodel.Zone{}, false
