@@ -77,7 +77,7 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 }
 
 func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
-	if !f.parsedWays.AddIfAbsent(way.ID) {
+	if !f.parsedWays.SetIfAbsent(way.ID, struct{}{}) {
 		return []geoPoint{}
 	}
 
@@ -145,7 +145,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 }
 
 func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
-	if !f.parsedRelations.AddIfAbsent(rel.ID) {
+	if !f.parsedRelations.SetIfAbsent(rel.ID, struct{}{}) {
 		return []geoPoint{}
 	}
 
