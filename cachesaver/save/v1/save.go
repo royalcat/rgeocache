@@ -3,13 +3,14 @@ package savev1
 import (
 	"encoding/binary"
 	"io"
+	"iter"
 
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 	"google.golang.org/protobuf/proto"
 )
 
-func Save(w io.Writer, points []cachemodel.Point, zones []cachemodel.Zone, metadata cachemodel.Metadata) error {
+func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], metadata cachemodel.Metadata) error {
 	cache := cacheFromPoints(points, zones, metadata)
 
 	// Prepare strings cache

@@ -1,6 +1,7 @@
 package savev1
 
 import (
+	"iter"
 	"time"
 
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
@@ -24,12 +25,12 @@ type cache struct {
 	Zones  []saveproto.Zone
 }
 
-func cacheFromPoints(inputPoints []cachemodel.Point, inputRegions []cachemodel.Zone, metadata cachemodel.Metadata) cache {
+func cacheFromPoints(inputPoints iter.Seq[cachemodel.Point], inputRegions iter.Seq[cachemodel.Zone], metadata cachemodel.Metadata) cache {
 	points := []saveproto.Point{}
 	streets := newUniqueMap()
 	cities := newUniqueMap()
 	regionsNames := newUniqueMap()
-	for _, p := range inputPoints {
+	for p := range inputPoints {
 		streetIndex := streets.Add(p.Data.Street.Value())
 		cityIndex := cities.Add(p.Data.City.Value())
 		regionIndex := regionsNames.Add(p.Data.Region.Value())
@@ -47,7 +48,7 @@ func cacheFromPoints(inputPoints []cachemodel.Point, inputRegions []cachemodel.Z
 	}
 
 	regions := []saveproto.Zone{}
-	for _, z := range inputRegions {
+	for z := range inputRegions {
 		nameIndex := regionsNames.Add(z.Name.Value())
 		regions = append(regions, saveproto.Zone{
 			Name:         uint32(nameIndex),
