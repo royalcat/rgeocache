@@ -2,6 +2,7 @@ package savev1
 
 import (
 	"bytes"
+	"iter"
 	"strconv"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ func TestSaveLoad(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Save cache to buffer
-	err := Save(&buf, originalPoints, originalZones, originalMeta)
+	err := Save(&buf, slicesIter(originalPoints), slicesIter(originalZones), originalMeta)
 	if err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
@@ -133,4 +134,16 @@ func TestSaveLoad(t *testing.T) {
 
 func pointsEqual(a, b cachemodel.Point) bool {
 	return a == b
+}
+
+func slicesIter[T any](slice []T) iter.Seq[T] {
+	return func(yield func(T) bool) {
+		i := 0
+		for i < len(slice) {
+			if !yield(slice[i]) {
+				return
+			}
+			i++
+		}
+	}
 }

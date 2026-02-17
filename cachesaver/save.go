@@ -3,12 +3,13 @@ package cachesaver
 import (
 	"encoding/binary"
 	"io"
+	"iter"
 
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
 )
 
-func Save(points []cachemodel.Point, zones []cachemodel.Zone, meta cachemodel.Metadata, w io.Writer) error {
+func Save(points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], meta cachemodel.Metadata, w io.Writer) error {
 	_, err := w.Write(MAGIC_BYTES)
 	if err != nil {
 		return err
