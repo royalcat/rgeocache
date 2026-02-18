@@ -41,7 +41,13 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 		return nil, nil, nil, fmt.Errorf("failed to read strings cache: %w", err)
 	}
 
+	var pointsConsumed bool
+
 	pointsIter := func(yield func(cachemodel.Point, error) bool) {
+		defer func() {
+			pointsConsumed = true
+		}()
+
 		var pointsBlob saveproto.PointsBlob
 		for i := 0; i < len(header.PointsBlobSizes); i++ {
 			err = readToProto(r, header.PointsBlobSizes[i], &pointsBlob)
@@ -64,6 +70,10 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 	}
 
 	zonesIter := func(yield func(cachemodel.Zone, error) bool) {
+		if !pointsConsumed {
+			panic("points should be consumed before zones")
+		}
+
 		var zonesBlob saveproto.ZonesBlob
 		for i := 0; i < len(header.ZonesBlobSizes); i++ {
 			err = readToProto(r, header.ZonesBlobSizes[i], &zonesBlob)
