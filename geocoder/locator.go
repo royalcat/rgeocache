@@ -5,13 +5,15 @@ import (
 	"math"
 	"unique"
 
+	"github.com/paulmach/orb"
+	"github.com/royalcat/rgeocache/bordertree"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
 // internal memory-optimized representation of geomodel.Info
 type geoInfo struct {
-	Name        string
+	Name        unique.Handle[string]
 	Street      unique.Handle[string]
 	HouseNumber unique.Handle[string]
 	City        unique.Handle[string]
@@ -21,7 +23,7 @@ type geoInfo struct {
 
 func (g *geoInfo) value() geomodel.Info {
 	return geomodel.Info{
-		Name:        g.Name,
+		Name:        g.Name.Value(),
 		Street:      g.Street.Value(),
 		HouseNumber: g.HouseNumber.Value(),
 		City:        g.City.Value(),
@@ -31,8 +33,8 @@ func (g *geoInfo) value() geomodel.Info {
 }
 
 type RGeoCoder struct {
-	tree *kdbush.KDBush[*geoInfo]
-
+	tree         *kdbush.KDBush[*geoInfo]
+	regions      *bordertree.BorderTree[unique.Handle[string]]
 	searchRadius float64
 	logger       *slog.Logger
 }
@@ -62,11 +64,18 @@ func (f *RGeoCoder) FindInRadius(lat, lon float64, radius float64) (i InfoModel,
 		return true
 	})
 
-	if math.IsInf(finDist, 1) {
-		return InfoModel{}, false
+	if !math.IsInf(finDist, 1) {
+		return InfoModel{Info: finPoint.Data.value()}, true
 	}
 
-	return InfoModel{Info: finPoint.Data.value()}, true
+	if f.regions != nil {
+		region, ok := f.regions.QueryPoint(orb.Point{lon, lat})
+		if ok {
+			return InfoModel{Info: geomodel.Info{Region: region.Value()}}, true
+		}
+	}
+
+	return InfoModel{}, false
 }
 
 func distanceSquared(x1, y1, x2, y2 float64) (distance float64) {

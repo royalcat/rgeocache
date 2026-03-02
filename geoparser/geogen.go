@@ -9,6 +9,8 @@ import (
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/royalcat/osmpbfdb"
 	"github.com/royalcat/rgeocache/bordertree"
+	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/internal/rangeindex"
 )
 
 type GeoGen struct {
@@ -24,9 +26,12 @@ type GeoGen struct {
 	parsedPointsMu sync.Mutex
 	parsedPoints   []geoPoint
 
-	parsedNodes     *set[osm.NodeID]
-	parsedWays      *set[osm.WayID]
-	parsedRelations *set[osm.RelationID]
+	zonesMu sync.Mutex
+	zones   []geomodel.Zone
+
+	parsedNodes     *rangeindex.Index[osm.NodeID, struct{}]
+	parsedWays      *rangeindex.Index[osm.WayID, struct{}]
+	parsedRelations *rangeindex.Index[osm.RelationID, struct{}]
 
 	log *slog.Logger
 }
@@ -37,15 +42,16 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 		regionIndex:       bordertree.NewBorderTree[string](),
 		localizationCache: xsync.NewMapOf[string, string](),
 
-		parsedNodes:     newSet[osm.NodeID](),
-		parsedWays:      newSet[osm.WayID](),
-		parsedRelations: newSet[osm.RelationID](),
+		parsedNodes:     rangeindex.New[osm.NodeID, struct{}](),
+		parsedWays:      rangeindex.New[osm.WayID, struct{}](),
+		parsedRelations: rangeindex.New[osm.RelationID, struct{}](),
 
 		config: config,
 
 		osmdb: db,
 
 		parsedPoints: []geoPoint{},
+		zones:        []geomodel.Zone{},
 
 		log: slog.Default(),
 	}, nil
