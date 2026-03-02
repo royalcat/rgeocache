@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime"
 
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
@@ -13,6 +14,10 @@ import (
 )
 
 func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemodel.Info], []cachemodel.Zone, error) {
+	defer func() {
+		runtime.GC()
+	}()
+
 	magic := make([]byte, len(MAGIC_BYTES))
 	_, err := reader.Read(magic)
 	if err != nil {
