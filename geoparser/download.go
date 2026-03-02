@@ -6,10 +6,10 @@ import (
 	"os"
 	"slices"
 	"time"
+	"unique"
 
 	"github.com/royalcat/rgeocache/cachesaver"
-	"github.com/royalcat/rgeocache/geomodel"
-	"github.com/royalcat/rgeocache/kdbush"
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 )
 
 // TODO
@@ -31,13 +31,35 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 
 	f.log.Info("Saving points to file", "count", len(f.parsedPoints))
 
-	points := make([]kdbush.Point[geomodel.Info], 0, len(f.parsedPoints))
-	for _, point := range f.parsedPoints {
-		points = append(points, kdbush.Point[geomodel.Info]{
-			X:    point.X(),
-			Y:    point.Y(),
-			Data: point.Info,
-		})
+	points := func(yield func(cachemodel.Point) bool) {
+		for _, point := range f.parsedPoints {
+			if !yield(cachesaver.Point{
+				X: point.X(),
+				Y: point.Y(),
+				Data: cachemodel.Info{
+					Name:        unique.Make(point.Name),
+					Street:      unique.Make(point.Street),
+					HouseNumber: unique.Make(point.HouseNumber),
+					City:        unique.Make(point.City),
+					Region:      unique.Make(point.Region),
+					Weight:      point.Weight,
+				},
+			}) {
+				return
+			}
+		}
+	}
+
+	zones := func(yield func(cachemodel.Zone) bool) {
+		for _, zone := range f.zones {
+			if !yield(cachesaver.Zone{
+				Name:    unique.Make(zone.Name),
+				Bounds:  zone.Bounds,
+				Polygon: zone.Polygon,
+			}) {
+				return
+			}
+		}
 	}
 
 	meta := cachesaver.Metadata{
@@ -45,7 +67,7 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		Locale:      f.config.PreferredLocalization,
 		DateCreated: time.Now(),
 	}
-	if err = cachesaver.Save(points, meta, dataFile); err != nil {
+	if err = cachesaver.Save(points, zones, meta, dataFile); err != nil {
 		return err
 	}
 

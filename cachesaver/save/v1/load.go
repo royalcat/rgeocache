@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"time"
+	"unique"
 
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 	"google.golang.org/protobuf/proto"
 )
 
-func Load(r io.Reader) (iter.Seq2[Point, error], *saveproto.StringsCache, *saveproto.CacheMetadata, error) {
+func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel.Zone, error], *cachemodel.Metadata, error) {
 
 	var headerSize uint32
 	err := binary.Read(r, binary.LittleEndian, &headerSize)
@@ -24,6 +27,8 @@ func Load(r io.Reader) (iter.Seq2[Point, error], *saveproto.StringsCache, *savep
 		return nil, nil, nil, fmt.Errorf("failed to read header: %w", err)
 	}
 
+	PrintCacheSizeAnalysis(&header)
+
 	var metadata saveproto.CacheMetadata
 	err = readToProto(r, header.MetadataSize, &metadata)
 	if err != nil {
@@ -36,7 +41,13 @@ func Load(r io.Reader) (iter.Seq2[Point, error], *saveproto.StringsCache, *savep
 		return nil, nil, nil, fmt.Errorf("failed to read strings cache: %w", err)
 	}
 
-	pointsIter := func(yield func(Point, error) bool) {
+	var pointsConsumed bool
+
+	pointsIter := func(yield func(cachemodel.Point, error) bool) {
+		defer func() {
+			pointsConsumed = true
+		}()
+
 		var pointsBlob saveproto.PointsBlob
 		for i := 0; i < len(header.PointsBlobSizes); i++ {
 			err = readToProto(r, header.PointsBlobSizes[i], &pointsBlob)
@@ -44,33 +55,95 @@ func Load(r io.Reader) (iter.Seq2[Point, error], *saveproto.StringsCache, *savep
 				break
 			}
 			if err != nil {
-				if !yield(Point{}, fmt.Errorf("failed to read points blob at index %d: %w", i, err)) {
+				if !yield(cachemodel.Point{}, fmt.Errorf("failed to read points blob at index %d: %w", i, err)) {
 					return
 				} else {
 					continue
 				}
 			}
 			for _, p := range pointsBlob.Points {
-				if !yield(mapPoint(p), nil) {
+				if !yield(mapPoint(p, &stringsCache), nil) {
 					return
 				}
 			}
 		}
 	}
 
-	return pointsIter, &stringsCache, &metadata, nil
+	zonesIter := func(yield func(cachemodel.Zone, error) bool) {
+		if !pointsConsumed {
+			panic("points should be consumed before zones")
+		}
+
+		var zonesBlob saveproto.ZonesBlob
+		for i := 0; i < len(header.ZonesBlobSizes); i++ {
+			err = readToProto(r, header.ZonesBlobSizes[i], &zonesBlob)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				if !yield(cachemodel.Zone{}, fmt.Errorf("failed to read zones blob at index %d: %w", i, err)) {
+					return
+				} else {
+					continue
+				}
+			}
+			for _, z := range zonesBlob.Zones {
+				zone, ok := mapZone(zonesBlob.Type, z, &stringsCache)
+				if !ok {
+					if !yield(cachemodel.Zone{}, fmt.Errorf("failed to map zone at index %d", i)) {
+						return
+					} else {
+						continue
+					}
+				}
+
+				if !yield(zone, nil) {
+					return
+				}
+			}
+		}
+	}
+
+	dateCreated, err := time.Parse(time.RFC3339, metadata.DateCreated)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse date created: %w", err)
+	}
+
+	meta := cachemodel.Metadata{
+		Version:     metadata.Version,
+		Locale:      metadata.Locale,
+		DateCreated: dateCreated,
+	}
+
+	return pointsIter, zonesIter, &meta, nil
 }
 
-func mapPoint(p *saveproto.Point) Point {
-	return Point{
-		Lat:         p.Latitude,
-		Lon:         p.Longitude,
-		Name:        p.Name,
-		Street:      p.Street,
-		HouseNumber: p.HouseNumber,
-		City:        p.City,
-		Region:      p.Region,
-		Weight:      uint8(p.Weight),
+func mapZone(t saveproto.ZoneType, z *saveproto.Zone, stringsCache *saveproto.StringsCache) (cachemodel.Zone, bool) {
+	switch t {
+	case saveproto.ZoneType_ZONE_TYPE_REGION:
+		return cachemodel.Zone{
+			Name:    unique.Make(stringsCache.Regions[z.Name]),
+			Bounds:  mapBoundsToOrb(z.Bounds),
+			Polygon: mapMultiPolygonToOrb(z.MultiPolygon),
+		}, true
+	default:
+		return cachemodel.Zone{}, false
+	}
+
+}
+
+func mapPoint(p *saveproto.Point, stringsCache *saveproto.StringsCache) cachemodel.Point {
+	return cachemodel.Point{
+		X: p.Latitude,
+		Y: p.Longitude,
+		Data: cachemodel.Info{
+			Name:        unique.Make(p.Name),
+			Street:      unique.Make(stringsCache.Streets[p.Street]),
+			HouseNumber: unique.Make(p.HouseNumber),
+			City:        unique.Make(stringsCache.Cities[p.City]),
+			Region:      unique.Make(stringsCache.Regions[p.Region]),
+			Weight:      uint8(p.Weight),
+		},
 	}
 }
 

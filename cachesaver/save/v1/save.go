@@ -3,12 +3,16 @@ package savev1
 import (
 	"encoding/binary"
 	"io"
+	"iter"
 
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 	"google.golang.org/protobuf/proto"
 )
 
-func Save(w io.Writer, cache Cache) error {
+func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], metadata cachemodel.Metadata) error {
+	cache := cacheFromPoints(points, zones, metadata)
+
 	// Prepare strings cache
 	stringsCache := &saveproto.StringsCache{
 		Streets: cache.Streets,
@@ -20,13 +24,12 @@ func Save(w io.Writer, cache Cache) error {
 		return err
 	}
 
-	// Prepare metadata (currently empty in the load function, keeping it for future use)
-	metadata := &saveproto.CacheMetadata{
+	protoMetadata := &saveproto.CacheMetadata{
 		Version:     cache.Version,
 		DateCreated: cache.DateCreated,
 		Locale:      cache.Locale,
 	}
-	metadataBytes, err := proto.Marshal(metadata)
+	metadataBytes, err := proto.Marshal(protoMetadata)
 	if err != nil {
 		return err
 	}
@@ -47,23 +50,8 @@ func Save(w io.Writer, cache Cache) error {
 	for i := 0; i < len(cache.Points); i += pointsChunkSize {
 		end := min(i+pointsChunkSize, len(cache.Points))
 
-		chunk := cache.Points[i:end]
-		pointsProto := make([]*saveproto.Point, len(chunk))
-		for j, point := range chunk {
-			pointsProto[j] = &saveproto.Point{
-				Latitude:    point.Lat,
-				Longitude:   point.Lon,
-				Name:        point.Name,
-				Street:      point.Street,
-				HouseNumber: point.HouseNumber,
-				City:        point.City,
-				Region:      point.Region,
-				Weight:      uint32(point.Weight),
-			}
-		}
-
 		pointsBlob := &saveproto.PointsBlob{
-			Points: pointsProto,
+			Points: slicePtr(cache.Points[i:end]),
 		}
 
 		blobBytes, err := proto.Marshal(pointsBlob)
@@ -75,6 +63,27 @@ func Save(w io.Writer, cache Cache) error {
 
 		header.PointsBlobSizes = append(header.PointsBlobSizes, uint32(len(blobBytes)))
 	}
+
+	var zonesBlobs [][]byte
+	for i := 0; i < len(cache.Zones); i += pointsChunkSize {
+		end := min(i+pointsChunkSize, len(cache.Zones))
+
+		zonesBlob := &saveproto.ZonesBlob{
+			Type:  saveproto.ZoneType_ZONE_TYPE_REGION,
+			Zones: slicePtr(cache.Zones[i:end]),
+		}
+
+		blobBytes, err := proto.Marshal(zonesBlob)
+		if err != nil {
+			return err
+		}
+
+		zonesBlobs = append(zonesBlobs, blobBytes)
+
+		header.ZonesBlobSizes = append(header.ZonesBlobSizes, uint32(len(blobBytes)))
+	}
+
+	PrintCacheSizeAnalysis(header)
 
 	// Serialize header
 	headerBytes, err := proto.Marshal(header)
@@ -114,5 +123,20 @@ func Save(w io.Writer, cache Cache) error {
 		}
 	}
 
+	for _, blobBytes := range zonesBlobs {
+		_, err = w.Write(blobBytes)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func slicePtr[T any](slice []T) []*T {
+	ptrs := make([]*T, len(slice))
+	for i, v := range slice {
+		ptrs[i] = &v
+	}
+	return ptrs
 }

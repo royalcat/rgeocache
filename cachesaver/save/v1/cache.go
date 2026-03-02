@@ -1,25 +1,16 @@
 package savev1
 
 import (
-	"github.com/royalcat/rgeocache/geomodel"
-	"github.com/royalcat/rgeocache/kdbush"
+	"iter"
+	"time"
+
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
+	saveproto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 )
 
 const COMPATIBILITY_LEVEL uint32 = 1
 
-type Point struct {
-	Lat, Lon float64
-
-	Name        string
-	Street      uint32
-	HouseNumber string
-	City        uint32
-	Region      uint32
-
-	Weight uint8
-}
-
-type Cache struct {
+type cache struct {
 	// Metadata
 	Version     uint32
 	DateCreated string
@@ -30,37 +21,52 @@ type Cache struct {
 	Cities  []string
 	Regions []string
 
-	Points []Point
+	Points []saveproto.Point
+	Zones  []saveproto.Zone
 }
 
-func CacheFromPoints(input []kdbush.Point[geomodel.Info]) Cache {
-	points := []Point{}
+func cacheFromPoints(inputPoints iter.Seq[cachemodel.Point], inputRegions iter.Seq[cachemodel.Zone], metadata cachemodel.Metadata) cache {
+	points := []saveproto.Point{}
 	streets := newUniqueMap()
 	cities := newUniqueMap()
-	regions := newUniqueMap()
+	regionsNames := newUniqueMap()
+	for p := range inputPoints {
+		streetIndex := streets.Add(p.Data.Street.Value())
+		cityIndex := cities.Add(p.Data.City.Value())
+		regionIndex := regionsNames.Add(p.Data.Region.Value())
 
-	for _, p := range input {
-		streetIndex := streets.Add(p.Data.Street)
-		cityIndex := cities.Add(p.Data.City)
-		regionIndex := regions.Add(p.Data.Region)
-
-		points = append(points, Point{
-			Lat:         p.X,
-			Lon:         p.Y,
-			Name:        p.Data.Name,
+		points = append(points, saveproto.Point{
+			Latitude:    p.X,
+			Longitude:   p.Y,
+			Name:        p.Data.Name.Value(),
 			Street:      uint32(streetIndex),
-			HouseNumber: p.Data.HouseNumber,
+			HouseNumber: p.Data.HouseNumber.Value(),
 			City:        uint32(cityIndex),
 			Region:      uint32(regionIndex),
-			Weight:      p.Data.Weight,
+			Weight:      uint32(p.Data.Weight),
 		})
 	}
 
-	return Cache{
+	regions := []saveproto.Zone{}
+	for z := range inputRegions {
+		nameIndex := regionsNames.Add(z.Name.Value())
+		regions = append(regions, saveproto.Zone{
+			Name:         uint32(nameIndex),
+			Bounds:       mapBoundsFromOrb(z.Bounds),
+			MultiPolygon: mapMultiPolygonFromOrb(z.Polygon),
+		})
+	}
+
+	return cache{
+		Version:     metadata.Version,
+		Locale:      metadata.Locale,
+		DateCreated: metadata.DateCreated.Format(time.RFC3339),
+
 		Streets: streets.Slice(),
 		Cities:  cities.Slice(),
-		Regions: regions.Slice(),
+		Regions: regionsNames.Slice(),
 
 		Points: points,
+		Zones:  regions,
 	}
 }
