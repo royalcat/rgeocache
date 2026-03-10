@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1772450777109,
+  "lastUpdate": 1773165713688,
   "repoUrl": "https://github.com/royalcat/rgeocache",
   "entries": {
     "Benchmark": [
@@ -2254,6 +2254,642 @@ window.BENCHMARK_DATA = {
           {
             "name": "BenchmarkGenerationLondon - allocs/op",
             "value": 313041191,
+            "unit": "allocs/op",
+            "extra": "1 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "k.adamovich20@gmail.com",
+            "name": "royalcat",
+            "username": "royalcat"
+          },
+          "committer": {
+            "email": "k.adamovich20@gmail.com",
+            "name": "royalcat",
+            "username": "royalcat"
+          },
+          "distinct": true,
+          "id": "91084054dba82c610d784a19a3c6e8c6679a6240",
+          "message": "multithreaded loading",
+          "timestamp": "2026-03-10T21:54:05+04:00",
+          "tree_id": "01cd89f3bd09b512009020b1726068d98a61821b",
+          "url": "https://github.com/royalcat/rgeocache/commit/91084054dba82c610d784a19a3c6e8c6679a6240"
+        },
+        "date": 1773165713327,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkSet (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 827.8,
+            "unit": "ns/op\t      82 B/op\t       0 allocs/op",
+            "extra": "16861512 times"
+          },
+          {
+            "name": "BenchmarkSet (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 827.8,
+            "unit": "ns/op",
+            "extra": "16861512 times"
+          },
+          {
+            "name": "BenchmarkSet (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 82,
+            "unit": "B/op",
+            "extra": "16861512 times"
+          },
+          {
+            "name": "BenchmarkSet (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "16861512 times"
+          },
+          {
+            "name": "BenchmarkSet (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 816.5,
+            "unit": "ns/op\t      82 B/op\t       0 allocs/op",
+            "extra": "17561844 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSet (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 816.5,
+            "unit": "ns/op",
+            "extra": "17561844 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSet (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 82,
+            "unit": "B/op",
+            "extra": "17561844 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSet (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "17561844 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSetSparse (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 821.7,
+            "unit": "ns/op\t      82 B/op\t       0 allocs/op",
+            "extra": "16949372 times"
+          },
+          {
+            "name": "BenchmarkSetSparse (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 821.7,
+            "unit": "ns/op",
+            "extra": "16949372 times"
+          },
+          {
+            "name": "BenchmarkSetSparse (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 82,
+            "unit": "B/op",
+            "extra": "16949372 times"
+          },
+          {
+            "name": "BenchmarkSetSparse (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "16949372 times"
+          },
+          {
+            "name": "BenchmarkSetSparse (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 818.6,
+            "unit": "ns/op\t      82 B/op\t       0 allocs/op",
+            "extra": "17483311 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSetSparse (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 818.6,
+            "unit": "ns/op",
+            "extra": "17483311 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSetSparse (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 82,
+            "unit": "B/op",
+            "extra": "17483311 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSetSparse (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "17483311 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGet (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 184.9,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "64788516 times"
+          },
+          {
+            "name": "BenchmarkGet (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 184.9,
+            "unit": "ns/op",
+            "extra": "64788516 times"
+          },
+          {
+            "name": "BenchmarkGet (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "64788516 times"
+          },
+          {
+            "name": "BenchmarkGet (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "64788516 times"
+          },
+          {
+            "name": "BenchmarkGet (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 183.7,
+            "unit": "ns/op\t       0 B/op\t       0 allocs/op",
+            "extra": "65039084 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGet (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 183.7,
+            "unit": "ns/op",
+            "extra": "65039084 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGet (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 0,
+            "unit": "B/op",
+            "extra": "65039084 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGet (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "65039084 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSetIfAbsent (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 716.5,
+            "unit": "ns/op\t      82 B/op\t       0 allocs/op",
+            "extra": "19572919 times"
+          },
+          {
+            "name": "BenchmarkSetIfAbsent (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 716.5,
+            "unit": "ns/op",
+            "extra": "19572919 times"
+          },
+          {
+            "name": "BenchmarkSetIfAbsent (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 82,
+            "unit": "B/op",
+            "extra": "19572919 times"
+          },
+          {
+            "name": "BenchmarkSetIfAbsent (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "19572919 times"
+          },
+          {
+            "name": "BenchmarkSetIfAbsent (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 698.4,
+            "unit": "ns/op\t      82 B/op\t       0 allocs/op",
+            "extra": "20593158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSetIfAbsent (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 698.4,
+            "unit": "ns/op",
+            "extra": "20593158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSetIfAbsent (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 82,
+            "unit": "B/op",
+            "extra": "20593158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSetIfAbsent (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "20593158 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDelete (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 542.5,
+            "unit": "ns/op\t      24 B/op\t       1 allocs/op",
+            "extra": "26088325 times"
+          },
+          {
+            "name": "BenchmarkDelete (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 542.5,
+            "unit": "ns/op",
+            "extra": "26088325 times"
+          },
+          {
+            "name": "BenchmarkDelete (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 24,
+            "unit": "B/op",
+            "extra": "26088325 times"
+          },
+          {
+            "name": "BenchmarkDelete (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "26088325 times"
+          },
+          {
+            "name": "BenchmarkDelete (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 538.9,
+            "unit": "ns/op\t      24 B/op\t       1 allocs/op",
+            "extra": "26165719 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDelete (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 538.9,
+            "unit": "ns/op",
+            "extra": "26165719 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDelete (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 24,
+            "unit": "B/op",
+            "extra": "26165719 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDelete (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 1,
+            "unit": "allocs/op",
+            "extra": "26165719 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConcurrentReadWrite (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 524.7,
+            "unit": "ns/op\t       6 B/op\t       0 allocs/op",
+            "extra": "23020930 times"
+          },
+          {
+            "name": "BenchmarkConcurrentReadWrite (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 524.7,
+            "unit": "ns/op",
+            "extra": "23020930 times"
+          },
+          {
+            "name": "BenchmarkConcurrentReadWrite (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 6,
+            "unit": "B/op",
+            "extra": "23020930 times"
+          },
+          {
+            "name": "BenchmarkConcurrentReadWrite (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "23020930 times"
+          },
+          {
+            "name": "BenchmarkConcurrentReadWrite (github.com/royalcat/rgeocache/internal/rangeindex)",
+            "value": 655.5,
+            "unit": "ns/op\t       6 B/op\t       0 allocs/op",
+            "extra": "19092728 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConcurrentReadWrite (github.com/royalcat/rgeocache/internal/rangeindex) - ns/op",
+            "value": 655.5,
+            "unit": "ns/op",
+            "extra": "19092728 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConcurrentReadWrite (github.com/royalcat/rgeocache/internal/rangeindex) - B/op",
+            "value": 6,
+            "unit": "B/op",
+            "extra": "19092728 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkConcurrentReadWrite (github.com/royalcat/rgeocache/internal/rangeindex) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "19092728 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server)",
+            "value": 10294,
+            "unit": "ns/op\t  10783046 points/s\t    7472 B/op\t      25 allocs/op",
+            "extra": "1000000 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 10294,
+            "unit": "ns/op",
+            "extra": "1000000 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server) - points/s",
+            "value": 10783046,
+            "unit": "points/s",
+            "extra": "1000000 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 7472,
+            "unit": "B/op",
+            "extra": "1000000 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 25,
+            "unit": "allocs/op",
+            "extra": "1000000 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server)",
+            "value": 10273,
+            "unit": "ns/op\t  21611044 points/s\t    7472 B/op\t      25 allocs/op",
+            "extra": "1000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 10273,
+            "unit": "ns/op",
+            "extra": "1000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server) - points/s",
+            "value": 21611044,
+            "unit": "points/s",
+            "extra": "1000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 7472,
+            "unit": "B/op",
+            "extra": "1000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10 (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 25,
+            "unit": "allocs/op",
+            "extra": "1000000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server)",
+            "value": 782895,
+            "unit": "ns/op\t  14051691 points/s\t  533576 B/op\t      47 allocs/op",
+            "extra": "15319 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 782895,
+            "unit": "ns/op",
+            "extra": "15319 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server) - points/s",
+            "value": 14051691,
+            "unit": "points/s",
+            "extra": "15319 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 533576,
+            "unit": "B/op",
+            "extra": "15319 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 47,
+            "unit": "allocs/op",
+            "extra": "15319 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server)",
+            "value": 783668,
+            "unit": "ns/op\t  28062863 points/s\t  533668 B/op\t      47 allocs/op",
+            "extra": "15333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 783668,
+            "unit": "ns/op",
+            "extra": "15333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server) - points/s",
+            "value": 28062863,
+            "unit": "points/s",
+            "extra": "15333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 533668,
+            "unit": "B/op",
+            "extra": "15333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_1000 (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 47,
+            "unit": "allocs/op",
+            "extra": "15333 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server)",
+            "value": 7738995,
+            "unit": "ns/op\t  14213862 points/s\t 5902158 B/op\t      86 allocs/op",
+            "extra": "1551 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 7738995,
+            "unit": "ns/op",
+            "extra": "1551 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server) - points/s",
+            "value": 14213862,
+            "unit": "points/s",
+            "extra": "1551 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 5902158,
+            "unit": "B/op",
+            "extra": "1551 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 86,
+            "unit": "allocs/op",
+            "extra": "1551 times"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server)",
+            "value": 7723758,
+            "unit": "ns/op\t  28698178 points/s\t 5902854 B/op\t      87 allocs/op",
+            "extra": "1528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 7723758,
+            "unit": "ns/op",
+            "extra": "1528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server) - points/s",
+            "value": 28698178,
+            "unit": "points/s",
+            "extra": "1528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 5902854,
+            "unit": "B/op",
+            "extra": "1528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkHandlers/RGeoMultipleCodeHandler_10000 (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 87,
+            "unit": "allocs/op",
+            "extra": "1528 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/json (github.com/royalcat/rgeocache/server)",
+            "value": 1459,
+            "unit": "ns/op\t     168 B/op\t       3 allocs/op",
+            "extra": "8218645 times"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/json (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 1459,
+            "unit": "ns/op",
+            "extra": "8218645 times"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/json (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 168,
+            "unit": "B/op",
+            "extra": "8218645 times"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/json (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "8218645 times"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/json (github.com/royalcat/rgeocache/server)",
+            "value": 1459,
+            "unit": "ns/op\t     168 B/op\t       3 allocs/op",
+            "extra": "8220796 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/json (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 1459,
+            "unit": "ns/op",
+            "extra": "8220796 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/json (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 168,
+            "unit": "B/op",
+            "extra": "8220796 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/json (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 3,
+            "unit": "allocs/op",
+            "extra": "8220796 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/fast (github.com/royalcat/rgeocache/server)",
+            "value": 378.4,
+            "unit": "ns/op\t     484 B/op\t       0 allocs/op",
+            "extra": "31073385 times"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/fast (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 378.4,
+            "unit": "ns/op",
+            "extra": "31073385 times"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/fast (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 484,
+            "unit": "B/op",
+            "extra": "31073385 times"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/fast (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "31073385 times"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/fast (github.com/royalcat/rgeocache/server)",
+            "value": 327.8,
+            "unit": "ns/op\t     486 B/op\t       0 allocs/op",
+            "extra": "38719334 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/fast (github.com/royalcat/rgeocache/server) - ns/op",
+            "value": 327.8,
+            "unit": "ns/op",
+            "extra": "38719334 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/fast (github.com/royalcat/rgeocache/server) - B/op",
+            "value": 486,
+            "unit": "B/op",
+            "extra": "38719334 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkTestUnmarshalPoints/fast (github.com/royalcat/rgeocache/server) - allocs/op",
+            "value": 0,
+            "unit": "allocs/op",
+            "extra": "38719334 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGenerationLondon (github.com/royalcat/rgeocache/test)",
+            "value": 22298367101,
+            "unit": "ns/op\t87354400632 B/op\t311413367 allocs/op",
+            "extra": "1 times"
+          },
+          {
+            "name": "BenchmarkGenerationLondon (github.com/royalcat/rgeocache/test) - ns/op",
+            "value": 22298367101,
+            "unit": "ns/op",
+            "extra": "1 times"
+          },
+          {
+            "name": "BenchmarkGenerationLondon (github.com/royalcat/rgeocache/test) - B/op",
+            "value": 87354400632,
+            "unit": "B/op",
+            "extra": "1 times"
+          },
+          {
+            "name": "BenchmarkGenerationLondon (github.com/royalcat/rgeocache/test) - allocs/op",
+            "value": 311413367,
+            "unit": "allocs/op",
+            "extra": "1 times"
+          },
+          {
+            "name": "BenchmarkGenerationLondon (github.com/royalcat/rgeocache/test)",
+            "value": 22052066194,
+            "unit": "ns/op\t86196017528 B/op\t307255162 allocs/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGenerationLondon (github.com/royalcat/rgeocache/test) - ns/op",
+            "value": 22052066194,
+            "unit": "ns/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGenerationLondon (github.com/royalcat/rgeocache/test) - B/op",
+            "value": 86196017528,
+            "unit": "B/op",
+            "extra": "1 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkGenerationLondon (github.com/royalcat/rgeocache/test) - allocs/op",
+            "value": 307255162,
             "unit": "allocs/op",
             "extra": "1 times\n4 procs"
           }
