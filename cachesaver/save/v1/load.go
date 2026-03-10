@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"sync/atomic"
 	"time"
 	"unique"
 
@@ -48,23 +49,79 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 			pointsConsumed = true
 		}()
 
-		var pointsBlob saveproto.PointsBlob
-		for i := 0; i < len(header.PointsBlobSizes); i++ {
-			err = readToProto(r, header.PointsBlobSizes[i], &pointsBlob)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				if !yield(cachemodel.Point{}, fmt.Errorf("failed to read points blob at index %d: %w", i, err)) {
+		var stopped atomic.Bool
+
+		blobChan := make(chan struct {
+			buf []byte
+			err error
+		})
+
+		go func() {
+			defer close(blobChan)
+			for i := 0; i < len(header.PointsBlobSizes); i++ {
+				if stopped.Load() {
 					return
-				} else {
+				}
+
+				buf := make([]byte, header.PointsBlobSizes[i])
+				n, err := io.ReadAtLeast(r, buf, int(header.PointsBlobSizes[i]))
+				if err != nil {
+					blobChan <- struct {
+						buf []byte
+						err error
+					}{nil, fmt.Errorf("failed to read points blob at index %d: %w", i, err)}
+					return
+				}
+				blobChan <- struct {
+					buf []byte
+					err error
+				}{buf[:n], nil}
+			}
+		}()
+
+		outChan := make(chan struct {
+			point cachemodel.Point
+			err   error
+		})
+
+		go func() {
+			defer close(outChan)
+			for blob := range blobChan {
+				if stopped.Load() {
+					return
+				}
+
+				if blob.err != nil {
+					outChan <- struct {
+						point cachemodel.Point
+						err   error
+					}{cachemodel.Point{}, blob.err}
 					continue
 				}
-			}
-			for _, p := range pointsBlob.Points {
-				if !yield(mapPoint(p, &stringsCache), nil) {
+
+				var pointsBlob saveproto.PointsBlob
+				err = proto.Unmarshal(blob.buf, &pointsBlob)
+				if err != nil {
+					outChan <- struct {
+						point cachemodel.Point
+						err   error
+					}{cachemodel.Point{}, fmt.Errorf("failed to unmarshal points blob: %w", err)}
 					return
 				}
+
+				for _, p := range pointsBlob.Points {
+					outChan <- struct {
+						point cachemodel.Point
+						err   error
+					}{mapPoint(p, &stringsCache), nil}
+				}
+			}
+		}()
+
+		for out := range outChan {
+			if !yield(out.point, out.err) {
+				stopped.Store(true)
+				return
 			}
 		}
 	}
