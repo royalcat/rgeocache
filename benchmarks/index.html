@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Benchmark Dashboard</title>
+    <style>
+      :root {
+        --color-bg: #ffffff;
+        --color-bg-secondary: #f6f8fa;
+        --color-border: #d0d7de;
+        --color-text: #1f2328;
+        --color-text-secondary: #656d76;
+        --color-accent: #0969da;
+        --color-accent-hover: #0550ae;
+        --color-btn-bg: #0969da;
+        --color-btn-text: #ffffff;
+        --color-tab-active-bg: #ffffff;
+        --color-tab-active-border: #0969da;
+        --color-tab-hover-bg: #f0f3f6;
+        --radius: 6px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --color-bg: #0d1117;
+          --color-bg-secondary: #161b22;
+          --color-border: #30363d;
+          --color-text: #e6edf3;
+          --color-text-secondary: #8b949e;
+          --color-accent: #58a6ff;
+          --color-accent-hover: #79c0ff;
+          --color-btn-bg: #238636;
+          --color-btn-text: #ffffff;
+          --color-tab-active-bg: #0d1117;
+          --color-tab-active-border: #58a6ff;
+          --color-tab-hover-bg: #1c2128;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+          Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+        font-size: 16px;
+        background-color: var(--color-bg);
+        color: var(--color-text);
+      }
+
+      body {
+        max-width: 1920px;
+        margin: 0 auto;
+        padding: 16px 40px;
+      }
+
+      a {
+        color: var(--color-accent);
+        text-decoration: none;
+      }
+      a:hover {
+        color: var(--color-accent-hover);
+        text-decoration: underline;
+      }
+
+      /* ---- Header ---- */
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--color-border);
+        margin-bottom: 24px;
+      }
+
+      header h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-right: auto;
+      }
+
+      .header-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 0.8rem;
+        color: var(--color-text-secondary);
+      }
+      .header-meta a {
+        font-size: 0.8rem;
+      }
+
+      /* ---- Controls bar ---- */
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+
+      .controls label {
+        font-weight: 600;
+        font-size: 0.875rem;
+      }
+
+      .controls select,
+      .controls input {
+        padding: 6px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-bg-secondary);
+        color: var(--color-text);
+        font-size: 0.875rem;
+      }
+      .controls select:focus,
+      .controls input:focus {
+        outline: 2px solid var(--color-accent);
+        outline-offset: -1px;
+      }
+
+      /* ---- Package tabs ---- */
+      .package-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0;
+        border-bottom: 1px solid var(--color-border);
+        margin-bottom: 24px;
+      }
+
+      .package-tabs:empty {
+        display: none;
+        margin-bottom: 0;
+      }
+
+      .package-tab {
+        padding: 8px 16px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        border: 1px solid transparent;
+        border-bottom: 2px solid transparent;
+        border-radius: var(--radius) var(--radius) 0 0;
+        background: transparent;
+        transition: color 0.15s, border-color 0.15s, background 0.15s;
+        user-select: none;
+        white-space: nowrap;
+      }
+
+      .package-tab:hover {
+        color: var(--color-text);
+        background: var(--color-tab-hover-bg);
+      }
+
+      .package-tab.active {
+        color: var(--color-text);
+        background: var(--color-tab-active-bg);
+        border-color: var(--color-border);
+        border-bottom-color: var(--color-tab-active-border);
+        font-weight: 600;
+      }
+
+      /* ---- Main charts area ---- */
+      #main {
+        display: flex;
+        flex-direction: column;
+        gap: 32px;
+      }
+
+      /* Benchmark group: groups related charts (same bench, different metrics) in a row */
+      .bench-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .bench-group-title {
+        font-size: 1.05rem;
+        font-weight: 600;
+        word-break: break-word;
+        padding: 0 4px;
+      }
+
+      .bench-group-charts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+        gap: 16px;
+      }
+
+      .chart-card {
+        background: var(--color-bg-secondary);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 16px;
+        min-width: 0;
+      }
+
+      .chart-card h2 {
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-bottom: 12px;
+        word-break: break-word;
+        color: var(--color-text-secondary);
+      }
+
+      .chart-wrapper {
+        position: relative;
+        width: 100%;
+        height: 400px;
+      }
+
+      /* ---- Loading / empty states ---- */
+      .state-message {
+        text-align: center;
+        padding: 64px 16px;
+        color: var(--color-text-secondary);
+        font-size: 1.1rem;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 24px;
+        height: 24px;
+        border: 3px solid var(--color-border);
+        border-top-color: var(--color-accent);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        vertical-align: middle;
+        margin-right: 8px;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* ---- Footer ---- */
+      footer {
+        margin-top: 32px;
+        padding-top: 16px;
+        border-top: 1px solid var(--color-border);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        font-size: 0.8rem;
+        color: var(--color-text-secondary);
+      }
+
+      footer .spacer {
+        flex: 1;
+      }
+
+      footer button {
+        padding: 6px 16px;
+        border: none;
+        border-radius: var(--radius);
+        background: var(--color-btn-bg);
+        color: var(--color-btn-text);
+        cursor: pointer;
+        font-size: 0.8rem;
+        font-weight: 500;
+      }
+      footer button:hover {
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <h1>📊 Benchmark Dashboard</h1>
+      <div class="header-meta">
+        <span>Last Update: <span id="last-update">—</span></span>
+        <span>Repository: <a id="repo-link" rel="noopener" href="#">—</a></span>
+      </div>
+    </header>
+
+    <div class="controls">
+      <label for="branch-select">Branch:</label>
+      <select id="branch-select">
+        <option value="">Loading branches…</option>
+      </select>
+
+      <label for="cpu-select">CPUs:</label>
+      <select id="cpu-select">
+        <option value="all">All</option>
+      </select>
+
+      <span id="cpu-model-group" style="display: none; gap: 12px; align-items: center;">
+        <label for="cpu-model-select">CPU Model:</label>
+        <select id="cpu-model-select">
+          <option value="all">All</option>
+        </select>
+      </span>
+
+      <span id="goos-group" style="display: none; gap: 12px; align-items: center;">
+        <label for="goos-select">GOOS:</label>
+        <select id="goos-select"></select>
+      </span>
+
+      <span id="goarch-group" style="display: none; gap: 12px; align-items: center;">
+        <label for="goarch-select">GOARCH:</label>
+        <select id="goarch-select"></select>
+      </span>
+
+      <span id="goversion-group" style="display: none; gap: 12px; align-items: center;">
+        <label for="goversion-select">Go Version:</label>
+        <select id="goversion-select"></select>
+      </span>
+
+      <span id="cgo-group" style="display: none; gap: 8px; align-items: center;">
+        <label for="cgo-checkbox">CGO:</label>
+        <input type="checkbox" id="cgo-checkbox" checked />
+      </span>
+
+      <label for="filter-input">Filter:</label>
+      <input
+        id="filter-input"
+        type="text"
+        placeholder="Filter benchmarks by name…"
+        autocomplete="off"
+      />
+    </div>
+
+    <div class="package-tabs" id="package-tabs"></div>
+
+    <main id="main">
+      <div class="state-message" id="loading-msg">
+        <span class="spinner"></span> Loading benchmark data…
+      </div>
+    </main>
+
+    <footer>
+      <button id="dl-button" disabled>Download branch data as JSON</button>
+      <div class="spacer"></div>
+      <span></span>
+        Powered by
+        <a
+          href="https://github.com/royalcat/go-continuous-benchmarking"
+          rel="noopener"
+          target="_blank"
+          >go-continuous-benchmarking</a
+        >
+      </span>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
