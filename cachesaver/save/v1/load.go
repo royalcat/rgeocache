@@ -28,8 +28,6 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 		return nil, nil, nil, fmt.Errorf("failed to read header: %w", err)
 	}
 
-	PrintCacheSizeAnalysis(&header)
-
 	var metadata saveproto.CacheMetadata
 	err = readToProto(r, header.MetadataSize, &metadata)
 	if err != nil {
