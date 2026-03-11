@@ -83,8 +83,6 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 		header.ZonesBlobSizes = append(header.ZonesBlobSizes, uint32(len(blobBytes)))
 	}
 
-	PrintCacheSizeAnalysis(header)
-
 	// Serialize header
 	headerBytes, err := proto.Marshal(header)
 	if err != nil {
