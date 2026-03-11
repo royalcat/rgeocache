@@ -1,6 +1,7 @@
 package geocoder
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log/slog"
@@ -41,8 +42,10 @@ func LoadGeoCoderFromFile(file string, opts ...Option) (*RGeoCoder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error opening points file: %s", err.Error())
 	}
+	defer reader.Close()
 
-	return LoadGeoCoderFromReader(reader, opts...)
+	bufReader := bufio.NewReaderSize(reader, 4*1024*1024) // 4 MB
+	return LoadGeoCoderFromReader(bufReader, opts...)
 }
 
 // Deprecated: Use LoadGeoCoderFromFile instead.

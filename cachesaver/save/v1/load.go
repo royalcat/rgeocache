@@ -15,7 +15,6 @@ import (
 )
 
 func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel.Zone, error], *cachemodel.Metadata, error) {
-
 	var headerSize uint32
 	err := binary.Read(r, binary.LittleEndian, &headerSize)
 	if err != nil {
@@ -54,7 +53,7 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 			err error
 		}
 
-		chunkChan := make(chan chunk)
+		chunkChan := make(chan chunk, 10)
 
 		go func() {
 			defer close(chunkChan)
@@ -73,33 +72,54 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 			}
 		}()
 
-		type point struct {
-			point cachemodel.Point
-			err   error
+		type pointsBlobElem struct {
+			points []*saveproto.Point
+			err    error
 		}
-
-		outChan := make(chan point)
+		pointsBlobChan := make(chan pointsBlobElem, 10)
 
 		go func() {
-			defer close(outChan)
+			defer close(pointsBlobChan)
 			for blob := range chunkChan {
 				if stopped.Load() {
 					return
 				}
 
 				if blob.err != nil {
-					outChan <- point{cachemodel.Point{}, blob.err}
+					pointsBlobChan <- pointsBlobElem{nil, blob.err}
 					continue
 				}
 
 				var pointsBlob saveproto.PointsBlob
 				err = proto.Unmarshal(blob.buf, &pointsBlob)
 				if err != nil {
-					outChan <- point{cachemodel.Point{}, fmt.Errorf("failed to unmarshal points blob: %w", err)}
+					pointsBlobChan <- pointsBlobElem{nil, fmt.Errorf("failed to unmarshal points blob: %w", err)}
 					return
 				}
 
-				for _, p := range pointsBlob.Points {
+				pointsBlobChan <- pointsBlobElem{pointsBlob.Points, nil}
+			}
+		}()
+
+		type point struct {
+			point cachemodel.Point
+			err   error
+		}
+		outChan := make(chan point, 100)
+
+		go func() {
+			defer close(outChan)
+			for pointsBlob := range pointsBlobChan {
+				if stopped.Load() {
+					return
+				}
+
+				if pointsBlob.err != nil {
+					outChan <- point{cachemodel.Point{}, pointsBlob.err}
+					continue
+				}
+
+				for _, p := range pointsBlob.points {
 					outChan <- point{mapPoint(p, &stringsCache), nil}
 				}
 			}
