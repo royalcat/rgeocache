@@ -51,13 +51,15 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 
 		var stopped atomic.Bool
 
-		blobChan := make(chan struct {
+		type chunk struct {
 			buf []byte
 			err error
-		})
+		}
+
+		chunkChan := make(chan chunk)
 
 		go func() {
-			defer close(blobChan)
+			defer close(chunkChan)
 			for i := 0; i < len(header.PointsBlobSizes); i++ {
 				if stopped.Load() {
 					return
@@ -66,54 +68,41 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 				buf := make([]byte, header.PointsBlobSizes[i])
 				n, err := io.ReadAtLeast(r, buf, int(header.PointsBlobSizes[i]))
 				if err != nil {
-					blobChan <- struct {
-						buf []byte
-						err error
-					}{nil, fmt.Errorf("failed to read points blob at index %d: %w", i, err)}
+					chunkChan <- chunk{nil, fmt.Errorf("failed to read points blob at index %d: %w", i, err)}
 					return
 				}
-				blobChan <- struct {
-					buf []byte
-					err error
-				}{buf[:n], nil}
+				chunkChan <- chunk{buf[:n], nil}
 			}
 		}()
 
-		outChan := make(chan struct {
+		type point struct {
 			point cachemodel.Point
 			err   error
-		})
+		}
+
+		outChan := make(chan point)
 
 		go func() {
 			defer close(outChan)
-			for blob := range blobChan {
+			for blob := range chunkChan {
 				if stopped.Load() {
 					return
 				}
 
 				if blob.err != nil {
-					outChan <- struct {
-						point cachemodel.Point
-						err   error
-					}{cachemodel.Point{}, blob.err}
+					outChan <- point{cachemodel.Point{}, blob.err}
 					continue
 				}
 
 				var pointsBlob saveproto.PointsBlob
 				err = proto.Unmarshal(blob.buf, &pointsBlob)
 				if err != nil {
-					outChan <- struct {
-						point cachemodel.Point
-						err   error
-					}{cachemodel.Point{}, fmt.Errorf("failed to unmarshal points blob: %w", err)}
+					outChan <- point{cachemodel.Point{}, fmt.Errorf("failed to unmarshal points blob: %w", err)}
 					return
 				}
 
 				for _, p := range pointsBlob.Points {
-					outChan <- struct {
-						point cachemodel.Point
-						err   error
-					}{mapPoint(p, &stringsCache), nil}
+					outChan <- point{mapPoint(p, &stringsCache), nil}
 				}
 			}
 		}()
