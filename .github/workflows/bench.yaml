@@ -8,31 +8,15 @@ permissions:
   deployments: write
 
 jobs:
-  benchmarks:
+  benchmark:
     strategy:
       fail-fast: false
       matrix:
         os: ["ubuntu-24.04", "ubuntu-24.04-arm"]
         cgo: [0, 1]
-        # TODO
-        # include:
-        #   - os: "ubuntu-24.04-arm"
-        #     GOARM64: ""
-        #   - os: "ubuntu-24.04-arm"
-        #     GOARM64: "8.0,lse"
-        #   - os: "ubuntu-24.04-arm"
-        #     GOARM64: "9.0,lse"
-        #   - os: "ubuntu-24.04"
-        #     GOARM64: ""
-        #   - os: "ubuntu-24.04"
-        #     GOAMD64: "v1"
-        #   - os: "ubuntu-24.04"
-        #     GOAMD64: "v2"
-        #   - os: "ubuntu-24.04"
-        #     GOAMD64: "v3"
-        #   - os: "ubuntu-24.04"
-        #     GOAMD64: "v4"
     runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: ${{ matrix.cgo }}
     steps:
       - name: Install libdeflate
         if: matrix.cgo == '1'
@@ -56,17 +40,57 @@ jobs:
           go-version: "1.25"
           check-latest: true
           cache: true
-      - name: Run benchmark
-        env:
-          CGO_ENABLED: ${{ matrix.cgo }}
-          GOARM64: ${{ matrix.GOARM64 }}
-          GOAMD64: ${{ matrix.GOAMD64 }}
-        run: go test -run='^$' -bench '.' -benchtime 10s -benchmem -cpu=1,4 ./... | tee output.txt
-      - name: Store benchmark result
-        uses: benchmark-action/github-action-benchmark@v1
+
+      - name: Run benchmarks
+        # env:
+        #   GOARM64: ${{ matrix.GOARM64 }}
+        #   GOAMD64: ${{ matrix.GOAMD64 }}
+        run: go test -run='^$' -bench=. -count=1 -benchtime 10s -benchmem -cpu=1,4 ./... 2>&1 | tee bench-output.txt
+
+      - name: Parse benchmark results
+        id: parse
+        uses: royalcat/go-continuous-benchmarking@v0.1.1
         with:
+          mode: parse
+          output-file-path: bench-output.txt
+          result-dir: benchmark-result
+
+      - name: Upload parsed results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.parse.outputs.artifact-name }}
+          path: benchmark-result/
+          retention-days: 1
+  store:
+    name: Store benchmark results
+    needs: benchmark
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-store-${{ github.ref }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+
+      - name: Download all benchmark artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: benchmark-results
+          pattern: bench-*
+
+      - name: List downloaded artifacts
+        run: find benchmark-results -type f | sort
+
+      - name: Store benchmark results
+        uses: royalcat/go-continuous-benchmarking@v0.1.1
+        with:
+          mode: store
+          entries: "benchmark-results/*/entry.json"
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          tool: "go"
-          output-file-path: output.txt
-          benchmark-data-dir-path: "bench/branch/${{ steps.get-branch-name.outputs.BRANCH_NAME }}/${{ matrix.os }}/cgo-${{ matrix.cgo }}/${{ matrix.GOAMD64 || matrix.GOARM64 || 'default' }}/"
-          auto-push: true
+          auto-push: "true"
+          max-items-in-chart: "100"
