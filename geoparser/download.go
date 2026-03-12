@@ -51,8 +51,20 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	}
 
 	zones := func(yield func(cachemodel.Zone) bool) {
-		for _, zone := range f.zones {
+		for _, zone := range f.regions {
 			if !yield(cachesaver.Zone{
+				Type:    cachemodel.ZoneRegion,
+				Name:    unique.Make(zone.Name),
+				Bounds:  zone.Bounds,
+				Polygon: zone.Polygon,
+			}) {
+				return
+			}
+		}
+
+		for _, zone := range f.countries {
+			if !yield(cachesaver.Zone{
+				Type:    cachemodel.ZoneCountry,
 				Name:    unique.Make(zone.Name),
 				Bounds:  zone.Bounds,
 				Polygon: zone.Polygon,
@@ -68,6 +80,15 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		DateCreated: time.Now(),
 	}
 	if err = cachesaver.Save(points, zones, meta, dataFile); err != nil {
+		return err
+	}
+
+	_, err = dataFile.Seek(0, 0)
+	if err != nil {
+		return err
+	}
+	err = cachesaver.PrintCacheSizeAnalysis(dataFile)
+	if err != nil {
 		return err
 	}
 

@@ -15,9 +15,9 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 
 	// Prepare strings cache
 	stringsCache := &saveproto.StringsCache{
-		Streets: cache.Streets,
-		Cities:  cache.Cities,
-		Regions: cache.Regions,
+		Streets: cache.StreetsNames,
+		Cities:  cache.CitiesNames,
+		Regions: cache.ZonesNames,
 	}
 	stringsCacheBytes, err := proto.Marshal(stringsCache)
 	if err != nil {
@@ -36,7 +36,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 
 	// Prepare points blob
 	// We'll write points in chunks of 1000
-	const pointsChunkSize = 100
+	const blobChunkSize = 100
 
 	// Create header
 	header := &saveproto.CacheHeader{
@@ -47,8 +47,8 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 
 	// Write points blobs
 	var pointsBlobs [][]byte
-	for i := 0; i < len(cache.Points); i += pointsChunkSize {
-		end := min(i+pointsChunkSize, len(cache.Points))
+	for i := 0; i < len(cache.Points); i += blobChunkSize {
+		end := min(i+blobChunkSize, len(cache.Points))
 
 		pointsBlob := &saveproto.PointsBlob{
 			Points: slicePtr(cache.Points[i:end]),
@@ -64,22 +64,40 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 		header.PointsBlobSizes = append(header.PointsBlobSizes, uint32(len(blobBytes)))
 	}
 
-	var zonesBlobs [][]byte
-	for i := 0; i < len(cache.Zones); i += pointsChunkSize {
-		end := min(i+pointsChunkSize, len(cache.Zones))
+	var zoneProtos = iter.Seq[*saveproto.ZonesBlob](func(yield func(*saveproto.ZonesBlob) bool) {
+		for i := 0; i < len(cache.Regions); i += blobChunkSize {
+			end := min(i+blobChunkSize, len(cache.Regions))
+			zoneProto := &saveproto.ZonesBlob{
+				Type:  saveproto.ZoneType_ZONE_TYPE_REGION,
+				Zones: cache.Regions[i:end],
+			}
 
-		zonesBlob := &saveproto.ZonesBlob{
-			Type:  saveproto.ZoneType_ZONE_TYPE_REGION,
-			Zones: slicePtr(cache.Zones[i:end]),
+			if !yield(zoneProto) {
+				return
+			}
 		}
 
-		blobBytes, err := proto.Marshal(zonesBlob)
+		for i := 0; i < len(cache.Countries); i += blobChunkSize {
+			end := min(i+blobChunkSize, len(cache.Countries))
+			zoneProto := &saveproto.ZonesBlob{
+				Type:  saveproto.ZoneType_ZONE_TYPE_COUNTRY,
+				Zones: cache.Countries[i:end],
+			}
+			if !yield(zoneProto) {
+				return
+			}
+		}
+
+	})
+
+	var zoneBlobs [][]byte
+	for zoneProto := range zoneProtos {
+		blobBytes, err := proto.Marshal(zoneProto)
 		if err != nil {
 			return err
 		}
 
-		zonesBlobs = append(zonesBlobs, blobBytes)
-
+		zoneBlobs = append(zoneBlobs, blobBytes)
 		header.ZonesBlobSizes = append(header.ZonesBlobSizes, uint32(len(blobBytes)))
 	}
 
@@ -121,7 +139,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 		}
 	}
 
-	for _, blobBytes := range zonesBlobs {
+	for _, blobBytes := range zoneBlobs {
 		_, err = w.Write(blobBytes)
 		if err != nil {
 			return err
@@ -129,6 +147,17 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 	}
 
 	return nil
+}
+
+func mapZoneType(t cachemodel.ZoneType) saveproto.ZoneType {
+	switch t {
+	case cachemodel.ZoneRegion:
+		return saveproto.ZoneType_ZONE_TYPE_REGION
+	case cachemodel.ZoneCountry:
+		return saveproto.ZoneType_ZONE_TYPE_COUNTRY
+	default:
+		return saveproto.ZoneType_ZONE_TYPE_UNSPECIFIED
+	}
 }
 
 func slicePtr[T any](slice []T) []*T {

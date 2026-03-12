@@ -112,6 +112,8 @@ func easyjsonDdc53814DecodeGithubComRoyalcatRgeocacheGeomodel1(in *jlexer.Lexer,
 			out.City = string(in.String())
 		case "region":
 			out.Region = string(in.String())
+		case "country":
+			out.Country = string(in.String())
 		case "weight":
 			out.Weight = uint8(in.Uint8())
 		default:
@@ -152,6 +154,11 @@ func easyjsonDdc53814EncodeGithubComRoyalcatRgeocacheGeomodel1(out *jwriter.Writ
 		const prefix string = ",\"region\":"
 		out.RawString(prefix)
 		out.String(string(in.Region))
+	}
+	{
+		const prefix string = ",\"country\":"
+		out.RawString(prefix)
+		out.String(string(in.Country))
 	}
 	{
 		const prefix string = ",\"weight\":"

@@ -30,11 +30,17 @@ func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 	tree := kdbush.NewBush(points, 256)
 
 	regions := bordertree.NewBorderTree[unique.Handle[string]]()
+	countries := bordertree.NewBorderTree[unique.Handle[string]]()
 	for _, zone := range zonesRaw {
-		regions.InsertBorder(zone.Name, zone.Polygon)
+		switch zone.Type {
+		case cachemodel.ZoneRegion:
+			regions.InsertBorder(zone.Name, zone.Polygon)
+		case cachemodel.ZoneCountry:
+			countries.InsertBorder(zone.Name, zone.Polygon)
+		}
 	}
 
-	return newRGeoCoder(tree, regions, opts...), nil
+	return newRGeoCoder(tree, regions, countries, opts...), nil
 }
 
 func LoadGeoCoderFromFile(file string, opts ...Option) (*RGeoCoder, error) {
@@ -64,20 +70,27 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 	f.tree = kdbush.NewBush(points, 256)
 
 	f.regions = bordertree.NewBorderTree[unique.Handle[string]]()
+	f.countries = bordertree.NewBorderTree[unique.Handle[string]]()
 	for _, zone := range zonesRaw {
-		f.regions.InsertBorder(zone.Name, zone.Polygon)
+		switch zone.Type {
+		case cachemodel.ZoneRegion:
+			f.regions.InsertBorder(zone.Name, zone.Polygon)
+		case cachemodel.ZoneCountry:
+			f.countries.InsertBorder(zone.Name, zone.Polygon)
+		}
 	}
 
 	return nil
 }
 
-func newRGeoCoder(tree *kdbush.KDBush[*geoInfo], regions *bordertree.BorderTree[unique.Handle[string]], opts ...Option) *RGeoCoder {
+func newRGeoCoder(tree *kdbush.KDBush[*geoInfo], regions *bordertree.BorderTree[unique.Handle[string]], countries *bordertree.BorderTree[unique.Handle[string]], opts ...Option) *RGeoCoder {
 	options := loadOptions(opts...)
 	options.logger.Info("Initializing geocoder")
 
 	return &RGeoCoder{
 		tree:         tree,
 		regions:      regions,
+		countries:    countries,
 		searchRadius: options.searchRadius,
 		logger:       options.logger,
 	}

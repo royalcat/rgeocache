@@ -35,6 +35,7 @@ func (g *geoInfo) value() geomodel.Info {
 type RGeoCoder struct {
 	tree         *kdbush.KDBush[*geoInfo]
 	regions      *bordertree.BorderTree[unique.Handle[string]]
+	countries    *bordertree.BorderTree[unique.Handle[string]]
 	searchRadius float64
 	logger       *slog.Logger
 }
@@ -64,17 +65,44 @@ func (f *RGeoCoder) FindInRadius(lat, lon float64, radius float64) (i InfoModel,
 		return true
 	})
 
+	// point found (happy path)
 	if !math.IsInf(finDist, 1) {
-		return InfoModel{Info: finPoint.Data.value()}, true
+		out := InfoModel{Info: finPoint.Data.value()}
+
+		if out.Region == "" && f.regions != nil {
+			if region, ok := f.regions.QueryPoint(orb.Point{lon, lat}); ok {
+				out.Region = region.Value()
+			}
+		}
+
+		if out.Country == "" && f.countries != nil {
+			if country, ok := f.countries.QueryPoint(orb.Point{lon, lat}); ok {
+				out.Country = country.Value()
+			}
+		}
+
+		return out, true
 	}
 
+	// point not found, trying determine region and country by borders
+	out := InfoModel{}
+	if f.countries != nil {
+		country, ok := f.countries.QueryPoint(orb.Point{lon, lat})
+		if ok {
+			out.Country = country.Value()
+		}
+	}
 	if f.regions != nil {
 		region, ok := f.regions.QueryPoint(orb.Point{lon, lat})
 		if ok {
-			return InfoModel{Info: geomodel.Info{Region: region.Value()}}, true
+			out.Region = region.Value()
 		}
 	}
+	if out.Country != "" || out.Region != "" {
+		return out, true
+	}
 
+	// nothing found
 	return InfoModel{}, false
 }
 

@@ -17,23 +17,24 @@ type cache struct {
 	Locale      string
 
 	// Values deduplication
-	Streets []string
-	Cities  []string
-	Regions []string
+	StreetsNames []string
+	CitiesNames  []string
+	ZonesNames   []string
 
-	Points []saveproto.Point
-	Zones  []saveproto.Zone
+	Points    []saveproto.Point
+	Regions   []*saveproto.Zone
+	Countries []*saveproto.Zone
 }
 
-func cacheFromPoints(inputPoints iter.Seq[cachemodel.Point], inputRegions iter.Seq[cachemodel.Zone], metadata cachemodel.Metadata) cache {
+func cacheFromPoints(inputPoints iter.Seq[cachemodel.Point], inputZones iter.Seq[cachemodel.Zone], metadata cachemodel.Metadata) cache {
 	points := []saveproto.Point{}
-	streets := newUniqueMap()
-	cities := newUniqueMap()
-	regionsNames := newUniqueMap()
+	streetsNames := newUniqueMap()
+	citiesNames := newUniqueMap()
+	zonesNames := newUniqueMap()
 	for p := range inputPoints {
-		streetIndex := streets.Add(p.Data.Street.Value())
-		cityIndex := cities.Add(p.Data.City.Value())
-		regionIndex := regionsNames.Add(p.Data.Region.Value())
+		streetIndex := streetsNames.Add(p.Data.Street.Value())
+		cityIndex := citiesNames.Add(p.Data.City.Value())
+		regionIndex := zonesNames.Add(p.Data.Region.Value())
 
 		points = append(points, saveproto.Point{
 			Latitude:    p.X,
@@ -47,14 +48,23 @@ func cacheFromPoints(inputPoints iter.Seq[cachemodel.Point], inputRegions iter.S
 		})
 	}
 
-	regions := []saveproto.Zone{}
-	for z := range inputRegions {
-		nameIndex := regionsNames.Add(z.Name.Value())
-		regions = append(regions, saveproto.Zone{
+	regions := []*saveproto.Zone{}
+	countries := []*saveproto.Zone{}
+	for z := range inputZones {
+		nameIndex := zonesNames.Add(z.Name.Value())
+		protoZone := &saveproto.Zone{
 			Name:         uint32(nameIndex),
 			Bounds:       mapBoundsFromOrb(z.Bounds),
 			MultiPolygon: mapMultiPolygonFromOrb(z.Polygon),
-		})
+		}
+
+		switch z.Type {
+		case cachemodel.ZoneRegion:
+			regions = append(regions, protoZone)
+		case cachemodel.ZoneCountry:
+			countries = append(countries, protoZone)
+		}
+
 	}
 
 	return cache{
@@ -62,11 +72,11 @@ func cacheFromPoints(inputPoints iter.Seq[cachemodel.Point], inputRegions iter.S
 		Locale:      metadata.Locale,
 		DateCreated: metadata.DateCreated.Format(time.RFC3339),
 
-		Streets: streets.Slice(),
-		Cities:  cities.Slice(),
-		Regions: regionsNames.Slice(),
+		StreetsNames: streetsNames.Slice(),
+		CitiesNames:  citiesNames.Slice(),
+		ZonesNames:   zonesNames.Slice(),
 
-		Points: points,
-		Zones:  regions,
+		Points:  points,
+		Regions: regions,
 	}
 }

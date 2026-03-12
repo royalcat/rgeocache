@@ -25,7 +25,15 @@ type Info struct {
 	Weight      uint8
 }
 
+type ZoneType uint8
+
+const (
+	ZoneRegion ZoneType = iota + 1
+	ZoneCountry
+)
+
 type Zone struct {
+	Type    ZoneType
 	Name    unique.Handle[string]
 	Bounds  orb.Bound
 	Polygon orb.MultiPolygon
