@@ -9,6 +9,7 @@ import (
 	"github.com/tidwall/qtree"
 )
 
+// Make Data type as small as possible, it is included in tree elements, big data will cause a lot of memory copying. Prefer pointers or unique.Handle if possible.
 type BorderTree[Data any] struct {
 	mu        sync.RWMutex
 	idCounter uint64

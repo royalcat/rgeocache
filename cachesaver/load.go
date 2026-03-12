@@ -13,15 +13,32 @@ import (
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
+func readMagicBytes(reader io.Reader) ([]byte, error) {
+	magic := make([]byte, len(MAGIC_BYTES))
+	_, err := reader.Read(magic)
+	if err != nil {
+		return nil, fmt.Errorf("error reading magic bytes: %s", err.Error())
+	}
+	return magic, nil
+}
+
+func readCompatabilityLevel(reader io.Reader) (uint32, error) {
+	var compatibilityLevel uint32
+	err := binary.Read(reader, binary.LittleEndian, &compatibilityLevel)
+	if err != nil {
+		return 0, fmt.Errorf("error reading compatibility level: %s", err.Error())
+	}
+	return compatibilityLevel, nil
+}
+
 func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemodel.Info], []cachemodel.Zone, error) {
 	defer func() {
 		runtime.GC()
 	}()
 
-	magic := make([]byte, len(MAGIC_BYTES))
-	_, err := reader.Read(magic)
+	magic, err := readMagicBytes(reader)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error reading magic bytes: %s", err.Error())
+		return nil, nil, err
 	}
 
 	// If the magic bytes are not equal to the expected value, we assume it's a legacy format
@@ -34,10 +51,9 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemod
 		return points, []cachemodel.Zone{}, nil
 	}
 
-	var compatibilityLevel uint32
-	err = binary.Read(reader, binary.LittleEndian, &compatibilityLevel)
+	compatibilityLevel, err := readCompatabilityLevel(reader)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error reading compatibility level: %s", err.Error())
+		return nil, nil, err
 	}
 
 	switch compatibilityLevel {
@@ -55,4 +71,25 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemod
 
 	return nil, nil, fmt.Errorf("unsupported compatibility level: %d", compatibilityLevel)
 
+}
+
+func PrintCacheSizeAnalysis(r io.Reader) error {
+	magic, err := readMagicBytes(r)
+	if err != nil {
+		return err
+	}
+	if string(magic) != string(MAGIC_BYTES) {
+		return fmt.Errorf("No magic bytes detected (Analysis not supported for v0 cache)")
+	}
+
+	compatibilityLevel, err := readCompatabilityLevel(r)
+	if err != nil {
+		return err
+	}
+	switch compatibilityLevel {
+	case savev1.COMPATIBILITY_LEVEL:
+		return PrintCacheSizeAnalysis(r)
+	default:
+		return fmt.Errorf("Cache version %d not supported", compatibilityLevel)
+	}
 }

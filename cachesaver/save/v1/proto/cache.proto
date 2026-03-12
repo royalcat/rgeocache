@@ -50,6 +50,7 @@ message Point {
 enum ZoneType {
   ZONE_TYPE_UNSPECIFIED = 0;
   ZONE_TYPE_REGION = 1;
+  ZONE_TYPE_COUNTRY = 2;
 }
 
 message ZonesBlob {

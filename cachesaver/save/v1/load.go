@@ -183,17 +183,22 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 }
 
 func mapZone(t saveproto.ZoneType, z *saveproto.Zone, stringsCache *saveproto.StringsCache) (cachemodel.Zone, bool) {
+	czt := cachemodel.ZoneType(0)
 	switch t {
 	case saveproto.ZoneType_ZONE_TYPE_REGION:
-		return cachemodel.Zone{
-			Name:    unique.Make(stringsCache.Regions[z.Name]),
-			Bounds:  mapBoundsToOrb(z.Bounds),
-			Polygon: mapMultiPolygonToOrb(z.MultiPolygon),
-		}, true
+		czt = cachemodel.ZoneRegion
+	case saveproto.ZoneType_ZONE_TYPE_COUNTRY:
+		czt = cachemodel.ZoneCountry
 	default:
 		return cachemodel.Zone{}, false
 	}
 
+	return cachemodel.Zone{
+		Type:    czt,
+		Name:    unique.Make(stringsCache.Regions[z.Name]),
+		Bounds:  mapBoundsToOrb(z.Bounds),
+		Polygon: mapMultiPolygonToOrb(z.MultiPolygon),
+	}, true
 }
 
 func mapPoint(p *saveproto.Point, stringsCache *saveproto.StringsCache) cachemodel.Point {

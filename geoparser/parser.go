@@ -161,8 +161,16 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 		if isBuilding(rel.Tags) {
 			return f.parseRelationBuilding(rel)
 		}
-		if rel.Tags.Find("boundary") == "administrative" && rel.Tags.Find("admin_level") == "4" {
-			return f.parseRelationRegion(rel)
+		if rel.Tags.Find("boundary") == "administrative" {
+			switch rel.Tags.Find("admin_level") {
+			case "4":
+				f.parseRelationRegion(rel)
+				return []geoPoint{}
+			case "2":
+				f.parseRelationCountry(rel)
+				return []geoPoint{}
+			}
+
 		}
 	case "building":
 		if rel.Tags.Find("route") == "road" && strings.Contains(rel.Tags.Find("network"), "national") {
@@ -259,29 +267,52 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 	return out
 }
 
-func (f *GeoGen) parseRelationRegion(rel *osm.Relation) []geoPoint {
+func (f *GeoGen) parseRelationRegion(rel *osm.Relation) {
 	log := f.log.With("func", "parseRelationRegion", "type", "relation", "id", rel.ID)
 	name := f.localizedName(rel.Tags)
 	if name == "" {
-		return []geoPoint{}
+		return
 	}
 
 	poly, err := f.buildPolygon(rel.Members)
 	if err != nil {
 		log.Error("Error building polygon", "error", err.Error())
-		return []geoPoint{}
+		return
 	}
 
 	poly = simplify.DouglasPeucker(0.01).MultiPolygon(poly)
 
-	f.zonesMu.Lock()
-	defer f.zonesMu.Unlock()
+	f.regionsMu.Lock()
+	defer f.regionsMu.Unlock()
 
-	f.zones = append(f.zones, geomodel.Zone{
+	f.regions = append(f.regions, geomodel.Zone{
 		Name:    name,
 		Bounds:  poly.Bound(),
 		Polygon: poly,
 	})
+}
 
-	return []geoPoint{}
+func (f *GeoGen) parseRelationCountry(rel *osm.Relation) {
+	log := f.log.With("func", "parseRelationCountry", "type", "relation", "id", rel.ID)
+	name := f.localizedName(rel.Tags)
+	if name == "" {
+		return
+	}
+
+	poly, err := f.buildPolygon(rel.Members)
+	if err != nil {
+		log.Error("Error building polygon", "error", err.Error())
+		return
+	}
+
+	poly = simplify.DouglasPeucker(0.01).MultiPolygon(poly)
+
+	f.countriesMu.Lock()
+	defer f.countriesMu.Unlock()
+
+	f.countries = append(f.countries, geomodel.Zone{
+		Name:    name,
+		Bounds:  poly.Bound(),
+		Polygon: poly,
+	})
 }

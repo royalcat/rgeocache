@@ -26,8 +26,11 @@ type GeoGen struct {
 	parsedPointsMu sync.Mutex
 	parsedPoints   []geoPoint
 
-	zonesMu sync.Mutex
-	zones   []geomodel.Zone
+	regionsMu sync.Mutex
+	regions   []geomodel.Zone
+
+	countriesMu sync.Mutex
+	countries   []geomodel.Zone
 
 	parsedNodes     *rangeindex.Index[osm.NodeID, struct{}]
 	parsedWays      *rangeindex.Index[osm.WayID, struct{}]
@@ -51,7 +54,7 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 		osmdb: db,
 
 		parsedPoints: []geoPoint{},
-		zones:        []geomodel.Zone{},
+		regions:      []geomodel.Zone{},
 
 		log: slog.Default(),
 	}, nil

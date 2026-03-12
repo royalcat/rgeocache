@@ -26,6 +26,7 @@ type ZoneType int32
 const (
 	ZoneType_ZONE_TYPE_UNSPECIFIED ZoneType = 0
 	ZoneType_ZONE_TYPE_REGION      ZoneType = 1
+	ZoneType_ZONE_TYPE_COUNTRY     ZoneType = 2
 )
 
 // Enum value maps for ZoneType.
@@ -33,10 +34,12 @@ var (
 	ZoneType_name = map[int32]string{
 		0: "ZONE_TYPE_UNSPECIFIED",
 		1: "ZONE_TYPE_REGION",
+		2: "ZONE_TYPE_COUNTRY",
 	}
 	ZoneType_value = map[string]int32{
 		"ZONE_TYPE_UNSPECIFIED": 0,
 		"ZONE_TYPE_REGION":      1,
+		"ZONE_TYPE_COUNTRY":     2,
 	}
 )
 
@@ -797,10 +800,11 @@ const file_cache_proto_rawDesc = "" +
 	"\x06points\x18\x01 \x03(\v2\x1a.cachesaver.save.v1.LatLonR\x06points\",\n" +
 	"\x06LatLon\x12\x10\n" +
 	"\x03lat\x18\x01 \x01(\x02R\x03lat\x12\x10\n" +
-	"\x03lon\x18\x02 \x01(\x02R\x03lon*;\n" +
+	"\x03lon\x18\x02 \x01(\x02R\x03lon*R\n" +
 	"\bZoneType\x12\x19\n" +
 	"\x15ZONE_TYPE_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10ZONE_TYPE_REGION\x10\x01B\rZ\v./saveprotob\x06proto3"
+	"\x10ZONE_TYPE_REGION\x10\x01\x12\x15\n" +
+	"\x11ZONE_TYPE_COUNTRY\x10\x02B\rZ\v./saveprotob\x06proto3"
 
 var (
 	file_cache_proto_rawDescOnce sync.Once
