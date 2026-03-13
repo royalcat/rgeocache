@@ -3,6 +3,8 @@ package geoparser
 import (
 	"cmp"
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"slices"
 	"time"
@@ -23,6 +25,7 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	if err != nil {
 		return err
 	}
+	defer dataFile.Close()
 
 	f.parsedPointsMu.Lock()
 	defer f.parsedPointsMu.Unlock()
@@ -83,13 +86,19 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		return err
 	}
 
-	_, err = dataFile.Seek(0, 0)
-	if err != nil {
-		return err
-	}
-	err = cachesaver.PrintCacheSizeAnalysis(dataFile)
-	if err != nil {
-		return err
+	analysisError := func() error {
+		_, err = dataFile.Seek(0, io.SeekStart)
+		if err != nil {
+			return fmt.Errorf("failed to seek file: %w", err)
+		}
+		err = cachesaver.PrintCacheSizeAnalysis(dataFile)
+		if err != nil {
+			return fmt.Errorf("failed to analyze cache: %w", err)
+		}
+		return nil
+	}()
+	if analysisError != nil {
+		f.log.Error("Failed to analyze cache", "error", analysisError)
 	}
 
 	return dataFile.Close()
