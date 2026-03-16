@@ -3,6 +3,7 @@ package cachesaver
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -79,7 +80,7 @@ func PrintCacheSizeAnalysis(r io.Reader) error {
 		return err
 	}
 	if string(magic) != string(MAGIC_BYTES) {
-		return fmt.Errorf("No magic bytes detected (Analysis not supported for v0 cache)")
+		return errors.New("No magic bytes detected (Analysis not supported for v0 cache)")
 	}
 
 	compatibilityLevel, err := readCompatabilityLevel(r)
