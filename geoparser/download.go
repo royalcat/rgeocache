@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"slices"
 	"time"
@@ -86,12 +85,20 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		return err
 	}
 
+	// Close the file so that all OS buffers are flushed, and we can safely reopen it for reading
+	err = dataFile.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close file after writing: %w", err)
+	}
+
 	analysisError := func() error {
-		_, err = dataFile.Seek(0, io.SeekStart)
+		fRead, err := os.Open(file)
 		if err != nil {
-			return fmt.Errorf("failed to seek file: %w", err)
+			return fmt.Errorf("failed to open file for analysis: %w", err)
 		}
-		err = cachesaver.PrintCacheSizeAnalysis(dataFile)
+		defer fRead.Close()
+
+		err = cachesaver.PrintCacheSizeAnalysis(fRead)
 		if err != nil {
 			return fmt.Errorf("failed to analyze cache: %w", err)
 		}
@@ -101,7 +108,7 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		f.log.Error("Failed to analyze cache", "error", analysisError)
 	}
 
-	return dataFile.Close()
+	return nil
 }
 
 func uniqueGeoPoints(points []geoPoint) []geoPoint {
