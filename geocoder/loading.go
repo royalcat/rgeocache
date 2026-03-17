@@ -131,3 +131,13 @@ func optimizePoints(points []cachemodel.Point) []kdbush.Point[*geoInfo] {
 	}
 	return result
 }
+
+func PrintCacheSizeAnalysisForFile(file string) error {
+	reader, err := openReader(file)
+	if err != nil {
+		return fmt.Errorf("error opening points file: %s", err.Error())
+	}
+	defer reader.Close()
+
+	return cachesaver.PrintCacheSizeAnalysis(reader)
+}
