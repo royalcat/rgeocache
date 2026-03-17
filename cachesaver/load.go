@@ -89,7 +89,7 @@ func PrintCacheSizeAnalysis(r io.Reader) error {
 	}
 	switch compatibilityLevel {
 	case savev1.COMPATIBILITY_LEVEL:
-		return PrintCacheSizeAnalysis(r)
+		return savev1.PrintCacheAnalysis(r)
 	default:
 		return fmt.Errorf("Cache version %d not supported", compatibilityLevel)
 	}

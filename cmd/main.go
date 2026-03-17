@@ -315,7 +315,14 @@ func serve(ctx *cli.Context) error {
 		log.Info("Using custom search radius", "radius", radius)
 	}
 
-	rgeo, err := geocoder.LoadGeoCoderFromFile(ctx.String("points"), geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
+	cacheFile := ctx.String("points")
+
+	err := geocoder.PrintCacheSizeAnalysisForFile(cacheFile)
+	if err != nil {
+		log.Error("Failed to analyze cache file", "error", err)
+	}
+
+	rgeo, err := geocoder.LoadGeoCoderFromFile(cacheFile, geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
 	if err != nil {
 		return err
 	}
