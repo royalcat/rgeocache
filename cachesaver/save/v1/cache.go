@@ -76,7 +76,8 @@ func cacheFromPoints(inputPoints iter.Seq[cachemodel.Point], inputZones iter.Seq
 		CitiesNames:  citiesNames.Slice(),
 		ZonesNames:   zonesNames.Slice(),
 
-		Points:  points,
-		Regions: regions,
+		Points:    points,
+		Regions:   regions,
+		Countries: countries,
 	}
 }
