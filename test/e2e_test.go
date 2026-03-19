@@ -1,6 +1,7 @@
 package test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -41,17 +42,17 @@ func TestLondon(t *testing.T) {
 	}
 	t.Logf("OsmDB counts: nodes: %d ways: %d relations: %d", osmdb.CountNodes(), osmdb.CountWays(), osmdb.CountRelations())
 
-	gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
+	pointsFileOut, err := os.Create(pointsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault(), pointsFileOut)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = gg.ParseOSMData()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = gg.SavePointsToFile(pointsFile)
 	if err != nil {
 		t.Fatal(err)
 	}

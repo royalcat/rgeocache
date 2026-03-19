@@ -218,6 +218,17 @@ func generate(ctx *cli.Context) error {
 		inputsReaders = append(inputsReaders, file)
 	}
 
+	saveFilePath := ctx.String("points")
+	if !strings.HasSuffix(saveFilePath, ".rgc") {
+		saveFilePath = saveFilePath + ".rgc"
+	}
+
+	outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
 	log.Info("Tuning gc to respect only soft mem limit")
 	err = tuneGC()
 	if err != nil {
@@ -236,10 +247,12 @@ func generate(ctx *cli.Context) error {
 	config.PreferredLocalization = preferredLocalization
 	config.Version = uint32(version)
 
-	geoGen, err := geoparser.NewGeoGen(osmdb, config)
+	geoGen, err := geoparser.NewGeoGen(osmdb, config, outputFile)
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
+
+	log.Info("Creating OSM cache", "output", saveFilePath)
 
 	err = geoGen.ParseOSMData()
 	if err != nil {
@@ -253,26 +266,8 @@ func generate(ctx *cli.Context) error {
 		}
 	}
 
-	err = geoGen.ResetCache()
-	if err != nil {
-		return fmt.Errorf("error flushing memory cache: %s", err.Error())
-	}
-
-	saveFile := ctx.String("points")
-	if !strings.HasSuffix(saveFile, ".rgc") {
-		saveFile = saveFile + ".rgc"
-	}
-
-	log.Info("Generation complete")
-	log.Info("Saving to file", "file", saveFile)
-	err = geoGen.SavePointsToFile(saveFile)
-	if err != nil {
-		return fmt.Errorf("failed to save points to file: %s", err.Error())
-	}
-
 	log.Info("Complete")
 
-	time.Sleep(time.Second * 3)
 	if telemetryClient != nil {
 		err = telemetryClient.Flush(context.Background())
 		if err != nil {

@@ -1,6 +1,7 @@
 package geoparser
 
 import (
+	"io"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -11,9 +12,11 @@ import (
 	"github.com/royalcat/rgeocache/bordertree"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/internal/rangeindex"
+	"golang.org/x/sync/errgroup"
 )
 
 type GeoGen struct {
+	osmdb  osmpbfdb.OsmDB
 	config Config
 
 	placeIndex  *bordertree.BorderTree[string]
@@ -21,10 +24,12 @@ type GeoGen struct {
 
 	localizationCache *xsync.MapOf[string, string]
 
-	osmdb osmpbfdb.OsmDB
+	parsedNodes     *rangeindex.Index[osm.NodeID, struct{}]
+	parsedWays      *rangeindex.Index[osm.WayID, struct{}]
+	parsedRelations *rangeindex.Index[osm.RelationID, struct{}]
 
-	parsedPointsMu sync.Mutex
-	parsedPoints   []geoPoint
+	parsedPoints chan geoPoint
+	parsingDone  chan struct{}
 
 	regionsMu sync.Mutex
 	regions   []geomodel.Zone
@@ -32,15 +37,16 @@ type GeoGen struct {
 	countriesMu sync.Mutex
 	countries   []geomodel.Zone
 
-	parsedNodes     *rangeindex.Index[osm.NodeID, struct{}]
-	parsedWays      *rangeindex.Index[osm.WayID, struct{}]
-	parsedRelations *rangeindex.Index[osm.RelationID, struct{}]
+	output io.Writer
 
 	log *slog.Logger
 }
 
-func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
+func NewGeoGen(db osmpbfdb.OsmDB, config Config, output io.Writer) (*GeoGen, error) {
 	return &GeoGen{
+		osmdb:  db,
+		config: config,
+
 		placeIndex:        bordertree.NewBorderTree[string](),
 		regionIndex:       bordertree.NewBorderTree[string](),
 		localizationCache: xsync.NewMapOf[string, string](),
@@ -49,12 +55,11 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 		parsedWays:      rangeindex.New[osm.WayID, struct{}](),
 		parsedRelations: rangeindex.New[osm.RelationID, struct{}](),
 
-		config: config,
+		regions:   []geomodel.Zone{},
+		countries: []geomodel.Zone{},
 
-		osmdb: db,
-
-		parsedPoints: []geoPoint{},
-		regions:      []geomodel.Zone{},
+		parsedPoints: make(chan geoPoint, 10),
+		output:       output,
 
 		log: slog.Default(),
 	}, nil
@@ -70,15 +75,25 @@ func (f *GeoGen) ResetCache() error {
 }
 
 func (f *GeoGen) ParseOSMData() error {
-	err := f.fillRelCache(f.osmdb)
-	if err != nil {
-		return err
-	}
+	var wg errgroup.Group
 
-	err = f.parseDatabase(f.osmdb)
-	if err != nil {
-		return err
-	}
+	wg.Go(f.saveWorker)
 
-	return nil
+	wg.Go(func() error {
+		err := f.fillRelCache(f.osmdb)
+		if err != nil {
+			return err
+		}
+
+		err = f.parseDatabase(f.osmdb)
+		if err != nil {
+			return err
+		}
+
+		close(f.parsingDone)
+
+		return nil
+	})
+
+	return wg.Wait()
 }
