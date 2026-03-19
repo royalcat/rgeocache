@@ -55,11 +55,13 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config, output io.Writer) (*GeoGen, err
 		parsedWays:      rangeindex.New[osm.WayID, struct{}](),
 		parsedRelations: rangeindex.New[osm.RelationID, struct{}](),
 
+		parsedPoints: make(chan geoPoint, 10),
+		parsingDone:  make(chan struct{}),
+
 		regions:   []geomodel.Zone{},
 		countries: []geomodel.Zone{},
 
-		parsedPoints: make(chan geoPoint, 10),
-		output:       output,
+		output: output,
 
 		log: slog.Default(),
 	}, nil
