@@ -2,9 +2,6 @@ package geoparser
 
 import (
 	"cmp"
-	"context"
-	"fmt"
-	"os"
 	"slices"
 	"time"
 	"unique"
@@ -13,28 +10,11 @@ import (
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 )
 
-// TODO
-// https://download.geofabrik.de/russia-latest.osm.pbf
-func DownloadOsm(ctx context.Context, name string) {
-
-}
-
-func (f *GeoGen) SavePointsToFile(file string) error {
-	dataFile, err := os.Create(file)
-	if err != nil {
-		return err
-	}
-	defer dataFile.Close()
-
-	f.parsedPointsMu.Lock()
-	defer f.parsedPointsMu.Unlock()
-
-	f.parsedPoints = uniqueGeoPoints(f.parsedPoints)
-
-	f.log.Info("Saving points to file", "count", len(f.parsedPoints))
+func (f *GeoGen) saveWorker() error {
+	// f.parsedPoints = uniqueGeoPoints(f.parsedPoints)
 
 	points := func(yield func(cachemodel.Point) bool) {
-		for _, point := range f.parsedPoints {
+		for point := range f.parsedPoints {
 			if !yield(cachesaver.Point{
 				X: point.X(),
 				Y: point.Y(),
@@ -53,6 +33,8 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 	}
 
 	zones := func(yield func(cachemodel.Zone) bool) {
+		<-f.parsingDone
+
 		for _, zone := range f.regions {
 			if !yield(cachesaver.Zone{
 				Type:    cachemodel.ZoneRegion,
@@ -81,34 +63,8 @@ func (f *GeoGen) SavePointsToFile(file string) error {
 		Locale:      f.config.PreferredLocalization,
 		DateCreated: time.Now(),
 	}
-	if err = cachesaver.Save(points, zones, meta, dataFile); err != nil {
-		return err
-	}
 
-	// Close the file so that all OS buffers are flushed, and we can safely reopen it for reading
-	err = dataFile.Close()
-	if err != nil {
-		return fmt.Errorf("failed to close file after writing: %w", err)
-	}
-
-	analysisError := func() error {
-		fRead, err := os.Open(file)
-		if err != nil {
-			return fmt.Errorf("failed to open file for analysis: %w", err)
-		}
-		defer fRead.Close()
-
-		err = cachesaver.PrintCacheSizeAnalysis(fRead)
-		if err != nil {
-			return fmt.Errorf("failed to analyze cache: %w", err)
-		}
-		return nil
-	}()
-	if analysisError != nil {
-		f.log.Error("Failed to analyze cache", "error", analysisError)
-	}
-
-	return nil
+	return cachesaver.Save(points, zones, meta, f.output)
 }
 
 func uniqueGeoPoints(points []geoPoint) []geoPoint {

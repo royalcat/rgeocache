@@ -1,6 +1,7 @@
 package test
 
 import (
+	"io"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -39,7 +40,7 @@ func BenchmarkGenerationLondon(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
+		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault(), io.Discard)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -85,7 +86,7 @@ func BenchmarkGenerationGreatBritan(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
+		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault(), io.Discard)
 		if err != nil {
 			b.Fatal(err)
 		}
