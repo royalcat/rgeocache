@@ -55,9 +55,6 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config, output io.Writer) (*GeoGen, err
 		parsedWays:      rangeindex.New[osm.WayID, struct{}](),
 		parsedRelations: rangeindex.New[osm.RelationID, struct{}](),
 
-		parsedPoints: make(chan geoPoint, 10),
-		parsingDone:  make(chan struct{}),
-
 		regions:   []geomodel.Zone{},
 		countries: []geomodel.Zone{},
 
@@ -77,21 +74,23 @@ func (f *GeoGen) ResetCache() error {
 }
 
 func (f *GeoGen) ParseOSMData() error {
+	f.parsedPoints = make(chan geoPoint, 10)
+	f.parsingDone = make(chan struct{})
+
 	var wg errgroup.Group
-
 	wg.Go(f.saveWorker)
-
 	wg.Go(func() error {
-		err := f.fillRelCache(f.osmdb)
+		err := f.fillRelCache()
 		if err != nil {
 			return err
 		}
 
-		err = f.parseDatabase(f.osmdb)
+		err = f.parseDatabase()
 		if err != nil {
 			return err
 		}
 
+		close(f.parsedPoints)
 		close(f.parsingDone)
 
 		return nil
