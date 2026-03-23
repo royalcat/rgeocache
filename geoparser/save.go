@@ -11,8 +11,6 @@ import (
 )
 
 func (f *GeoGen) saveWorker() error {
-	// f.parsedPoints = uniqueGeoPoints(f.parsedPoints)
-
 	points := func(yield func(cachemodel.Point) bool) {
 		for point := range f.parsedPoints {
 			if !yield(cachesaver.Point{

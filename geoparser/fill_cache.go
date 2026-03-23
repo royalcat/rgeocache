@@ -2,6 +2,7 @@ package geoparser
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"log/slog"
 	"sync"
@@ -47,6 +48,12 @@ func (f *GeoGen) parseDatabase() error {
 			f.parseObject(obj)
 		})
 	}
+
+	pool.Wait()
+
+	fmt.Printf("Duplicate node parse: %d\n", f.parsedNodesDupes.Load())
+	fmt.Printf("Duplicate way parse: %d\n", f.parsedWaysDupes.Load())
+	fmt.Printf("Duplicate relation parse: %d\n", f.parsedRelationsDupes.Load())
 
 	return nil
 }

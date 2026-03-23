@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/paulmach/osm"
 	"github.com/puzpuzpuz/xsync/v3"
@@ -24,9 +25,12 @@ type GeoGen struct {
 
 	localizationCache *xsync.MapOf[string, string]
 
-	parsedNodes     *rangeindex.Index[osm.NodeID, struct{}]
-	parsedWays      *rangeindex.Index[osm.WayID, struct{}]
-	parsedRelations *rangeindex.Index[osm.RelationID, struct{}]
+	parsedNodes          *rangeindex.Index[osm.NodeID, struct{}]
+	parsedNodesDupes     atomic.Uint64
+	parsedWays           *rangeindex.Index[osm.WayID, struct{}]
+	parsedWaysDupes      atomic.Uint64
+	parsedRelations      *rangeindex.Index[osm.RelationID, struct{}]
+	parsedRelationsDupes atomic.Uint64
 
 	parsedPoints chan geoPoint
 	parsingDone  chan struct{}
