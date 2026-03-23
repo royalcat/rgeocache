@@ -5506,5 +5506,1617 @@
         "procs": 4
       }
     ]
+  },
+  {
+    "commit": {
+      "sha": "5d6cc453e0debe789b98e8ffba5d7d5ee8540c51",
+      "message": "parse dupe counter",
+      "author": "royalcat",
+      "date": "2026-03-23T20:13:55+04:00",
+      "url": "https://github.com/royalcat/rgeocache/commit/5d6cc453e0debe789b98e8ffba5d7d5ee8540c51"
+    },
+    "date": 1774282435000,
+    "params": {
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "goos": "linux",
+      "goarch": "amd64",
+      "goVersion": "go1.25.8",
+      "cgo": false
+    },
+    "benchmarks": [
+      {
+        "name": "BenchmarkSave",
+        "value": 1961674,
+        "unit": "ns/op",
+        "extra": "6132 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave - B/op",
+        "value": 2055745,
+        "unit": "B/op",
+        "extra": "6132 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave - allocs/op",
+        "value": 2205,
+        "unit": "allocs/op",
+        "extra": "6132 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave",
+        "value": 1957911,
+        "unit": "ns/op",
+        "extra": "6140 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSave - B/op",
+        "value": 2055754,
+        "unit": "B/op",
+        "extra": "6140 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSave - allocs/op",
+        "value": 2205,
+        "unit": "allocs/op",
+        "extra": "6140 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad",
+        "value": 5588418,
+        "unit": "ns/op",
+        "extra": "2548 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad - B/op",
+        "value": 913168,
+        "unit": "B/op",
+        "extra": "2548 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad - allocs/op",
+        "value": 17569,
+        "unit": "allocs/op",
+        "extra": "2548 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad",
+        "value": 5791723,
+        "unit": "ns/op",
+        "extra": "2059 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad - B/op",
+        "value": 918384,
+        "unit": "B/op",
+        "extra": "2059 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad - allocs/op",
+        "value": 17752,
+        "unit": "allocs/op",
+        "extra": "2059 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet",
+        "value": 907.6,
+        "unit": "ns/op",
+        "extra": "15732147 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "15732147 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "15732147 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet",
+        "value": 893.1,
+        "unit": "ns/op",
+        "extra": "16037991 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "16037991 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "16037991 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse",
+        "value": 904.8,
+        "unit": "ns/op",
+        "extra": "15739609 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "15739609 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "15739609 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse",
+        "value": 893.1,
+        "unit": "ns/op",
+        "extra": "16035808 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "16035808 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "16035808 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet",
+        "value": 198.2,
+        "unit": "ns/op",
+        "extra": "60337010 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet - B/op",
+        "value": 0,
+        "unit": "B/op",
+        "extra": "60337010 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "60337010 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet",
+        "value": 196,
+        "unit": "ns/op",
+        "extra": "61168323 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet - B/op",
+        "value": 0,
+        "unit": "B/op",
+        "extra": "61168323 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "61168323 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent",
+        "value": 757.4,
+        "unit": "ns/op",
+        "extra": "19197672 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "19197672 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "19197672 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent",
+        "value": 745.2,
+        "unit": "ns/op",
+        "extra": "19290448 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "19290448 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "19290448 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete",
+        "value": 560,
+        "unit": "ns/op",
+        "extra": "25179078 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete - B/op",
+        "value": 24,
+        "unit": "B/op",
+        "extra": "25179078 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "25179078 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete",
+        "value": 565.2,
+        "unit": "ns/op",
+        "extra": "25543942 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete - B/op",
+        "value": 24,
+        "unit": "B/op",
+        "extra": "25543942 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "25543942 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite",
+        "value": 571.2,
+        "unit": "ns/op",
+        "extra": "21041138 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - B/op",
+        "value": 6,
+        "unit": "B/op",
+        "extra": "21041138 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "21041138 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite",
+        "value": 715.2,
+        "unit": "ns/op",
+        "extra": "17100888 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - B/op",
+        "value": 6,
+        "unit": "B/op",
+        "extra": "17100888 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "17100888 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      }
+    ]
+  },
+  {
+    "commit": {
+      "sha": "5d6cc453e0debe789b98e8ffba5d7d5ee8540c51",
+      "message": "parse dupe counter",
+      "author": "royalcat",
+      "date": "2026-03-23T20:13:55+04:00",
+      "url": "https://github.com/royalcat/rgeocache/commit/5d6cc453e0debe789b98e8ffba5d7d5ee8540c51"
+    },
+    "date": 1774282435000,
+    "params": {
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "goos": "linux",
+      "goarch": "amd64",
+      "goVersion": "go1.25.8",
+      "cgo": true
+    },
+    "benchmarks": [
+      {
+        "name": "BenchmarkSave",
+        "value": 1923976,
+        "unit": "ns/op",
+        "extra": "6192 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave - B/op",
+        "value": 2055754,
+        "unit": "B/op",
+        "extra": "6192 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave - allocs/op",
+        "value": 2205,
+        "unit": "allocs/op",
+        "extra": "6192 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave",
+        "value": 1959980,
+        "unit": "ns/op",
+        "extra": "5953 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSave - B/op",
+        "value": 2055753,
+        "unit": "B/op",
+        "extra": "5953 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSave - allocs/op",
+        "value": 2205,
+        "unit": "allocs/op",
+        "extra": "5953 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad",
+        "value": 5491689,
+        "unit": "ns/op",
+        "extra": "2964 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad - B/op",
+        "value": 915160,
+        "unit": "B/op",
+        "extra": "2964 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad - allocs/op",
+        "value": 17579,
+        "unit": "allocs/op",
+        "extra": "2964 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad",
+        "value": 5674955,
+        "unit": "ns/op",
+        "extra": "2170 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad - B/op",
+        "value": 921350,
+        "unit": "B/op",
+        "extra": "2170 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad - allocs/op",
+        "value": 17795,
+        "unit": "allocs/op",
+        "extra": "2170 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet",
+        "value": 904.8,
+        "unit": "ns/op",
+        "extra": "15797054 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "15797054 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "15797054 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet",
+        "value": 893.6,
+        "unit": "ns/op",
+        "extra": "16046625 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "16046625 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "16046625 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse",
+        "value": 912.2,
+        "unit": "ns/op",
+        "extra": "15660526 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "15660526 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "15660526 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse",
+        "value": 898.7,
+        "unit": "ns/op",
+        "extra": "15968626 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "15968626 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "15968626 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet",
+        "value": 196.6,
+        "unit": "ns/op",
+        "extra": "61056430 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet - B/op",
+        "value": 0,
+        "unit": "B/op",
+        "extra": "61056430 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "61056430 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet",
+        "value": 197,
+        "unit": "ns/op",
+        "extra": "61089164 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet - B/op",
+        "value": 0,
+        "unit": "B/op",
+        "extra": "61089164 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "61089164 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent",
+        "value": 762,
+        "unit": "ns/op",
+        "extra": "18983830 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "18983830 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "18983830 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent",
+        "value": 744.8,
+        "unit": "ns/op",
+        "extra": "19314432 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "19314432 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "19314432 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete",
+        "value": 565.3,
+        "unit": "ns/op",
+        "extra": "25311636 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete - B/op",
+        "value": 24,
+        "unit": "B/op",
+        "extra": "25311636 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "25311636 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete",
+        "value": 558.1,
+        "unit": "ns/op",
+        "extra": "25542596 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete - B/op",
+        "value": 24,
+        "unit": "B/op",
+        "extra": "25542596 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "25542596 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite",
+        "value": 572.8,
+        "unit": "ns/op",
+        "extra": "21096682 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - B/op",
+        "value": 6,
+        "unit": "B/op",
+        "extra": "21096682 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "21096682 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite",
+        "value": 683.7,
+        "unit": "ns/op",
+        "extra": "17506770 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - B/op",
+        "value": 6,
+        "unit": "B/op",
+        "extra": "17506770 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "17506770 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      }
+    ]
+  },
+  {
+    "commit": {
+      "sha": "5d6cc453e0debe789b98e8ffba5d7d5ee8540c51",
+      "message": "parse dupe counter",
+      "author": "royalcat",
+      "date": "2026-03-23T20:13:55+04:00",
+      "url": "https://github.com/royalcat/rgeocache/commit/5d6cc453e0debe789b98e8ffba5d7d5ee8540c51"
+    },
+    "date": 1774282435000,
+    "params": {
+      "cpu": "Neoverse-N2",
+      "goos": "linux",
+      "goarch": "arm64",
+      "goVersion": "go1.25.8",
+      "cgo": false
+    },
+    "benchmarks": [
+      {
+        "name": "BenchmarkSave",
+        "value": 1815401,
+        "unit": "ns/op",
+        "extra": "6224 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave - B/op",
+        "value": 2055758,
+        "unit": "B/op",
+        "extra": "6224 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave - allocs/op",
+        "value": 2205,
+        "unit": "allocs/op",
+        "extra": "6224 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave",
+        "value": 1655028,
+        "unit": "ns/op",
+        "extra": "7178 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSave - B/op",
+        "value": 2055746,
+        "unit": "B/op",
+        "extra": "7178 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSave - allocs/op",
+        "value": 2205,
+        "unit": "allocs/op",
+        "extra": "7178 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad",
+        "value": 4331397,
+        "unit": "ns/op",
+        "extra": "3166 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad - B/op",
+        "value": 932453,
+        "unit": "B/op",
+        "extra": "3166 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad - allocs/op",
+        "value": 18281,
+        "unit": "allocs/op",
+        "extra": "3166 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad",
+        "value": 4339832,
+        "unit": "ns/op",
+        "extra": "2874 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad - B/op",
+        "value": 933128,
+        "unit": "B/op",
+        "extra": "2874 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad - allocs/op",
+        "value": 18307,
+        "unit": "allocs/op",
+        "extra": "2874 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet",
+        "value": 824.5,
+        "unit": "ns/op",
+        "extra": "16861124 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "16861124 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "16861124 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet",
+        "value": 816.1,
+        "unit": "ns/op",
+        "extra": "17605273 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "17605273 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "17605273 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse",
+        "value": 822.3,
+        "unit": "ns/op",
+        "extra": "16912449 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "16912449 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "16912449 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse",
+        "value": 818.6,
+        "unit": "ns/op",
+        "extra": "17397492 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "17397492 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "17397492 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet",
+        "value": 185.1,
+        "unit": "ns/op",
+        "extra": "65223666 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet - B/op",
+        "value": 0,
+        "unit": "B/op",
+        "extra": "65223666 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "65223666 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet",
+        "value": 183.2,
+        "unit": "ns/op",
+        "extra": "65462511 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet - B/op",
+        "value": 0,
+        "unit": "B/op",
+        "extra": "65462511 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "65462511 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent",
+        "value": 716.9,
+        "unit": "ns/op",
+        "extra": "19575613 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "19575613 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "19575613 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent",
+        "value": 699.2,
+        "unit": "ns/op",
+        "extra": "20462127 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "20462127 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "20462127 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete",
+        "value": 551.3,
+        "unit": "ns/op",
+        "extra": "26093866 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete - B/op",
+        "value": 24,
+        "unit": "B/op",
+        "extra": "26093866 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "26093866 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete",
+        "value": 540.2,
+        "unit": "ns/op",
+        "extra": "26133300 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete - B/op",
+        "value": 24,
+        "unit": "B/op",
+        "extra": "26133300 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "26133300 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite",
+        "value": 519.1,
+        "unit": "ns/op",
+        "extra": "23383729 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - B/op",
+        "value": 6,
+        "unit": "B/op",
+        "extra": "23383729 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "23383729 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite",
+        "value": 641.5,
+        "unit": "ns/op",
+        "extra": "19436970 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - B/op",
+        "value": 6,
+        "unit": "B/op",
+        "extra": "19436970 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "19436970 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      }
+    ]
+  },
+  {
+    "commit": {
+      "sha": "5d6cc453e0debe789b98e8ffba5d7d5ee8540c51",
+      "message": "parse dupe counter",
+      "author": "royalcat",
+      "date": "2026-03-23T20:13:55+04:00",
+      "url": "https://github.com/royalcat/rgeocache/commit/5d6cc453e0debe789b98e8ffba5d7d5ee8540c51"
+    },
+    "date": 1774282435000,
+    "params": {
+      "cpu": "Neoverse-N2",
+      "goos": "linux",
+      "goarch": "arm64",
+      "goVersion": "go1.25.8",
+      "cgo": true
+    },
+    "benchmarks": [
+      {
+        "name": "BenchmarkSave",
+        "value": 1744855,
+        "unit": "ns/op",
+        "extra": "6404 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave - B/op",
+        "value": 2055758,
+        "unit": "B/op",
+        "extra": "6404 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave - allocs/op",
+        "value": 2205,
+        "unit": "allocs/op",
+        "extra": "6404 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSave",
+        "value": 1566082,
+        "unit": "ns/op",
+        "extra": "7540 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSave - B/op",
+        "value": 2055754,
+        "unit": "B/op",
+        "extra": "7540 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSave - allocs/op",
+        "value": 2205,
+        "unit": "allocs/op",
+        "extra": "7540 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad",
+        "value": 4044115,
+        "unit": "ns/op",
+        "extra": "3282 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad - B/op",
+        "value": 921135,
+        "unit": "B/op",
+        "extra": "3282 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad - allocs/op",
+        "value": 17873,
+        "unit": "allocs/op",
+        "extra": "3282 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkLoad",
+        "value": 4182527,
+        "unit": "ns/op",
+        "extra": "2980 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad - B/op",
+        "value": 927583,
+        "unit": "B/op",
+        "extra": "2980 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkLoad - allocs/op",
+        "value": 18109,
+        "unit": "allocs/op",
+        "extra": "2980 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/cachesaver/save/v1",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet",
+        "value": 823,
+        "unit": "ns/op",
+        "extra": "16953386 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "16953386 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "16953386 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSet",
+        "value": 816,
+        "unit": "ns/op",
+        "extra": "17602570 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "17602570 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "17602570 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse",
+        "value": 822.8,
+        "unit": "ns/op",
+        "extra": "17067728 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "17067728 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "17067728 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetSparse",
+        "value": 818.9,
+        "unit": "ns/op",
+        "extra": "17540024 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "17540024 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetSparse - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "17540024 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet",
+        "value": 184.6,
+        "unit": "ns/op",
+        "extra": "65084217 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet - B/op",
+        "value": 0,
+        "unit": "B/op",
+        "extra": "65084217 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "65084217 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkGet",
+        "value": 183.7,
+        "unit": "ns/op",
+        "extra": "65383767 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet - B/op",
+        "value": 0,
+        "unit": "B/op",
+        "extra": "65383767 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkGet - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "65383767 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent",
+        "value": 712.6,
+        "unit": "ns/op",
+        "extra": "19601581 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "19601581 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "19601581 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkSetIfAbsent",
+        "value": 697.8,
+        "unit": "ns/op",
+        "extra": "20596012 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - B/op",
+        "value": 82,
+        "unit": "B/op",
+        "extra": "20596012 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSetIfAbsent - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "20596012 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete",
+        "value": 542.1,
+        "unit": "ns/op",
+        "extra": "25670667 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete - B/op",
+        "value": 24,
+        "unit": "B/op",
+        "extra": "25670667 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "25670667 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkDelete",
+        "value": 540.2,
+        "unit": "ns/op",
+        "extra": "26246476 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete - B/op",
+        "value": 24,
+        "unit": "B/op",
+        "extra": "26246476 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkDelete - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "26246476 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite",
+        "value": 517.9,
+        "unit": "ns/op",
+        "extra": "23362483 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - B/op",
+        "value": 6,
+        "unit": "B/op",
+        "extra": "23362483 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "23362483 times\n1 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 1
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite",
+        "value": 613.9,
+        "unit": "ns/op",
+        "extra": "20175864 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - B/op",
+        "value": 6,
+        "unit": "B/op",
+        "extra": "20175864 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkConcurrentReadWrite - allocs/op",
+        "value": 0,
+        "unit": "allocs/op",
+        "extra": "20175864 times\n4 procs",
+        "package": "github.com/royalcat/rgeocache/internal/rangeindex",
+        "procs": 4
+      }
+    ]
   }
 ]
