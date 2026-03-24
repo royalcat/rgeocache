@@ -31,7 +31,6 @@ func (f *GeoGen) fillRelCache() error {
 
 func (f *GeoGen) parseDatabase() error {
 	pool := pool.New().WithMaxGoroutines(f.config.Threads)
-	defer pool.Wait()
 
 	objectsCount := int(f.osmdb.CountNodes() + f.osmdb.CountWays() + f.osmdb.CountRelations())
 	objectsIter := iterConcurrently(
