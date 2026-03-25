@@ -22,7 +22,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -101,7 +101,7 @@ func Setup(ctx context.Context, appName, endpoint string) (*Client, error) {
 		),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
 	meticExporter, err := otlpmetrichttp.New(ctx,
@@ -112,7 +112,7 @@ func Setup(ctx context.Context, appName, endpoint string) (*Client, error) {
 		}),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to initialize OTLP metric exporter: %w", err)
 	}
 
 	promExporter, err := prometheus.New()
@@ -143,7 +143,7 @@ func Setup(ctx context.Context, appName, endpoint string) (*Client, error) {
 	)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to initialize OTLP trace exporter: %w", err)
 	}
 	client.tracerProvider = trace.NewTracerProvider(
 		trace.WithResource(r),
@@ -160,7 +160,7 @@ func Setup(ctx context.Context, appName, endpoint string) (*Client, error) {
 		}),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to initialize OTLP log exporter: %w", err)
 	}
 
 	client.loggerProvider = log.NewLoggerProvider(
