@@ -2,6 +2,7 @@ package geoparser
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"log/slog"
 	"sync"
@@ -9,15 +10,14 @@ import (
 
 	"github.com/cheggaaa/pb/v3"
 	"github.com/paulmach/osm"
-	"github.com/royalcat/osmpbfdb"
 	"github.com/sourcegraph/conc/pool"
 )
 
-func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
+func (f *GeoGen) fillRelCache() error {
 	pool := pool.New().WithMaxGoroutines(f.config.Threads)
 	defer pool.Wait()
 
-	for rel, err := range iterWithProgress(db.IterRelations(), int(db.CountRelations()), "3/4 filling relations cache") {
+	for rel, err := range iterWithProgress(f.osmdb.IterRelations(), int(f.osmdb.CountRelations()), "3/4 filling relations cache") {
 		if err != nil {
 			return err
 		}
@@ -29,15 +29,14 @@ func (f *GeoGen) fillRelCache(db osmpbfdb.OsmDB) error {
 	return nil
 }
 
-func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
+func (f *GeoGen) parseDatabase() error {
 	pool := pool.New().WithMaxGoroutines(f.config.Threads)
-	defer pool.Wait()
 
-	objectsCount := int(db.CountNodes() + db.CountWays() + db.CountRelations())
+	objectsCount := int(f.osmdb.CountNodes() + f.osmdb.CountWays() + f.osmdb.CountRelations())
 	objectsIter := iterConcurrently(
-		castIterToObject(db.IterNodes()),
-		castIterToObject(db.IterWays()),
-		castIterToObject(db.IterRelations()),
+		castIterToObject(f.osmdb.IterNodes()),
+		castIterToObject(f.osmdb.IterWays()),
+		castIterToObject(f.osmdb.IterRelations()),
 	)
 
 	for obj, err := range iterWithProgress(objectsIter, objectsCount, "4/4 generating database") {
@@ -48,6 +47,12 @@ func (f *GeoGen) parseDatabase(db osmpbfdb.OsmDB) error {
 			f.parseObject(obj)
 		})
 	}
+
+	pool.Wait()
+
+	fmt.Printf("Duplicate node parse: %d\n", f.parsedNodesDupes.Load())
+	fmt.Printf("Duplicate way parse: %d\n", f.parsedWaysDupes.Load())
+	fmt.Printf("Duplicate relation parse: %d\n", f.parsedRelationsDupes.Load())
 
 	return nil
 }
