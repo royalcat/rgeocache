@@ -66,17 +66,18 @@ func GeneratePoints(input, output, tempDir string) error {
 	}
 	defer osmdb.Close()
 
-	gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
+	outputFile, err := os.Create(output)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault(), outputFile)
 	if err != nil {
 		return err
 	}
 
 	err = gg.ParseOSMData()
-	if err != nil {
-		return err
-	}
-
-	err = gg.SavePointsToFile(output)
 	if err != nil {
 		return err
 	}

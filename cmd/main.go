@@ -30,9 +30,10 @@ import (
 )
 
 func main() {
-	app := &cli.App{
-		Name:        "rgeocache",
-		Description: "Reverse geocoder with pregenerated cache",
+	app := &cli.Command{
+		Name:                  "rgeocache",
+		Description:           "Reverse geocoder with pregenerated cache",
+		EnableShellCompletion: true,
 		Commands: []*cli.Command{
 			{
 				Name:  "serve",
@@ -125,14 +126,14 @@ func main() {
 		},
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		log.Fatal(err)
 	}
 
 }
 
-func generate(ctx *cli.Context) error {
-	telemetryClient, err := telemetry.Setup(ctx.Context, "rgeocache", ctx.String("otel.endpoint"))
+func generate(ctx context.Context, cmd *cli.Command) error {
+	telemetryClient, err := telemetry.Setup(ctx, "rgeocache", cmd.String("otel.endpoint"))
 	if err != nil {
 		return fmt.Errorf("error setting up telemetry: %w", err)
 	}
@@ -143,10 +144,10 @@ func generate(ctx *cli.Context) error {
 	log := slog.Default()
 
 	// Setup stats collection if enabled
-	statsFile := ctx.String("stats")
+	statsFile := cmd.String("stats")
 	var statsCollector *stats.Collector
 	if statsFile != "" {
-		interval := time.Duration(ctx.Int("stats.interval")) * time.Millisecond
+		interval := time.Duration(cmd.Int("stats.interval")) * time.Millisecond
 		var err error
 		statsCollector, err = stats.NewCollector(interval)
 		if err != nil {
@@ -168,20 +169,20 @@ func generate(ctx *cli.Context) error {
 		}
 	}
 
-	threads := ctx.Int("threads")
+	threads := cmd.Int("threads")
 	if threads == 0 {
 		threads = runtime.GOMAXPROCS(0)
 	}
 	log = log.With("threads", threads)
 
-	preferredLocalization := ctx.String("preferred-localization")
+	preferredLocalization := cmd.String("preferred-localization")
 	if preferredLocalization == "official" {
 		preferredLocalization = ""
 	}
 
-	version := ctx.Int("version")
+	version := cmd.Int("version")
 
-	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
+	if pprofListen := cmd.String("pprof.listen"); pprofListen != "" {
 		go func() {
 			log.Info("Starting pprof server")
 			err := http.ListenAndServe(pprofListen, nil)
@@ -191,9 +192,9 @@ func generate(ctx *cli.Context) error {
 		}()
 	}
 
-	pprofHeap := ctx.Bool("pprof.heap")
+	pprofHeap := cmd.Bool("pprof.heap")
 
-	if ctx.Bool("pprof.profile") {
+	if cmd.Bool("pprof.profile") {
 		f, err := os.OpenFile("profile.cpu.pprof", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			return fmt.Errorf("error creating pprof file: %w", err)
@@ -205,7 +206,7 @@ func generate(ctx *cli.Context) error {
 		defer pprof.StopCPUProfile()
 	}
 
-	inputs := ctx.StringSlice("input")
+	inputs := cmd.StringSlice("input")
 	log.Info("Input maps", "maps", inputs)
 
 	inputsReaders := make([]io.ReaderAt, 0, len(inputs))
@@ -217,6 +218,17 @@ func generate(ctx *cli.Context) error {
 		defer file.Close()
 		inputsReaders = append(inputsReaders, file)
 	}
+
+	saveFilePath := cmd.String("points")
+	if !strings.HasSuffix(saveFilePath, ".rgc") {
+		saveFilePath = saveFilePath + ".rgc"
+	}
+
+	outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
 
 	log.Info("Tuning gc to respect only soft mem limit")
 	err = tuneGC()
@@ -236,10 +248,12 @@ func generate(ctx *cli.Context) error {
 	config.PreferredLocalization = preferredLocalization
 	config.Version = uint32(version)
 
-	geoGen, err := geoparser.NewGeoGen(osmdb, config)
+	geoGen, err := geoparser.NewGeoGen(osmdb, config, outputFile)
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
+
+	log.Info("Creating OSM cache", "output", saveFilePath)
 
 	err = geoGen.ParseOSMData()
 	if err != nil {
@@ -253,26 +267,8 @@ func generate(ctx *cli.Context) error {
 		}
 	}
 
-	err = geoGen.ResetCache()
-	if err != nil {
-		return fmt.Errorf("error flushing memory cache: %s", err.Error())
-	}
-
-	saveFile := ctx.String("points")
-	if !strings.HasSuffix(saveFile, ".rgc") {
-		saveFile = saveFile + ".rgc"
-	}
-
-	log.Info("Generation complete")
-	log.Info("Saving to file", "file", saveFile)
-	err = geoGen.SavePointsToFile(saveFile)
-	if err != nil {
-		return fmt.Errorf("failed to save points to file: %s", err.Error())
-	}
-
 	log.Info("Complete")
 
-	time.Sleep(time.Second * 3)
 	if telemetryClient != nil {
 		err = telemetryClient.Flush(context.Background())
 		if err != nil {
@@ -294,10 +290,10 @@ func writeHeapProfile(name string) error {
 
 const defaultSearchRadius = 0.01
 
-func serve(ctx *cli.Context) error {
+func serve(ctx context.Context, cmd *cli.Command) error {
 	log := slog.Default()
 
-	if pprofListen := ctx.String("pprof.listen"); pprofListen != "" {
+	if pprofListen := cmd.String("pprof.listen"); pprofListen != "" {
 		go func() {
 			log.Info("Starting pprof server")
 			err := http.ListenAndServe(pprofListen, nil)
@@ -307,7 +303,7 @@ func serve(ctx *cli.Context) error {
 		}()
 	}
 
-	radius := ctx.Float64("search-radius")
+	radius := cmd.Float64("search-radius")
 	if radius <= 0 || radius > 180 {
 		log.Error("Invalid radius detected using default", "input", radius, "default", 0.01)
 		radius = defaultSearchRadius
@@ -315,7 +311,7 @@ func serve(ctx *cli.Context) error {
 		log.Info("Using custom search radius", "radius", radius)
 	}
 
-	cacheFile := ctx.String("points")
+	cacheFile := cmd.String("points")
 
 	err := geocoder.PrintCacheSizeAnalysisForFile(cacheFile)
 	if err != nil {
@@ -329,7 +325,7 @@ func serve(ctx *cli.Context) error {
 
 	runtime.GC()
 
-	return server.Run(ctx.Context, ctx.String("listen"), rgeo, log)
+	return server.Run(ctx, cmd.String("listen"), rgeo, log)
 }
 
 func tuneGC() error {

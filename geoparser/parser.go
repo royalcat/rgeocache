@@ -19,23 +19,15 @@ func (f *GeoGen) parseObject(o osm.Object) {
 	switch obj := o.(type) {
 	case *osm.Node:
 		if point, ok := f.parseNode(obj); ok {
-			f.parsedPointsMu.Lock()
-			defer f.parsedPointsMu.Unlock()
-			f.parsedPoints = append(f.parsedPoints, point)
+			f.parsedPoints <- point
 		}
 	case *osm.Way:
-		points := f.parseWay(obj)
-		if len(points) > 0 {
-			f.parsedPointsMu.Lock()
-			defer f.parsedPointsMu.Unlock()
-			f.parsedPoints = append(f.parsedPoints, points...)
+		for _, point := range f.parseWay(obj) {
+			f.parsedPoints <- point
 		}
 	case *osm.Relation:
-		rels := f.parseRelation(obj)
-		if len(rels) > 0 {
-			f.parsedPointsMu.Lock()
-			defer f.parsedPointsMu.Unlock()
-			f.parsedPoints = append(f.parsedPoints, rels...)
+		for _, point := range f.parseRelation(obj) {
+			f.parsedPoints <- point
 		}
 	}
 }
@@ -78,6 +70,7 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 
 func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
 	if !f.parsedWays.SetIfAbsent(way.ID, struct{}{}) {
+		f.parsedWaysDupes.Add(1)
 		return []geoPoint{}
 	}
 
@@ -146,6 +139,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 
 func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 	if !f.parsedRelations.SetIfAbsent(rel.ID, struct{}{}) {
+		f.parsedRelationsDupes.Add(1)
 		return []geoPoint{}
 	}
 
