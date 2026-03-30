@@ -109,8 +109,8 @@ github.com/prometheus/procfs v0.20.1 h1:XwbrGOIplXW/AU3YhIhLODXMJYyC1isLFfYCsTEy
 github.com/prometheus/procfs v0.20.1/go.mod h1:o9EMBZGRyvDrSPH1RqdxhojkuXstoe4UlK79eF5TGGo=
 github.com/puzpuzpuz/xsync/v3 v3.5.1 h1:GJYJZwO6IdxN/IKbneznS6yPkVC+c3zyY/j19c++5Fg=
 github.com/puzpuzpuz/xsync/v3 v3.5.1/go.mod h1:VjzYrABPabuM4KyBh1Ftq6u8nhwY5tBPKP9jpmh0nnA=
-github.com/royalcat/osmpbfdb v0.0.0-20260304170225-eb7aa7eef48c h1:A1KdetK0Redzqf/QRMKMVekdCerOvpWXEH+5EF5F9vY=
-github.com/royalcat/osmpbfdb v0.0.0-20260304170225-eb7aa7eef48c/go.mod h1:k8s8+B0MUKJ0l4nxr1S7WEw4yf8FSD8nRPR/vtd/GlE=
+github.com/royalcat/osmpbfdb v0.0.0-20260330165541-376838c8a561 h1:Xhu7VVqtQ9TAFP7pRdc6cdvXE5XPA2M3Ae1hxYoxMao=
+github.com/royalcat/osmpbfdb v0.0.0-20260330165541-376838c8a561/go.mod h1:k8s8+B0MUKJ0l4nxr1S7WEw4yf8FSD8nRPR/vtd/GlE=
 github.com/samber/lo v1.53.0 h1:t975lj2py4kJPQ6haz1QMgtId2gtmfktACxIXArw3HM=
 github.com/samber/lo v1.53.0/go.mod h1:4+MXEGsJzbKGaUEQFKBq2xtfuznW9oz/WrgyzMzRoM0=
 github.com/samber/slog-common v0.21.0 h1:Wo2hTly1Br5RjYqX/BTWJJeDnTE85oWk/7vqlpZuAUc=
