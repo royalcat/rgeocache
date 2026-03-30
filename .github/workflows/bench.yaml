@@ -18,6 +18,11 @@ jobs:
     env:
       CGO_ENABLED: ${{ matrix.cgo }}
     steps:
+      - name: Install libdeflate
+        if: matrix.cgo == '1'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdeflate-dev libdeflate0
       - name: Get branch name
         shell: bash
         id: get-branch-name
