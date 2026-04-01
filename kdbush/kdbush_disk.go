@@ -470,40 +470,40 @@ func (d *DiskKDBush[V, VP]) readLeaf(left, right int) (idxs []int, coords []floa
 // given original index.  Exactly two ReadAt calls: one for the offset pair,
 // one for the blob.
 func (d *DiskKDBush[V, VP]) readPointData(origIdx int) (V, error) {
+
 	// Read offsets[origIdx] and offsets[origIdx+1] in one call.
-	var obuf [16]byte
-	if _, err := d.r.ReadAt(obuf[:], d.dataOffsetsOff+int64(origIdx)*8); err != nil {
+	obuf := make([]byte, 16)
+	_, err := d.r.ReadAt(obuf, d.dataOffsetsOff+int64(origIdx)*8)
+	if err != nil {
 		var zero V
-		return zero, fmt.Errorf("kdbush: reading data offset[%d]: %w", origIdx, err)
+		return zero, fmt.Errorf("kdbush: reading data offset: %w", err)
 	}
 	blobStart := int64(diskByteOrder.Uint64(obuf[0:8]))
 	blobEnd := int64(diskByteOrder.Uint64(obuf[8:16]))
 	blobLen := int(blobEnd - blobStart)
 
-	v := new(V)
-	if blobLen > 0 {
-		buf := d.blobPool.Get().(*bytes.Buffer)
-		defer func() {
-			buf.Reset()
-			d.blobPool.Put(buf)
-		}()
-		buf.Grow(blobLen)
-		b := buf.Next(blobLen)
-		if _, err := d.r.ReadAt(b, d.dataBlobsOff+blobStart); err != nil {
-			var zero V
-			return zero, fmt.Errorf("kdbush: reading data blob[%d]: %w", origIdx, err)
-		}
-		err := VP(v).UnmarshalBinary(b)
+	if blobLen == 0 {
+		var zero V
+		return zero, nil
+	}
 
-		if err != nil {
-			var zero V
-			return zero, fmt.Errorf("kdbush: unmarshal point[%d]: %w", origIdx, err)
-		}
-	} else {
-		if err := VP(v).UnmarshalBinary(nil); err != nil {
-			var zero V
-			return zero, fmt.Errorf("kdbush: unmarshal point[%d]: %w", origIdx, err)
-		}
+	v := new(V)
+	buf := d.blobPool.Get().(*bytes.Buffer)
+	defer func() {
+		buf.Reset()
+		d.blobPool.Put(buf)
+	}()
+	buf.Grow(blobLen)
+	b := buf.Next(blobLen)[:blobLen]
+	if _, err := d.r.ReadAt(b, d.dataBlobsOff+blobStart); err != nil {
+		var zero V
+		return zero, fmt.Errorf("kdbush: reading data blob[%d]: %w", origIdx, err)
+	}
+	err = VP(v).UnmarshalBinary(b)
+
+	if err != nil {
+		var zero V
+		return zero, fmt.Errorf("kdbush: unmarshal point[%d]: %w", origIdx, err)
 	}
 
 	return *v, nil
