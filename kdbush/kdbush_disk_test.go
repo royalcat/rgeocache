@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
+
+	"golang.org/x/exp/mmap"
 )
 
 // ---------------------------------------------------------------------------
@@ -62,12 +66,25 @@ func generateTestPoints(n int) []Point[testData] {
 
 func buildAndOpen(t *testing.T, pts []Point[testData], nodeSize int) *DiskKDBush[testData, *testData] {
 	t.Helper()
-	var buf bytes.Buffer
-	_, err := BuildDisk[testData, *testData](pts, nodeSize, &buf)
+
+	path := filepath.Join(t.TempDir(), "test.kdbush")
+	f, err := os.Create(path)
 	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	if _, err := BuildDisk[testData, *testData](pts, nodeSize, f); err != nil {
+		f.Close()
 		t.Fatalf("BuildDisk: %v", err)
 	}
-	disk, err := OpenDisk[testData, *testData](bytes.NewReader(buf.Bytes()))
+	f.Close()
+
+	r, err := mmap.Open(path)
+	if err != nil {
+		t.Fatalf("mmap.Open: %v", err)
+	}
+	t.Cleanup(func() { r.Close() })
+
+	disk, err := OpenDisk[testData, *testData](r)
 	if err != nil {
 		t.Fatalf("OpenDisk: %v", err)
 	}
@@ -319,11 +336,25 @@ func TestDisk_WithinEarlyStop(t *testing.T) {
 	}
 }
 
+func writeTempFile(t *testing.T, data []byte) *mmap.ReaderAt {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "bad.kdbush")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	r, err := mmap.Open(path)
+	if err != nil {
+		t.Fatalf("mmap.Open: %v", err)
+	}
+	t.Cleanup(func() { r.Close() })
+	return r
+}
+
 func TestDisk_InvalidMagic(t *testing.T) {
 	data := make([]byte, diskHeaderSize)
 	copy(data[0:4], []byte("NOPE"))
 
-	_, err := OpenDisk[testData, *testData](bytes.NewReader(data))
+	_, err := OpenDisk[testData, *testData](writeTempFile(t, data))
 	if err == nil {
 		t.Fatal("expected error for invalid magic bytes")
 	}
@@ -334,14 +365,14 @@ func TestDisk_InvalidVersion(t *testing.T) {
 	copy(data[0:4], diskMagic[:])
 	diskByteOrder.PutUint32(data[4:8], 99)
 
-	_, err := OpenDisk[testData, *testData](bytes.NewReader(data))
+	_, err := OpenDisk[testData, *testData](writeTempFile(t, data))
 	if err == nil {
 		t.Fatal("expected error for unsupported version")
 	}
 }
 
 func TestDisk_TruncatedHeader(t *testing.T) {
-	_, err := OpenDisk[testData, *testData](bytes.NewReader([]byte("KDB")))
+	_, err := OpenDisk[testData, *testData](writeTempFile(t, []byte("KDB")))
 	if err == nil {
 		t.Fatal("expected error for truncated header")
 	}
@@ -420,11 +451,24 @@ func BenchmarkDisk(b *testing.B) {
 
 	bush := NewBush(pts, 64)
 
-	var buf bytes.Buffer
-	if _, err := BuildDisk[testData, *testData](pts, 64, &buf); err != nil {
+	path := filepath.Join(b.TempDir(), "bench.kdbush")
+	f, err := os.Create(path)
+	if err != nil {
+		b.Fatalf("create temp file: %v", err)
+	}
+	if _, err := BuildDisk[testData, *testData](pts, 64, f); err != nil {
+		f.Close()
 		b.Fatalf("BuildDisk: %v", err)
 	}
-	disk, err := OpenDisk[testData, *testData](bytes.NewReader(buf.Bytes()))
+	f.Close()
+
+	r, err := mmap.Open(path)
+	if err != nil {
+		b.Fatalf("mmap.Open: %v", err)
+	}
+	b.Cleanup(func() { r.Close() })
+
+	disk, err := OpenDisk[testData, *testData](r)
 	if err != nil {
 		b.Fatalf("OpenDisk: %v", err)
 	}

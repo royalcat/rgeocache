@@ -1,13 +1,15 @@
 package kdbush
 
 import (
-	"bytes"
 	"encoding"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"sync"
+
+	"golang.org/x/exp/mmap"
 )
 
 // ---------------------------------------------------------------------------
@@ -79,17 +81,19 @@ const diskHeaderSize = 32
 // only the compact tree section (indices + coordinates); point data is read
 // and unmarshaled lazily, only for points that actually match the query.
 //
-// The underlying [io.ReaderAt] must remain valid for the lifetime of the
-// DiskKDBush.  For best performance back it with an mmap'd file.
+// The underlying [mmap.ReaderAt] must remain valid for the lifetime of the
+// DiskKDBush.  Using the concrete mmap type (rather than [io.ReaderAt])
+// allows the compiler to inline ReadAt calls and keep small read buffers
+// on the stack instead of escaping them to the heap.
 type DiskKDBush[V any, VP binaryPointer[V]] struct {
-	r              io.ReaderAt
+	r              *mmap.ReaderAt
 	nodeSize       int
 	numPoints      int
 	idxsOffset     int64
 	coordsOffset   int64
 	dataOffsetsOff int64
 	dataBlobsOff   int64
-	blobPool       sync.Pool // pool of *bytes.Buffer for readPointData
+	blobPool       sync.Pool // pool of *[]byte buffers for readPointData
 }
 
 // NumPoints returns the number of indexed points.
@@ -195,8 +199,8 @@ func BuildDisk[V encoding.BinaryMarshaler, VP binaryPointer[V]](
 // OpenDisk opens an on-disk KDBush index backed by r.
 // The data must have been previously written by [BuildDisk].
 // Only the 32-byte header is read; all other data is accessed lazily via
-// [io.ReaderAt] during queries.
-func OpenDisk[V any, VP binaryPointer[V]](r io.ReaderAt) (*DiskKDBush[V, VP], error) {
+// [mmap.ReaderAt] during queries.
+func OpenDisk[V any, VP binaryPointer[V]](r *mmap.ReaderAt) (*DiskKDBush[V, VP], error) {
 	var header [diskHeaderSize]byte
 	if _, err := r.ReadAt(header[:], 0); err != nil {
 		return nil, fmt.Errorf("kdbush: reading header: %w", err)
@@ -231,7 +235,8 @@ func OpenDisk[V any, VP binaryPointer[V]](r io.ReaderAt) (*DiskKDBush[V, VP], er
 		dataBlobsOff:   dataBlobsOff,
 		blobPool: sync.Pool{
 			New: func() any {
-				return &bytes.Buffer{}
+				b := make([]byte, 0, 64)
+				return &b
 			},
 		},
 	}, nil
@@ -412,20 +417,21 @@ func (d *DiskKDBush[V, VP]) Within(qx, qy, radius float64, handler func(p Point[
 // ---------------------------------------------------------------------------
 
 // readIdx reads a single original-index value at sorted position i.
+// buf is a stack-allocated [8]byte — stays on the stack because r is a
+// concrete *mmap.ReaderAt (no interface escape).
 func (d *DiskKDBush[V, VP]) readIdx(i int) (int, error) {
 	var buf [8]byte
-	_, err := d.r.ReadAt(buf[:], d.idxsOffset+int64(i)*8)
-	if err != nil {
+	if _, err := d.r.ReadAt(buf[:], d.idxsOffset+int64(i)*8); err != nil {
 		return 0, fmt.Errorf("kdbush: reading idx[%d]: %w", i, err)
 	}
 	return int(diskByteOrder.Uint64(buf[:])), nil
 }
 
 // readCoord reads the (x, y) coordinate pair for sorted position i.
+// buf is a stack-allocated [16]byte.
 func (d *DiskKDBush[V, VP]) readCoord(i int) (x, y float64, err error) {
 	var buf [16]byte
-	_, err = d.r.ReadAt(buf[:], d.coordsOffset+int64(i)*16)
-	if err != nil {
+	if _, err = d.r.ReadAt(buf[:], d.coordsOffset+int64(i)*16); err != nil {
 		return 0, 0, fmt.Errorf("kdbush: reading coord[%d]: %w", i, err)
 	}
 	x = math.Float64frombits(diskByteOrder.Uint64(buf[0:8]))
@@ -469,14 +475,15 @@ func (d *DiskKDBush[V, VP]) readLeaf(left, right int) (idxs []int, coords []floa
 // readPointData reads and unmarshals the data payload for the point at the
 // given original index.  Exactly two ReadAt calls: one for the offset pair,
 // one for the blob.
+//
+// obuf is a stack-allocated [16]byte (no heap escape thanks to concrete
+// *mmap.ReaderAt).  The blob buffer comes from sync.Pool.
 func (d *DiskKDBush[V, VP]) readPointData(origIdx int) (V, error) {
-
 	// Read offsets[origIdx] and offsets[origIdx+1] in one call.
-	obuf := make([]byte, 16)
-	_, err := d.r.ReadAt(obuf, d.dataOffsetsOff+int64(origIdx)*8)
-	if err != nil {
+	var obuf [16]byte
+	if _, err := d.r.ReadAt(obuf[:], d.dataOffsetsOff+int64(origIdx)*8); err != nil {
 		var zero V
-		return zero, fmt.Errorf("kdbush: reading data offset: %w", err)
+		return zero, fmt.Errorf("kdbush: reading data offset[%d]: %w", origIdx, err)
 	}
 	blobStart := int64(diskByteOrder.Uint64(obuf[0:8]))
 	blobEnd := int64(diskByteOrder.Uint64(obuf[8:16]))
@@ -488,18 +495,25 @@ func (d *DiskKDBush[V, VP]) readPointData(origIdx int) (V, error) {
 	}
 
 	v := new(V)
-	buf := d.blobPool.Get().(*bytes.Buffer)
+	// Get a pooled buffer; grow if needed.
+	bp := d.blobPool.Get().(*[]byte)
+	buf := *bp
+	buf = slices.Grow(buf, blobLen)[:blobLen]
+	// if cap(buf) < blobLen {
+	// 	buf = make([]byte, blobLen)
+	// } else {
+	// 	buf = buf[:blobLen]
+	// }
 	defer func() {
-		buf.Reset()
-		d.blobPool.Put(buf)
+		*bp = buf
+		d.blobPool.Put(bp)
 	}()
-	buf.Grow(blobLen)
-	b := buf.Next(blobLen)[:blobLen]
-	if _, err := d.r.ReadAt(b, d.dataBlobsOff+blobStart); err != nil {
+
+	if _, err := d.r.ReadAt(buf, d.dataBlobsOff+blobStart); err != nil {
 		var zero V
 		return zero, fmt.Errorf("kdbush: reading data blob[%d]: %w", origIdx, err)
 	}
-	err = VP(v).UnmarshalBinary(b)
+	err := VP(v).UnmarshalBinary(buf)
 
 	if err != nil {
 		var zero V
