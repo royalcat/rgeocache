@@ -5,7 +5,7 @@ import (
 
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/planar"
-	"github.com/royalcat/rgeocache/bordertree"
+	"github.com/royalcat/rgeocache/internal/bordertree"
 )
 
 func polygonFromBounds(minX, minY, maxX, maxY float64) orb.MultiPolygon {
