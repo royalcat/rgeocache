@@ -10,9 +10,9 @@ import (
 	"unique"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/royalcat/rgeocache/bordertree"
 	"github.com/royalcat/rgeocache/cachesaver"
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
+	"github.com/royalcat/rgeocache/internal/bordertree"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 

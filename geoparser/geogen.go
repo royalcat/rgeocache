@@ -10,8 +10,8 @@ import (
 	"github.com/paulmach/osm"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/royalcat/osmpbfdb"
-	"github.com/royalcat/rgeocache/bordertree"
 	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/internal/bordertree"
 	"github.com/royalcat/rgeocache/internal/rangeindex"
 	"golang.org/x/sync/errgroup"
 )

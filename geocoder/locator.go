@@ -6,8 +6,8 @@ import (
 	"unique"
 
 	"github.com/paulmach/orb"
-	"github.com/royalcat/rgeocache/bordertree"
 	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/internal/bordertree"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
