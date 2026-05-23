@@ -1,7 +1,9 @@
 //go:generate go tool easyjson $GOFILE
 package geomodel
 
-import "github.com/paulmach/orb"
+import (
+	"github.com/paulmach/orb"
+)
 
 //easyjson:json
 type InfoList []Info

@@ -2,6 +2,7 @@ package geoparser
 
 import (
 	"strings"
+	"unique"
 
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
@@ -43,64 +44,64 @@ func (f *GeoGen) localizedName(tags osm.Tags) string {
 
 const cityAddrKey = "addr:city"
 
-func (f *GeoGen) localizedCityAddr(tags osm.Tags, point orb.Point) string {
+func (f *GeoGen) localizedCityAddr(tags osm.Tags, point orb.Point) unique.Handle[string] {
 	name := tags.Find(cityAddrKey)
 
 	if f.config.PreferredLocalization == "" {
 		if name != "" {
-			return name
+			return unique.Make(name)
 		}
-		return f.calcPlace(point)
+		return unique.Make(f.calcPlace(point))
 	}
 
 	if localizedName := tags.Find(cityAddrKey + ":" + f.config.PreferredLocalization); localizedName != "" {
-		return localizedName
+		return unique.Make(localizedName)
 	}
 
 	if localizedName, ok := f.localizationCache.Load(name); ok {
-		return localizedName
+		return unique.Make(localizedName)
 	}
 
 	if calcPlaceName := f.calcPlace(point); calcPlaceName != "" {
 		if localizedName, ok := f.localizationCache.Load(calcPlaceName); ok {
-			return localizedName
+			return unique.Make(localizedName)
 		}
 
-		return calcPlaceName
+		return unique.Make(calcPlaceName)
 	}
 
-	return name
+	return unique.Make(name)
 }
 
 const addrStreetKey = "addr:street"
 
-func (f *GeoGen) localizedStreetName(tags osm.Tags) string {
+func (f *GeoGen) localizedStreetName(tags osm.Tags) unique.Handle[string] {
 	name := tags.Find(addrStreetKey)
 
 	if f.config.PreferredLocalization == "" {
-		return name
+		return unique.Make(name)
 	}
 
 	if localizedName := tags.Find(addrStreetKey + ":" + f.config.PreferredLocalization); localizedName != "" {
-		return localizedName
+		return unique.Make(localizedName)
 	}
 
 	if localizedName, ok := f.localizationCache.Load(name); ok {
-		return localizedName
+		return unique.Make(localizedName)
 	}
 
-	return name
+	return unique.Make(name)
 }
 
-func (f *GeoGen) localizedRegion(point orb.Point) string {
+func (f *GeoGen) localizedRegion(point orb.Point) unique.Handle[string] {
 
 	if regionName := f.calcRegion(point); regionName != "" {
 		if localizedName, ok := f.localizationCache.Load(regionName); ok {
-			return localizedName
+			return unique.Make(localizedName)
 		}
 
-		return regionName
+		return unique.Make(regionName)
 	}
 
-	return ""
+	return unique.Make("")
 }
