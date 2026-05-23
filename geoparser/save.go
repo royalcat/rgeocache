@@ -18,10 +18,10 @@ func (f *GeoGen) saveWorker() error {
 				Y: point.Y(),
 				Data: cachemodel.Info{
 					Name:        unique.Make(point.Name),
-					Street:      unique.Make(point.Street),
-					HouseNumber: unique.Make(point.HouseNumber),
-					City:        unique.Make(point.City),
-					Region:      unique.Make(point.Region),
+					Street:      point.Street,
+					HouseNumber: point.HouseNumber,
+					City:        point.City,
+					Region:      point.Region,
 					Weight:      point.Weight,
 				},
 			}) {

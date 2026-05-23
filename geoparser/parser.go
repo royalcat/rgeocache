@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"unique"
 
 	"github.com/royalcat/rgeocache/geomodel"
 
@@ -34,7 +35,15 @@ func (f *GeoGen) parseObject(o osm.Object) {
 
 type geoPoint struct {
 	orb.Point
-	geomodel.Info
+
+	Name        string                `json:"name"`
+	Street      unique.Handle[string] `json:"street"`
+	HouseNumber unique.Handle[string] `json:"house_number"`
+	City        unique.Handle[string] `json:"city"`
+	Region      unique.Handle[string] `json:"region"`
+	Country     unique.Handle[string] `json:"country"`
+
+	Weight uint8 `json:"weight"`
 }
 
 const (
@@ -53,15 +62,13 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 		point := orb.Point{node.Lon, node.Lat}
 
 		return geoPoint{
-			Point: point,
-			Info: geomodel.Info{
-				Weight:      weightBuilding,
-				Name:        f.localizedName(node.Tags),
-				Street:      f.localizedStreetName(node.Tags),
-				HouseNumber: node.Tags.Find("addr:housenumber"),
-				City:        f.localizedCityAddr(node.Tags, point),
-				Region:      f.localizedRegion(point),
-			},
+			Point:       point,
+			Weight:      weightBuilding,
+			Name:        f.localizedName(node.Tags),
+			Street:      f.localizedStreetName(node.Tags),
+			HouseNumber: unique.Make(node.Tags.Find("addr:housenumber")),
+			City:        f.localizedCityAddr(node.Tags, point),
+			Region:      f.localizedRegion(point),
 		}, true
 	}
 
@@ -94,15 +101,13 @@ func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
 	}
 
 	return []geoPoint{{
-		Point: point,
-		Info: geomodel.Info{
-			Weight:      weightBuilding,
-			Name:        f.localizedName(way.Tags),
-			Street:      f.localizedStreetName(way.Tags),
-			HouseNumber: way.Tags.Find("addr:housenumber"),
-			City:        f.localizedCityAddr(way.Tags, point),
-			Region:      f.localizedRegion(point),
-		},
+		Point:       point,
+		Weight:      weightBuilding,
+		Name:        f.localizedName(way.Tags),
+		Street:      f.localizedStreetName(way.Tags),
+		HouseNumber: unique.Make(way.Tags.Find("addr:housenumber")),
+		City:        f.localizedCityAddr(way.Tags, point),
+		Region:      f.localizedRegion(point),
 	}}
 }
 
@@ -118,20 +123,18 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 	for _, point := range ls {
 		name := f.getHighwayName(way.Tags)
 		street := f.localizedStreetName(way.Tags)
-		if street == "" {
-			street = name
+		if street.Value() == "" {
+			street = unique.Make(name)
 			name = ""
 		}
 
 		out = append(out, geoPoint{
-			Point: point,
-			Info: geomodel.Info{
-				Weight: weightRoad,
-				Name:   name,
-				Street: street,
-				City:   f.localizedCityAddr(way.Tags, point),
-				Region: f.localizedRegion(point),
-			},
+			Point:  point,
+			Weight: weightRoad,
+			Name:   name,
+			Street: street,
+			City:   f.localizedCityAddr(way.Tags, point),
+			Region: f.localizedRegion(point),
 		})
 	}
 	return out
@@ -193,15 +196,13 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 			p, _ := planar.CentroidArea(poly)
 
 			points = append(points, geoPoint{
-				Point: p,
-				Info: geomodel.Info{
-					Weight:      weightBuilding,
-					Name:        f.localizedName(rel.Tags),
-					Street:      f.localizedStreetName(rel.Tags),
-					HouseNumber: rel.Tags.Find("addr:housenumber"),
-					City:        f.localizedCityAddr(rel.Tags, p),
-					Region:      f.localizedRegion(p),
-				},
+				Point:       p,
+				Weight:      weightBuilding,
+				Name:        f.localizedName(rel.Tags),
+				Street:      f.localizedStreetName(rel.Tags),
+				HouseNumber: unique.Make(rel.Tags.Find("addr:housenumber")),
+				City:        f.localizedCityAddr(rel.Tags, p),
+				Region:      f.localizedRegion(p),
 			})
 		}
 	}
@@ -248,14 +249,13 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 	for _, p := range points {
 		out = append(out, geoPoint{
 			Point: p,
-			Info: geomodel.Info{
-				Weight:      weight,
-				Name:        name,
-				Street:      "",
-				HouseNumber: "",
-				City:        f.localizedCityAddr(rel.Tags, p),
-				Region:      f.localizedRegion(p),
-			},
+
+			Weight:      weight,
+			Name:        name,
+			Street:      unique.Make(""),
+			HouseNumber: unique.Make(""),
+			City:        f.localizedCityAddr(rel.Tags, p),
+			Region:      f.localizedRegion(p),
 		})
 	}
 	return out

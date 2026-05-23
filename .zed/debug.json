@@ -22,7 +22,7 @@
     "cwd": "${ZED_WORKTREE_ROOT}/bin",
     "env": {
       // "GODEBUG": "gctrace=1",
-      "GOMAXPROCS": "10",
+      // "GOMAXPROCS": "10",
       // "GOMEMLIMIT": "8362536960",
     },
     "args": [
@@ -52,7 +52,7 @@
       "--points",
       "points_data.rgc",
       "--otel.endpoint",
-      "otel.kmsign.ru:443",
+      "otel.kmsign.org:443",
       "--stats",
       "stats.txt",
     ],
