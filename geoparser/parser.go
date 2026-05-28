@@ -130,12 +130,13 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 		}
 
 		out = append(out, geoPoint{
-			Point:  point,
-			Weight: weightRoad,
-			Name:   name,
-			Street: street,
-			City:   f.localizedCityAddr(way.Tags, point),
-			Region: f.localizedRegion(point),
+			Point:       point,
+			Weight:      weightRoad,
+			Name:        name,
+			Street:      street,
+			HouseNumber: unique.Make(""),
+			City:        f.localizedCityAddr(way.Tags, point),
+			Region:      f.localizedRegion(point),
 		})
 	}
 	return out
