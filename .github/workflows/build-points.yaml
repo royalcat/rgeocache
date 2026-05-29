@@ -49,7 +49,7 @@ jobs:
         with:
           swap-size-gb: 1
       - name: Check out repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -86,12 +86,12 @@ jobs:
           ./rgeocache generate --pprof.profile --pprof.heap --stats stats.txt \
             -l ${{ matrix.locale }} --version ${{ github.run_id }} \
             -p ${{ matrix.name }}_points ${MAPS_FILES}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}_points
           path: |
             cache_build/${{ matrix.name }}_points.rgc
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}_profile
           path: |
