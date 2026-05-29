@@ -35,7 +35,11 @@ func easyjsonDdc53814DecodeGithubComRoyalcatRgeocacheGeomodel(in *jlexer.Lexer, 
 		}
 		for !in.IsDelim(']') {
 			var v1 Info
-			(v1).UnmarshalEasyJSON(in)
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				(v1).UnmarshalEasyJSON(in)
+			}
 			*out = append(*out, v1)
 			in.WantComma()
 		}
@@ -96,26 +100,49 @@ func easyjsonDdc53814DecodeGithubComRoyalcatRgeocacheGeomodel1(in *jlexer.Lexer,
 	for !in.IsDelim('}') {
 		key := in.UnsafeFieldName(false)
 		in.WantColon()
-		if in.IsNull() {
-			in.Skip()
-			in.WantComma()
-			continue
-		}
 		switch key {
 		case "name":
-			out.Name = string(in.String())
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Name = string(in.String())
+			}
 		case "street":
-			out.Street = string(in.String())
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Street = string(in.String())
+			}
 		case "house_number":
-			out.HouseNumber = string(in.String())
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.HouseNumber = string(in.String())
+			}
 		case "city":
-			out.City = string(in.String())
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.City = string(in.String())
+			}
 		case "region":
-			out.Region = string(in.String())
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Region = string(in.String())
+			}
 		case "country":
-			out.Country = string(in.String())
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Country = string(in.String())
+			}
 		case "weight":
-			out.Weight = uint8(in.Uint8())
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.Weight = uint8(in.Uint8())
+			}
 		default:
 			in.SkipRecursive()
 		}

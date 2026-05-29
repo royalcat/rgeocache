@@ -1,5 +1,5 @@
 #build container
-FROM --platform=$BUILDPLATFORM golang:1.25 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26 AS build
 WORKDIR /app
 
 COPY go.mod ./
