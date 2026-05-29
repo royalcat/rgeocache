@@ -33,7 +33,7 @@ jobs:
             echo "BRANCH_NAME=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
           fi
       - name: checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
@@ -56,7 +56,7 @@ jobs:
           result-dir: benchmark-result
 
       - name: Upload parsed results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.parse.outputs.artifact-name }}
           path: benchmark-result/
@@ -78,7 +78,7 @@ jobs:
           go-version: "1.25"
 
       - name: Download all benchmark artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: benchmark-results
           pattern: bench-*
