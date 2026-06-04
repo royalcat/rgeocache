@@ -39,7 +39,7 @@ func unmarshalPointsListFast(data []byte, result *[][2]float64) error {
 		i++
 
 		var point [2]float64
-		for j := 0; j < 2; j++ {
+		for j := range 2 {
 			// Skip whitespace
 			for i < n && (data[i] == ' ' || data[i] == '\n' || data[i] == '\t' || data[i] == '\r') {
 				i++
