@@ -200,9 +200,12 @@ func BuildDisk[V encoding.BinaryMarshaler, VP binaryPointer[V]](
 // The data must have been previously written by [BuildDisk].
 // Only the 32-byte header is read; all other data is accessed lazily via
 // [mmap.ReaderAt] during queries.
-func OpenDisk[V any, VP binaryPointer[V]](r *mmap.ReaderAt) (*DiskKDBush[V, VP], error) {
+//
+// offset is the byte position of the KDBH block within r. Pass 0 when the
+// index is stored at the start of the file.
+func OpenDisk[V any, VP binaryPointer[V]](r *mmap.ReaderAt, offset int64) (*DiskKDBush[V, VP], error) {
 	var header [diskHeaderSize]byte
-	if _, err := r.ReadAt(header[:], 0); err != nil {
+	if _, err := r.ReadAt(header[:], offset); err != nil {
 		return nil, fmt.Errorf("kdbush: reading header: %w", err)
 	}
 
@@ -220,7 +223,7 @@ func OpenDisk[V any, VP binaryPointer[V]](r *mmap.ReaderAt) (*DiskKDBush[V, VP],
 	nodeSize := int(diskByteOrder.Uint64(header[8:16]))
 	numPoints := int(diskByteOrder.Uint64(header[16:24]))
 
-	idxsOff := int64(diskHeaderSize)
+	idxsOff := offset + int64(diskHeaderSize)
 	coordsOff := idxsOff + int64(numPoints)*8
 	dataOffsetsOff := coordsOff + int64(numPoints)*16
 	dataBlobsOff := dataOffsetsOff + int64(numPoints+1)*8
