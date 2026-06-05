@@ -2,6 +2,7 @@
   "releases",
   "cache-v3",
   "countries",
+  "low-memory-cache",
   "master",
   "stream-points-saving"
 ]
