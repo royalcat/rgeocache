@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"os"
 	"time"
 	"unique"
 
@@ -160,23 +159,19 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 
 // LoadMmapResult holds the results of loading a v2 cache via mmap.
 type LoadMmapResult struct {
-	DiskBush      *kdbush.DiskKDBush[V2PointData, *V2PointData]
-	NameHandles   []unique.Handle[string]
-	StreetHandles []unique.Handle[string]
+	DiskBush       *kdbush.DiskKDBush[V2PointData, *V2PointData]
+	NameHandles    []unique.Handle[string]
+	StreetHandles  []unique.Handle[string]
 	HouseNumHandles []unique.Handle[string]
-	CityHandles   []unique.Handle[string]
-	RegionHandles []unique.Handle[string]
-	Zones         []cachemodel.Zone
-	Metadata      *cachemodel.Metadata
-	mmapReader    *mmap.ReaderAt // underlying mmap for lifecycle
-	tempFile      string         // temp file for KDBH block, if any
+	CityHandles    []unique.Handle[string]
+	RegionHandles  []unique.Handle[string]
+	Zones          []cachemodel.Zone
+	Metadata       *cachemodel.Metadata
+	mmapReader     *mmap.ReaderAt // underlying mmap for lifecycle
 }
 
 // Close releases resources held by the result.
 func (r *LoadMmapResult) Close() error {
-	if r.tempFile != "" {
-		os.Remove(r.tempFile)
-	}
 	return r.mmapReader.Close()
 }
 
@@ -247,11 +242,7 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 	zones := resolveZones(parsedZones, &stringsTable)
 
 	// The KDBH block starts at the current offset.
-	// Extract it to a temp file, mmap that, and open DiskKDBush.
-	kdbhOffset := offset
-	kdbhLen := int64(reader.Len()) - kdbhOffset
-
-	diskBush, tempFile, err := openDiskBush(reader, kdbhOffset, kdbhLen)
+	diskBush, err := kdbush.OpenDisk[V2PointData, *V2PointData](reader, offset)
 	if err != nil {
 		return nil, fmt.Errorf("v2 mmap: failed to open disk bush: %w", err)
 	}
@@ -282,52 +273,7 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 			DateCreated: dateCreated,
 		},
 		mmapReader: reader,
-		tempFile:   tempFile,
 	}, nil
-}
-
-// openDiskBush extracts the KDBH block to a temp file, mmaps it, and opens DiskKDBush.
-// Returns the temp file path (empty if no temp file was needed) for cleanup.
-func openDiskBush(reader *mmap.ReaderAt, offset, length int64) (*kdbush.DiskKDBush[V2PointData, *V2PointData], string, error) {
-	// Extract KDBH block to temp file
-	f, err := os.CreateTemp("", "rgeocache-kdbh-*.rgc")
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to create temp file for KDBH: %w", err)
-	}
-	tempPath := f.Name()
-
-	// Copy KDBH block from mmap to temp file
-	buf := make([]byte, length)
-	if _, err := reader.ReadAt(buf, offset); err != nil {
-		f.Close()
-		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("failed to read KDBH block: %w", err)
-	}
-	if _, err := f.Write(buf); err != nil {
-		f.Close()
-		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("failed to write KDBH temp file: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("failed to close KDBH temp file: %w", err)
-	}
-
-	// Mmap the temp file
-	kdbhReader, err := mmap.Open(tempPath)
-	if err != nil {
-		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("failed to mmap KDBH temp file: %w", err)
-	}
-
-	diskBush, err := kdbush.OpenDisk[V2PointData, *V2PointData](kdbhReader)
-	if err != nil {
-		kdbhReader.Close()
-		os.Remove(tempPath)
-		return nil, "", fmt.Errorf("failed to open disk bush: %w", err)
-	}
-
-	return diskBush, tempPath, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -340,10 +286,6 @@ func readProto(r io.Reader, size uint32, msg proto.Message) error {
 		return err
 	}
 	return proto.Unmarshal(buf, msg)
-}
-
-func readAt(r *mmap.ReaderAt, offset int64, p []byte) (int, error) {
-	return r.ReadAt(p, offset)
 }
 
 // resolveHandles converts a string slice to unique.Handle[string] slice.

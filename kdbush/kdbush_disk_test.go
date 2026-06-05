@@ -84,7 +84,7 @@ func buildAndOpen(t *testing.T, pts []Point[testData], nodeSize int) *DiskKDBush
 	}
 	t.Cleanup(func() { r.Close() })
 
-	disk, err := OpenDisk[testData, *testData](r)
+	disk, err := OpenDisk[testData, *testData](r, 0)
 	if err != nil {
 		t.Fatalf("OpenDisk: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestDisk_InvalidMagic(t *testing.T) {
 	data := make([]byte, diskHeaderSize)
 	copy(data[0:4], []byte("NOPE"))
 
-	_, err := OpenDisk[testData, *testData](writeTempFile(t, data))
+	_, err := OpenDisk[testData, *testData](writeTempFile(t, data), 0)
 	if err == nil {
 		t.Fatal("expected error for invalid magic bytes")
 	}
@@ -365,14 +365,14 @@ func TestDisk_InvalidVersion(t *testing.T) {
 	copy(data[0:4], diskMagic[:])
 	diskByteOrder.PutUint32(data[4:8], 99)
 
-	_, err := OpenDisk[testData, *testData](writeTempFile(t, data))
+	_, err := OpenDisk[testData, *testData](writeTempFile(t, data), 0)
 	if err == nil {
 		t.Fatal("expected error for unsupported version")
 	}
 }
 
 func TestDisk_TruncatedHeader(t *testing.T) {
-	_, err := OpenDisk[testData, *testData](writeTempFile(t, []byte("KDB")))
+	_, err := OpenDisk[testData, *testData](writeTempFile(t, []byte("KDB")), 0)
 	if err == nil {
 		t.Fatal("expected error for truncated header")
 	}
@@ -468,7 +468,7 @@ func BenchmarkDisk(b *testing.B) {
 	}
 	b.Cleanup(func() { r.Close() })
 
-	disk, err := OpenDisk[testData, *testData](r)
+	disk, err := OpenDisk[testData, *testData](r, 0)
 	if err != nil {
 		b.Fatalf("OpenDisk: %v", err)
 	}
