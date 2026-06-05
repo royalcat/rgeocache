@@ -25,7 +25,7 @@ const MaxBodySize = 32 * 1000 * 1000 // 32MB
 
 var meter = otel.Meter("github.com/royalcat/rgeocache/server")
 
-func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder, log *slog.Logger) error {
+func Run(ctx context.Context, address string, rgeo geocoder.Geocoder, log *slog.Logger) error {
 	if err := setupTelemetry(ctx); err != nil {
 		return fmt.Errorf("failed to initialize otel metrics: %w", err)
 	}
@@ -79,7 +79,7 @@ func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder, log *slo
 }
 
 type server struct {
-	rgeo *geocoder.RGeoCoder
+	rgeo geocoder.Geocoder
 
 	metricHttpAddressCallCount      metric.Int64Counter
 	metricHttpAddressMultiCallCount metric.Int64Counter

@@ -11,6 +11,7 @@ import (
 
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
+	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
@@ -63,6 +64,16 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemod
 		points, zones, metadata, err := loadV1Cache(reader)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error loading v1 cache: %s", err.Error())
+		}
+		if metadata != nil {
+			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated)
+		}
+		return points, zones, nil
+	case savev2.COMPATIBILITY_LEVEL:
+		log.Info("Loading v2 cache format")
+		points, zones, metadata, err := loadV2Cache(reader)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error loading v2 cache: %s", err.Error())
 		}
 		if metadata != nil {
 			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated)

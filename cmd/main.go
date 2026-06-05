@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/royalcat/osmpbfdb"
+	"github.com/royalcat/rgeocache/cachesaver/save/v2"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
 	"github.com/royalcat/rgeocache/internal/stats"
@@ -57,6 +59,11 @@ func main() {
 					&cli.StringFlag{
 						Name:  "listen",
 						Value: ":8080",
+					},
+					&cli.BoolFlag{
+						Name:  "no-mmap",
+						Usage: "Disable mmap and load v2 cache fully into memory",
+						Value: false,
 					},
 				},
 				Action: serve,
@@ -312,20 +319,67 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	cacheFile := cmd.String("points")
+	noMmap := cmd.Bool("no-mmap")
 
-	err := geocoder.PrintCacheSizeAnalysisForFile(cacheFile)
-	if err != nil {
-		log.Error("Failed to analyze cache file", "error", err)
+	// Detect cache format to decide loading path
+	isV2 := detectV2Cache(cacheFile)
+
+	var rgeo geocoder.Geocoder
+	var closer io.Closer
+
+	if isV2 && !noMmap {
+		log.Info("Detected v2 cache, loading via mmap (use --no-mmap to force full load)")
+		rgeoDisk, err := geocoder.LoadGeoCoderFromFileDisk(cacheFile,
+			geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
+		if err != nil {
+			return err
+		}
+		rgeo = rgeoDisk
+		closer = rgeoDisk
+	} else {
+		if isV2 {
+			log.Info("Detected v2 cache, loading fully into memory (--no-mmap)")
+		}
+		rgeoMem, err := geocoder.LoadGeoCoderFromFile(cacheFile,
+			geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
+		if err != nil {
+			return err
+		}
+		rgeo = rgeoMem
 	}
 
-	rgeo, err := geocoder.LoadGeoCoderFromFile(cacheFile, geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
-	if err != nil {
-		return err
+	if closer != nil {
+		defer closer.Close()
 	}
 
 	runtime.GC()
 
 	return server.Run(ctx, cmd.String("listen"), rgeo, log)
+}
+
+// detectV2Cache reads the first 8 bytes of a cache file and returns true
+// if it's a v2 format cache (magic "RGEO" + compat level 2).
+func detectV2Cache(file string) bool {
+	f, err := os.Open(file)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	var magic [4]byte
+	if _, err := f.Read(magic[:]); err != nil {
+		return false
+	}
+	if string(magic[:]) != "RGEO" {
+		return false
+	}
+
+	var compatBuf [4]byte
+	if _, err := f.Read(compatBuf[:]); err != nil {
+		return false
+	}
+
+	return binary.LittleEndian.Uint32(compatBuf[:]) == savev2.COMPATIBILITY_LEVEL
 }
 
 func tuneGC() error {
