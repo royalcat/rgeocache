@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package cachesaver.save.v2;
+
+option go_package = "./savev2proto";
+
+message V2Header {
+  uint32 metadata_size = 1;
+  uint32 strings_size = 2;
+  uint32 zones_size = 3;
+}
+
+message StringsTableV2 {
+  repeated string names = 1;
+  repeated string streets = 2;
+  repeated string house_numbers = 3;
+  repeated string cities = 4;
+  repeated string regions = 5;
+}
