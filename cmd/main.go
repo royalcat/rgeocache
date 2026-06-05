@@ -17,7 +17,7 @@ import (
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/royalcat/osmpbfdb"
-	"github.com/royalcat/rgeocache/cachesaver/save/v2"
+	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
 	"github.com/royalcat/rgeocache/internal/stats"
@@ -191,7 +191,7 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 
 	if pprofListen := cmd.String("pprof.listen"); pprofListen != "" {
 		go func() {
-			log.Info("Starting pprof server")
+			log.Info("Starting pprof server", "address", pprofListen)
 			err := http.ListenAndServe(pprofListen, nil)
 			if err != nil {
 				log.Error("Error starting pprof server", "error", err)
@@ -302,7 +302,7 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 
 	if pprofListen := cmd.String("pprof.listen"); pprofListen != "" {
 		go func() {
-			log.Info("Starting pprof server")
+			log.Info("Starting pprof server", "address", pprofListen)
 			err := http.ListenAndServe(pprofListen, nil)
 			if err != nil {
 				log.Error("Error starting pprof server", "error", err)
