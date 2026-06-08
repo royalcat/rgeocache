@@ -21,15 +21,12 @@ import (
 // ---------------------------------------------------------------------------
 
 // Load reads a v2 cache from r and returns lazy iterators for points and zones.
-// This is the streaming path that reads everything sequentially.
 func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel.Zone, error], *cachemodel.Metadata, error) {
-	// Read V2Header size
 	var headerSize uint32
 	if err := binary.Read(r, binary.LittleEndian, &headerSize); err != nil {
 		return nil, nil, nil, fmt.Errorf("v2 load: failed to read header size: %w", err)
 	}
 
-	// Read and unmarshal V2Header
 	headerBytes := make([]byte, headerSize)
 	if _, err := io.ReadFull(r, headerBytes); err != nil {
 		return nil, nil, nil, fmt.Errorf("v2 load: failed to read header: %w", err)
@@ -45,50 +42,38 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 		return nil, nil, nil, fmt.Errorf("v2 load: failed to read metadata: %w", err)
 	}
 
-	// Read strings table
-	var stringsTable savev2proto.StringsTableV2
-	if err := readProto(r, header.StringsSize, &stringsTable); err != nil {
-		return nil, nil, nil, fmt.Errorf("v2 load: failed to read strings table: %w", err)
+	// Read string blob into memory (needed for the streaming path)
+	stringsBlob := make([]byte, header.StringsBlobSize)
+	if _, err := io.ReadFull(r, stringsBlob); err != nil {
+		return nil, nil, nil, fmt.Errorf("v2 load: failed to read string blob: %w", err)
 	}
 
-	// Build unique.Handle arrays for O(1) resolution
-	nameHandles := resolveHandles(stringsTable.Names)
-	streetHandles := resolveHandles(stringsTable.Streets)
-	houseNumHandles := resolveHandles(stringsTable.HouseNumbers)
-	cityHandles := resolveHandles(stringsTable.Cities)
-	regionHandles := resolveHandles(stringsTable.Regions)
-
-	// Skip zones section (we'll read it later in the zones iterator)
+	// Read and parse zones section
 	zonesBytes := make([]byte, header.ZonesSize)
 	if _, err := io.ReadFull(r, zonesBytes); err != nil {
-		return nil, nil, nil, fmt.Errorf("v2 load: failed to read zones section: %w", err)
+		return nil, nil, nil, fmt.Errorf("v2 load: failed to read zones: %w", err)
 	}
 
-	// Read KDBH header to get numPoints
+	parsedZones, err := parseV2Zones(zonesBytes)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("v2 load: failed to parse zones: %w", err)
+	}
+
+	// Read KDBH header
 	var kdbhHeader [32]byte
 	if _, err := io.ReadFull(r, kdbhHeader[:]); err != nil {
 		return nil, nil, nil, fmt.Errorf("v2 load: failed to read KDBH header: %w", err)
 	}
 	numPoints := int64(binary.LittleEndian.Uint64(kdbhHeader[16:24]))
 
-	// Read the blobs: each point has a MarshalBinary blob at its original index.
-	// We read them sequentially and resolve to cachemodel.Point.
+	// Points iterator: reads V2PointData blobs and resolves strings from the in-memory blob.
 	pointsIter := func(yield func(cachemodel.Point, error) bool) {
-
-		// KDBH layout after header (32 bytes):
-		//   idxs:    numPoints * 8 bytes
-		//   coords:  numPoints * 16 bytes
-		//   offsets: (numPoints+1) * 8 bytes
-		//   blobs:   concatenated MarshalBinary output
-		//
-		// Skip over idxs + coords to reach the offset table.
 		skipSize := numPoints*8 + numPoints*16
 		if _, err := io.CopyN(io.Discard, r, skipSize); err != nil {
-			yield(cachemodel.Point{}, fmt.Errorf("v2 load: failed to skip tree section: %w", err))
+			yield(cachemodel.Point{}, fmt.Errorf("v2 load: failed to skip tree: %w", err))
 			return
 		}
 
-		// Read all data offsets (we need them to find each blob)
 		offsetTable := make([]int64, numPoints+1)
 		for i := range offsetTable {
 			var buf [8]byte
@@ -99,11 +84,7 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 			offsetTable[i] = int64(binary.LittleEndian.Uint64(buf[:]))
 		}
 
-		// Read each blob in original index order, resolve strings, yield
-		// We need to compute the blob position in the underlying stream.
-		// Since we're reading sequentially from r after the offset table,
-		// the blobs start immediately after.
-		for i := int64(0); i < numPoints; i++ {
+		for i := range numPoints {
 			blobLen := int(offsetTable[i+1] - offsetTable[i])
 			var data V2PointData
 			if blobLen > 0 {
@@ -117,22 +98,15 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 					return
 				}
 			}
-
-			point := resolvePoint(&stringsTable, nameHandles, streetHandles, houseNumHandles, cityHandles, regionHandles, data)
+			point := resolvePointFromBlob(stringsBlob, data)
 			if !yield(point, nil) {
 				return
 			}
 		}
 	}
 
-	parsedZones, err := parseZonesSection(zonesBytes)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("v2 load: failed to parse zones: %w", err)
-	}
-	zoneHandles := resolveZones(parsedZones, &stringsTable)
-
 	zonesIter := func(yield func(cachemodel.Zone, error) bool) {
-		for _, z := range zoneHandles {
+		for _, z := range parsedZones {
 			if !yield(z, nil) {
 				return
 			}
@@ -159,15 +133,12 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 
 // LoadMmapResult holds the results of loading a v2 cache via mmap.
 type LoadMmapResult struct {
-	DiskBush       *kdbush.DiskKDBush[V2PointData, *V2PointData]
-	NameHandles    []unique.Handle[string]
-	StreetHandles  []unique.Handle[string]
-	HouseNumHandles []unique.Handle[string]
-	CityHandles    []unique.Handle[string]
-	RegionHandles  []unique.Handle[string]
-	Zones          []cachemodel.Zone
-	Metadata       *cachemodel.Metadata
-	mmapReader     *mmap.ReaderAt // underlying mmap for lifecycle
+	DiskBush          *kdbush.DiskKDBush[V2PointData, *V2PointData]
+	StringsBlobOffset int64 // byte offset of the string blob within the mmap'd file
+	StringsBlobSize   int64
+	Zones             []cachemodel.Zone
+	Metadata          *cachemodel.Metadata
+	mmapReader        *mmap.ReaderAt
 }
 
 // Close releases resources held by the result.
@@ -176,12 +147,7 @@ func (r *LoadMmapResult) Close() error {
 }
 
 // LoadMmap opens a v2 cache from a memory-mapped file.
-// The returned LoadMmapResult must be closed after use.
 func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
-	// Read magic + compat level (already verified by caller, but re-read for offset)
-	// The mmap reader points to the full file. After magic(4) + compat(4),
-	// we're at the V2Header size.
-
 	offset := int64(8) // skip magic(4) + compat(4)
 
 	// Read V2Header size
@@ -216,17 +182,10 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 		return nil, fmt.Errorf("v2 mmap: failed to unmarshal metadata: %w", err)
 	}
 
-	// Read strings table
-	stringsBytes := make([]byte, header.StringsSize)
-	if _, err := reader.ReadAt(stringsBytes, offset); err != nil {
-		return nil, fmt.Errorf("v2 mmap: failed to read strings: %w", err)
-	}
-	offset += int64(header.StringsSize)
-
-	var stringsTable savev2proto.StringsTableV2
-	if err := proto.Unmarshal(stringsBytes, &stringsTable); err != nil {
-		return nil, fmt.Errorf("v2 mmap: failed to unmarshal strings: %w", err)
-	}
+	// Record string blob position (don't read it — lazy access)
+	stringsBlobOffset := offset
+	stringsBlobSize := int64(header.StringsBlobSize)
+	offset += int64(header.StringsBlobSize)
 
 	// Read and parse zones section
 	zonesBytes := make([]byte, header.ZonesSize)
@@ -235,13 +194,12 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 	}
 	offset += int64(header.ZonesSize)
 
-	parsedZones, err := parseZonesSection(zonesBytes)
+	parsedZones, err := parseV2Zones(zonesBytes)
 	if err != nil {
 		return nil, fmt.Errorf("v2 mmap: failed to parse zones: %w", err)
 	}
-	zones := resolveZones(parsedZones, &stringsTable)
 
-	// The KDBH block starts at the current offset.
+	// Open DiskKDBush at the KDBH block offset
 	diskBush, err := kdbush.OpenDisk[V2PointData, *V2PointData](reader, offset)
 	if err != nil {
 		return nil, fmt.Errorf("v2 mmap: failed to open disk bush: %w", err)
@@ -252,21 +210,11 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 		return nil, fmt.Errorf("v2 mmap: failed to parse date: %w", err)
 	}
 
-	// Resolve string handles
-	nameHandles := resolveHandles(stringsTable.Names)
-	streetHandles := resolveHandles(stringsTable.Streets)
-	houseNumHandles := resolveHandles(stringsTable.HouseNumbers)
-	cityHandles := resolveHandles(stringsTable.Cities)
-	regionHandles := resolveHandles(stringsTable.Regions)
-
 	return &LoadMmapResult{
-		DiskBush:       diskBush,
-		NameHandles:    nameHandles,
-		StreetHandles:  streetHandles,
-		HouseNumHandles: houseNumHandles,
-		CityHandles:    cityHandles,
-		RegionHandles:  regionHandles,
-		Zones:          zones,
+		DiskBush:          diskBush,
+		StringsBlobOffset: stringsBlobOffset,
+		StringsBlobSize:   stringsBlobSize,
+		Zones:             parsedZones,
 		Metadata: &cachemodel.Metadata{
 			Version:     metadata.Version,
 			Locale:      metadata.Locale,
@@ -277,7 +225,7 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 }
 
 // ---------------------------------------------------------------------------
-// Shared helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
 func readProto(r io.Reader, size uint32, msg proto.Message) error {
@@ -288,110 +236,59 @@ func readProto(r io.Reader, size uint32, msg proto.Message) error {
 	return proto.Unmarshal(buf, msg)
 }
 
-// resolveHandles converts a string slice to unique.Handle[string] slice.
-func resolveHandles(strings []string) []unique.Handle[string] {
-	handles := make([]unique.Handle[string], len(strings))
-	for i, s := range strings {
-		handles[i] = unique.Make(s)
-	}
-	return handles
-}
-
-// resolvePoint converts V2PointData to cachemodel.Point using the string tables.
-func resolvePoint(
-	stringsTable *savev2proto.StringsTableV2,
-	nameHandles, streetHandles, houseNumHandles, cityHandles, regionHandles []unique.Handle[string],
-	data V2PointData,
-) cachemodel.Point {
-	// We don't have coords here since they're stored in the KDBH index.
-	// For the streaming path, coords are embedded in the KDBH tree section
-	// which we skipped. We return a point with (0,0) as coordinates since
-	// the caller will use the KD-tree for spatial queries anyway.
+// resolvePointFromBlob resolves V2PointData to cachemodel.Point using an in-memory string blob.
+func resolvePointFromBlob(blob []byte, data V2PointData) cachemodel.Point {
 	return cachemodel.Point{
-		X: 0, Y: 0, // coords not available in streaming path without KD-tree traversal
+		X: 0, Y: 0, // coords not available in streaming path
 		Data: cachemodel.Info{
-			Name:        nameHandles[data.NameStrIdx],
-			Street:      streetHandles[data.StreetStrIdx],
-			HouseNumber: houseNumHandles[data.HouseNumberStrIdx],
-			City:        cityHandles[data.CityStrIdx],
-			Region:      regionHandles[data.RegionStrIdx],
+			Name:        unique.Make(readStr(blob, data.NameOffset, data.NameLen)),
+			Street:      unique.Make(readStr(blob, data.StreetOffset, data.StreetLen)),
+			HouseNumber: unique.Make(readStr(blob, data.HouseNumberOffset, data.HouseNumberLen)),
+			City:        unique.Make(readStr(blob, data.CityOffset, data.CityLen)),
+			Region:      unique.Make(readStr(blob, data.RegionOffset, data.RegionLen)),
 			Weight:      data.Weight,
 		},
 	}
 }
 
-// parsedZone holds a single zone with its type before conversion to cachemodel.Zone.
-type parsedZone struct {
-	Type savev1proto.ZoneType
-	Zone *savev1proto.Zone
+// readStr reads a string from a byte slice at the given offset and length.
+func readStr(blob []byte, off int64, length uint32) string {
+	if length == 0 {
+		return ""
+	}
+	end := off + int64(length)
+	if off < 0 || end > int64(len(blob)) {
+		return ""
+	}
+	return string(blob[off:end])
 }
 
-// parseZonesSection parses the binary-framed zones section.
-func parseZonesSection(data []byte) ([]parsedZone, error) {
-	if len(data) < 4 {
-		return nil, nil
+// parseV2Zones parses the V2ZonesSection protobuf.
+func parseV2Zones(data []byte) ([]cachemodel.Zone, error) {
+	var section savev2proto.V2ZonesSection
+	if err := proto.Unmarshal(data, &section); err != nil {
+		return nil, fmt.Errorf("v2: failed to unmarshal zones section: %w", err)
 	}
 
-	count := binary.LittleEndian.Uint32(data[:4])
-	offset := 4
-
-	var zones []parsedZone
-	for range count {
-		if offset+4 > len(data) {
-			return nil, fmt.Errorf("v2: truncated zone blob size at offset %d", offset)
-		}
-		blobSize := binary.LittleEndian.Uint32(data[offset:])
-		offset += 4
-
-		if offset+int(blobSize) > len(data) {
-			return nil, fmt.Errorf("v2: truncated zone blob data at offset %d", offset)
-		}
-
-		var blob savev1proto.ZonesBlob
-		if err := proto.Unmarshal(data[offset:offset+int(blobSize)], &blob); err != nil {
-			return nil, fmt.Errorf("v2: failed to unmarshal zone blob: %w", err)
-		}
-		offset += int(blobSize)
-
-		for _, z := range blob.Zones {
-			zones = append(zones, parsedZone{Type: blob.Type, Zone: z})
-		}
-	}
-
-	return zones, nil
-}
-
-// resolveZones converts parsedZone to cachemodel.Zone.
-func resolveZones(parsed []parsedZone, stringsTable *savev2proto.StringsTableV2) []cachemodel.Zone {
-	regionNames := resolveHandles(stringsTable.Regions)
-	zones := make([]cachemodel.Zone, 0, len(parsed))
-
-	for _, pz := range parsed {
-		zt := cachemodel.ZoneType(0)
-		switch pz.Type {
-		case savev1proto.ZoneType_ZONE_TYPE_REGION:
+	var zones []cachemodel.Zone
+	for _, blob := range section.Blobs {
+		var zt cachemodel.ZoneType
+		switch blob.ZoneType {
+		case 1:
 			zt = cachemodel.ZoneRegion
-		case savev1proto.ZoneType_ZONE_TYPE_COUNTRY:
+		case 2:
 			zt = cachemodel.ZoneCountry
 		default:
 			continue
 		}
-
-		nameIdx := pz.Zone.Name
-		var name unique.Handle[string]
-		if int(nameIdx) < len(regionNames) {
-			name = regionNames[nameIdx]
-		} else {
-			name = unique.Make("")
+		for _, z := range blob.Zones {
+			zones = append(zones, cachemodel.Zone{
+				Type:    zt,
+				Name:    unique.Make(string(z.Name)),
+				Bounds:  mapBoundsFromV2(z.Bounds),
+				Polygon: mapMultiPolygonFromV2(z.MultiPolygon),
+			})
 		}
-
-		zones = append(zones, cachemodel.Zone{
-			Type:    zt,
-			Name:    name,
-			Bounds:  mapBoundsToOrb(pz.Zone.Bounds),
-			Polygon: mapMultiPolygonToOrb(pz.Zone.MultiPolygon),
-		})
 	}
-
-	return zones
+	return zones, nil
 }

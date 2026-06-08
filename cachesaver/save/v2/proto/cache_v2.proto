@@ -6,14 +6,43 @@ option go_package = "./savev2proto";
 
 message V2Header {
   uint32 metadata_size = 1;
-  uint32 strings_size = 2;
+  uint32 strings_blob_size = 2;
   uint32 zones_size = 3;
 }
 
-message StringsTableV2 {
-  repeated string names = 1;
-  repeated string streets = 2;
-  repeated string house_numbers = 3;
-  repeated string cities = 4;
-  repeated string regions = 5;
+message V2ZonesSection {
+  repeated V2ZoneBlob blobs = 1;
+}
+
+message V2ZoneBlob {
+  uint32 zone_type = 1; // 1=region, 2=country
+  repeated V2Zone zones = 2;
+}
+
+message V2Zone {
+  bytes name = 1;
+  Bounds bounds = 2;
+  MultiPolygon multi_polygon = 3;
+}
+
+message Bounds {
+  LatLon max = 1;
+  LatLon min = 2;
+}
+
+message MultiPolygon {
+  repeated Polygon polygons = 1;
+}
+
+message Polygon {
+  repeated Ring rings = 1;
+}
+
+message Ring {
+  repeated LatLon points = 1;
+}
+
+message LatLon {
+  float lat = 1;
+  float lon = 2;
 }

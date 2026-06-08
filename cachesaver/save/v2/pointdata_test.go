@@ -6,11 +6,16 @@ import (
 
 func TestV2PointDataRoundTrip(t *testing.T) {
 	orig := V2PointData{
-		NameStrIdx:        1,
-		StreetStrIdx:      2,
-		HouseNumberStrIdx: 3,
-		CityStrIdx:        4,
-		RegionStrIdx:      5,
+		NameOffset:        10,
+		NameLen:           7,
+		StreetOffset:      20,
+		StreetLen:         12,
+		HouseNumberOffset: 40,
+		HouseNumberLen:    3,
+		CityOffset:        50,
+		CityLen:           6,
+		RegionOffset:      60,
+		RegionLen:         8,
 		Weight:            10,
 	}
 
@@ -62,7 +67,6 @@ func TestV2PointDataUnmarshalShort(t *testing.T) {
 }
 
 func TestV2PointDataZeroValues(t *testing.T) {
-	// All-zero indices should round-trip correctly (index 0 = empty string)
 	orig := V2PointData{Weight: 5}
 	data, err := orig.MarshalBinary()
 	if err != nil {

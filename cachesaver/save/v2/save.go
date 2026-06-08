@@ -24,60 +24,71 @@ const defaultNodeSize = 64
 //	[8..11]      uint32 v2header_size
 //	[12..H]      V2Header protobuf
 //	[H+..]       CacheMetadata protobuf
-//	[..+M]       StringsTableV2 protobuf
-//	[..+S]       ZonesSection protobuf
-//	[..+Z]       KDBH binary block (standard DiskKDBush format)
+//	[..+M]       raw string blob (concatenated unique strings)
+//	[..+S]       ZonesSection protobuf (V2ZonesSection)
+//	[..+Z]       KDBH binary block
 func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], meta cachemodel.Metadata) error {
 	dedup := newStringsDedup()
 
-	// Phase 1: Materialize points, build dedup maps
-	var v2points []kdbush.Point[V2PointData]
+	// Phase 1: Materialize points with placeholder data, collect zone info.
+	// We can't fill V2PointData yet because string offsets aren't known until
+	// the string blob is built.
+	type rawPoint struct {
+		x, y float64
+		name, street, houseNumber, city, region string
+		weight uint8
+	}
+	var rawPoints []rawPoint
 	for p := range points {
-		v2points = append(v2points, kdbush.Point[V2PointData]{
-			X: p.X,
-			Y: p.Y,
-			Data: V2PointData{
-				NameStrIdx:        uint32(dedup.names.Add(p.Data.Name.Value())),
-				StreetStrIdx:      uint32(dedup.streets.Add(p.Data.Street.Value())),
-				HouseNumberStrIdx: uint32(dedup.houseNumbers.Add(p.Data.HouseNumber.Value())),
-				CityStrIdx:        uint32(dedup.cities.Add(p.Data.City.Value())),
-				RegionStrIdx:      uint32(dedup.regions.Add(p.Data.Region.Value())),
-				Weight:            p.Data.Weight,
-			},
+		rawPoints = append(rawPoints, rawPoint{
+			x: p.X, y: p.Y,
+			name:        p.Data.Name.Value(),
+			street:      p.Data.Street.Value(),
+			houseNumber: p.Data.HouseNumber.Value(),
+			city:        p.Data.City.Value(),
+			region:      p.Data.Region.Value(),
+			weight:      p.Data.Weight,
 		})
+		// Register strings in dedup maps to reserve offsets
+		dedup.names.Add(p.Data.Name.Value())
+		dedup.streets.Add(p.Data.Street.Value())
+		dedup.houseNumbers.Add(p.Data.HouseNumber.Value())
+		dedup.cities.Add(p.Data.City.Value())
+		dedup.regions.Add(p.Data.Region.Value())
 	}
 
-	// Phase 2: Materialize zones
-	var regionProtos []*savev1proto.Zone
-	var countryProtos []*savev1proto.Zone
-	for z := range zones {
-		nameIdx := uint32(dedup.regions.Add(z.Name.Value()))
-		protoZone := &savev1proto.Zone{
-			Name:         nameIdx,
-			Bounds:       mapBoundsFromOrb(z.Bounds),
-			MultiPolygon: mapMultiPolygonFromOrb(z.Polygon),
-		}
-		switch z.Type {
-		case cachemodel.ZoneRegion:
-			regionProtos = append(regionProtos, protoZone)
-		case cachemodel.ZoneCountry:
-			countryProtos = append(countryProtos, protoZone)
-		}
-	}
+	// Phase 2: Build string blob and finalize V2PointData
+	stringsBlob := buildStringsBlob(dedup)
 
-	// Phase 3: Marshal supporting sections
-	stringsTable := &savev2proto.StringsTableV2{
-		Names:        dedup.names.Slice(),
-		Streets:      dedup.streets.Slice(),
-		HouseNumbers: dedup.houseNumbers.Slice(),
-		Cities:       dedup.cities.Slice(),
-		Regions:      dedup.regions.Slice(),
+	v2points := make([]kdbush.Point[V2PointData], len(rawPoints))
+	for i, rp := range rawPoints {
+		v2points[i] = kdbush.Point[V2PointData]{
+			X: rp.x, Y: rp.y,
+			Data: V2PointData{
+				NameOffset:        dedup.names.Add(rp.name).offset,
+				NameLen:           dedup.names.Add(rp.name).length,
+				StreetOffset:      dedup.streets.Add(rp.street).offset,
+				StreetLen:         dedup.streets.Add(rp.street).length,
+				HouseNumberOffset: dedup.houseNumbers.Add(rp.houseNumber).offset,
+				HouseNumberLen:    dedup.houseNumbers.Add(rp.houseNumber).length,
+				CityOffset:        dedup.cities.Add(rp.city).offset,
+				CityLen:           dedup.cities.Add(rp.city).length,
+				RegionOffset:      dedup.regions.Add(rp.region).offset,
+				RegionLen:         dedup.regions.Add(rp.region).length,
+				Weight:            rp.weight,
+			},
+		}
 	}
-	stringsBytes, err := proto.Marshal(stringsTable)
+	rawPoints = nil // release to GC
+
+	// Phase 3: Materialize zones with inline names
+	zonesSection := buildZonesSection(zones)
+	zonesBytes, err := proto.Marshal(zonesSection)
 	if err != nil {
 		return err
 	}
 
+	// Phase 4: Marshal metadata
 	metadataProto := &savev1proto.CacheMetadata{
 		Version:     meta.Version,
 		DateCreated: meta.DateCreated.Format(time.RFC3339),
@@ -88,45 +99,30 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 		return err
 	}
 
-	// Zones section: binary-framed ZonesBlob messages.
-	// Format: [uint32 count] ([uint32 proto_size][proto_bytes])*
-	zonesBytes, err := marshalZonesSection(regionProtos, countryProtos)
-	if err != nil {
-		return err
-	}
-
+	// Phase 5: V2Header
 	header := &savev2proto.V2Header{
-		MetadataSize: uint32(len(metadataBytes)),
-		StringsSize:  uint32(len(stringsBytes)),
-		ZonesSize:    uint32(len(zonesBytes)),
+		MetadataSize:    uint32(len(metadataBytes)),
+		StringsBlobSize: uint32(len(stringsBlob)),
+		ZonesSize:       uint32(len(zonesBytes)),
 	}
 	headerBytes, err := proto.Marshal(header)
 	if err != nil {
 		return err
 	}
 
-	// Phase 4: Write everything sequentially
-	// Magic bytes + compat level (written by caller in cachesaver.SaveV2)
-
-	// V2Header size + V2Header
+	// Phase 6: Write everything sequentially
 	if err := binary.Write(w, binary.LittleEndian, uint32(len(headerBytes))); err != nil {
 		return err
 	}
 	if _, err := w.Write(headerBytes); err != nil {
 		return err
 	}
-
-	// CacheMetadata
 	if _, err := w.Write(metadataBytes); err != nil {
 		return err
 	}
-
-	// StringsTableV2
-	if _, err := w.Write(stringsBytes); err != nil {
+	if _, err := w.Write(stringsBlob); err != nil {
 		return err
 	}
-
-	// ZonesSection (binary-framed)
 	if _, err := w.Write(zonesBytes); err != nil {
 		return err
 	}
@@ -139,61 +135,51 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 	return nil
 }
 
-// marshalZonesSection packs regions and countries into a binary-framed sequence
-// of ZonesBlob messages. Each blob preserves its type via the ZoneType field.
-//
-// Binary format:
-//
-//	[uint32 count]  number of zone blobs
-//	for each blob:
-//	  [uint32 proto_size]
-//	  [proto_bytes]  protobuf-encoded ZonesBlob
-func marshalZonesSection(regions, countries []*savev1proto.Zone) ([]byte, error) {
-	const blobChunkSize = 100
-
-	var blobs [][]byte
-
-	writeChunks := func(zones []*savev1proto.Zone, zt savev1proto.ZoneType) error {
-		for i := 0; i < len(zones); i += blobChunkSize {
-			end := min(i+blobChunkSize, len(zones))
-			blob := &savev1proto.ZonesBlob{
-				Type:  zt,
-				Zones: zones[i:end],
-			}
-			blobBytes, err := proto.Marshal(blob)
-			if err != nil {
-				return err
-			}
-			blobs = append(blobs, blobBytes)
+// buildStringsBlob concatenates all dedup'd strings into a single blob.
+// All dedup maps share the same underlying map, so we only need to iterate one.
+func buildStringsBlob(dedup *stringsDedup) []byte {
+	dm := dedup.names // shared across all categories
+	blob := make([]byte, dm.nextOff)
+	for s, off := range dm.m {
+		if off.length == 0 {
+			continue
 		}
-		return nil
+		copy(blob[off.offset:off.offset+int64(off.length)], s)
+	}
+	return blob
+}
+
+// buildZonesSection converts zones to V2ZonesSection proto with inline names and geometry.
+func buildZonesSection(zones iter.Seq[cachemodel.Zone]) *savev2proto.V2ZonesSection {
+	var regionZones []*savev2proto.V2Zone
+	var countryZones []*savev2proto.V2Zone
+
+	for z := range zones {
+		v2z := &savev2proto.V2Zone{
+			Name:         []byte(z.Name.Value()),
+			Bounds:       mapBoundsToV2(z.Bounds),
+			MultiPolygon: mapMultiPolygonToV2(z.Polygon),
+		}
+		switch z.Type {
+		case cachemodel.ZoneRegion:
+			regionZones = append(regionZones, v2z)
+		case cachemodel.ZoneCountry:
+			countryZones = append(countryZones, v2z)
+		}
 	}
 
-	if err := writeChunks(regions, savev1proto.ZoneType_ZONE_TYPE_REGION); err != nil {
-		return nil, err
+	sec := &savev2proto.V2ZonesSection{}
+	if len(regionZones) > 0 {
+		sec.Blobs = append(sec.Blobs, &savev2proto.V2ZoneBlob{
+			ZoneType: 1,
+			Zones:    regionZones,
+		})
 	}
-	if err := writeChunks(countries, savev1proto.ZoneType_ZONE_TYPE_COUNTRY); err != nil {
-		return nil, err
+	if len(countryZones) > 0 {
+		sec.Blobs = append(sec.Blobs, &savev2proto.V2ZoneBlob{
+			ZoneType: 2,
+			Zones:    countryZones,
+		})
 	}
-
-	// Calculate total size
-	totalSize := 4 // count uint32
-	for _, b := range blobs {
-		totalSize += 4 + len(b) // size uint32 + proto bytes
-	}
-
-	buf := make([]byte, totalSize)
-	offset := 0
-
-	binary.LittleEndian.PutUint32(buf[offset:], uint32(len(blobs)))
-	offset += 4
-
-	for _, b := range blobs {
-		binary.LittleEndian.PutUint32(buf[offset:], uint32(len(b)))
-		offset += 4
-		copy(buf[offset:], b)
-		offset += len(b)
-	}
-
-	return buf, nil
+	return sec
 }
