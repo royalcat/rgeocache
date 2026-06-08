@@ -22,12 +22,12 @@ const (
 )
 
 type V2Header struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	MetadataSize  uint32                 `protobuf:"varint,1,opt,name=metadata_size,json=metadataSize,proto3" json:"metadata_size,omitempty"`
-	StringsSize   uint32                 `protobuf:"varint,2,opt,name=strings_size,json=stringsSize,proto3" json:"strings_size,omitempty"`
-	ZonesSize     uint32                 `protobuf:"varint,3,opt,name=zones_size,json=zonesSize,proto3" json:"zones_size,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	MetadataSize    uint32                 `protobuf:"varint,1,opt,name=metadata_size,json=metadataSize,proto3" json:"metadata_size,omitempty"`
+	StringsBlobSize uint32                 `protobuf:"varint,2,opt,name=strings_blob_size,json=stringsBlobSize,proto3" json:"strings_blob_size,omitempty"`
+	ZonesSize       uint32                 `protobuf:"varint,3,opt,name=zones_size,json=zonesSize,proto3" json:"zones_size,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *V2Header) Reset() {
@@ -67,9 +67,9 @@ func (x *V2Header) GetMetadataSize() uint32 {
 	return 0
 }
 
-func (x *V2Header) GetStringsSize() uint32 {
+func (x *V2Header) GetStringsBlobSize() uint32 {
 	if x != nil {
-		return x.StringsSize
+		return x.StringsBlobSize
 	}
 	return 0
 }
@@ -81,31 +81,27 @@ func (x *V2Header) GetZonesSize() uint32 {
 	return 0
 }
 
-type StringsTableV2 struct {
+type V2ZonesSection struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Names         []string               `protobuf:"bytes,1,rep,name=names,proto3" json:"names,omitempty"`
-	Streets       []string               `protobuf:"bytes,2,rep,name=streets,proto3" json:"streets,omitempty"`
-	HouseNumbers  []string               `protobuf:"bytes,3,rep,name=house_numbers,json=houseNumbers,proto3" json:"house_numbers,omitempty"`
-	Cities        []string               `protobuf:"bytes,4,rep,name=cities,proto3" json:"cities,omitempty"`
-	Regions       []string               `protobuf:"bytes,5,rep,name=regions,proto3" json:"regions,omitempty"`
+	Blobs         []*V2ZoneBlob          `protobuf:"bytes,1,rep,name=blobs,proto3" json:"blobs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *StringsTableV2) Reset() {
-	*x = StringsTableV2{}
+func (x *V2ZonesSection) Reset() {
+	*x = V2ZonesSection{}
 	mi := &file_cache_v2_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *StringsTableV2) String() string {
+func (x *V2ZonesSection) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*StringsTableV2) ProtoMessage() {}
+func (*V2ZonesSection) ProtoMessage() {}
 
-func (x *StringsTableV2) ProtoReflect() protoreflect.Message {
+func (x *V2ZonesSection) ProtoReflect() protoreflect.Message {
 	mi := &file_cache_v2_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -117,62 +113,398 @@ func (x *StringsTableV2) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use StringsTableV2.ProtoReflect.Descriptor instead.
-func (*StringsTableV2) Descriptor() ([]byte, []int) {
+// Deprecated: Use V2ZonesSection.ProtoReflect.Descriptor instead.
+func (*V2ZonesSection) Descriptor() ([]byte, []int) {
 	return file_cache_v2_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *StringsTableV2) GetNames() []string {
+func (x *V2ZonesSection) GetBlobs() []*V2ZoneBlob {
 	if x != nil {
-		return x.Names
+		return x.Blobs
 	}
 	return nil
 }
 
-func (x *StringsTableV2) GetStreets() []string {
+type V2ZoneBlob struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ZoneType      uint32                 `protobuf:"varint,1,opt,name=zone_type,json=zoneType,proto3" json:"zone_type,omitempty"` // 1=region, 2=country
+	Zones         []*V2Zone              `protobuf:"bytes,2,rep,name=zones,proto3" json:"zones,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *V2ZoneBlob) Reset() {
+	*x = V2ZoneBlob{}
+	mi := &file_cache_v2_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *V2ZoneBlob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*V2ZoneBlob) ProtoMessage() {}
+
+func (x *V2ZoneBlob) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_v2_proto_msgTypes[2]
 	if x != nil {
-		return x.Streets
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use V2ZoneBlob.ProtoReflect.Descriptor instead.
+func (*V2ZoneBlob) Descriptor() ([]byte, []int) {
+	return file_cache_v2_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *V2ZoneBlob) GetZoneType() uint32 {
+	if x != nil {
+		return x.ZoneType
+	}
+	return 0
+}
+
+func (x *V2ZoneBlob) GetZones() []*V2Zone {
+	if x != nil {
+		return x.Zones
 	}
 	return nil
 }
 
-func (x *StringsTableV2) GetHouseNumbers() []string {
+type V2Zone struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          []byte                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Bounds        *Bounds                `protobuf:"bytes,2,opt,name=bounds,proto3" json:"bounds,omitempty"`
+	MultiPolygon  *MultiPolygon          `protobuf:"bytes,3,opt,name=multi_polygon,json=multiPolygon,proto3" json:"multi_polygon,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *V2Zone) Reset() {
+	*x = V2Zone{}
+	mi := &file_cache_v2_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *V2Zone) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*V2Zone) ProtoMessage() {}
+
+func (x *V2Zone) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_v2_proto_msgTypes[3]
 	if x != nil {
-		return x.HouseNumbers
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use V2Zone.ProtoReflect.Descriptor instead.
+func (*V2Zone) Descriptor() ([]byte, []int) {
+	return file_cache_v2_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *V2Zone) GetName() []byte {
+	if x != nil {
+		return x.Name
 	}
 	return nil
 }
 
-func (x *StringsTableV2) GetCities() []string {
+func (x *V2Zone) GetBounds() *Bounds {
 	if x != nil {
-		return x.Cities
+		return x.Bounds
 	}
 	return nil
 }
 
-func (x *StringsTableV2) GetRegions() []string {
+func (x *V2Zone) GetMultiPolygon() *MultiPolygon {
 	if x != nil {
-		return x.Regions
+		return x.MultiPolygon
 	}
 	return nil
+}
+
+type Bounds struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Max           *LatLon                `protobuf:"bytes,1,opt,name=max,proto3" json:"max,omitempty"`
+	Min           *LatLon                `protobuf:"bytes,2,opt,name=min,proto3" json:"min,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Bounds) Reset() {
+	*x = Bounds{}
+	mi := &file_cache_v2_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Bounds) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Bounds) ProtoMessage() {}
+
+func (x *Bounds) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_v2_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Bounds.ProtoReflect.Descriptor instead.
+func (*Bounds) Descriptor() ([]byte, []int) {
+	return file_cache_v2_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Bounds) GetMax() *LatLon {
+	if x != nil {
+		return x.Max
+	}
+	return nil
+}
+
+func (x *Bounds) GetMin() *LatLon {
+	if x != nil {
+		return x.Min
+	}
+	return nil
+}
+
+type MultiPolygon struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Polygons      []*Polygon             `protobuf:"bytes,1,rep,name=polygons,proto3" json:"polygons,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MultiPolygon) Reset() {
+	*x = MultiPolygon{}
+	mi := &file_cache_v2_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MultiPolygon) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MultiPolygon) ProtoMessage() {}
+
+func (x *MultiPolygon) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_v2_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MultiPolygon.ProtoReflect.Descriptor instead.
+func (*MultiPolygon) Descriptor() ([]byte, []int) {
+	return file_cache_v2_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *MultiPolygon) GetPolygons() []*Polygon {
+	if x != nil {
+		return x.Polygons
+	}
+	return nil
+}
+
+type Polygon struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rings         []*Ring                `protobuf:"bytes,1,rep,name=rings,proto3" json:"rings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Polygon) Reset() {
+	*x = Polygon{}
+	mi := &file_cache_v2_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Polygon) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Polygon) ProtoMessage() {}
+
+func (x *Polygon) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_v2_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Polygon.ProtoReflect.Descriptor instead.
+func (*Polygon) Descriptor() ([]byte, []int) {
+	return file_cache_v2_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Polygon) GetRings() []*Ring {
+	if x != nil {
+		return x.Rings
+	}
+	return nil
+}
+
+type Ring struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Points        []*LatLon              `protobuf:"bytes,1,rep,name=points,proto3" json:"points,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Ring) Reset() {
+	*x = Ring{}
+	mi := &file_cache_v2_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Ring) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Ring) ProtoMessage() {}
+
+func (x *Ring) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_v2_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Ring.ProtoReflect.Descriptor instead.
+func (*Ring) Descriptor() ([]byte, []int) {
+	return file_cache_v2_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Ring) GetPoints() []*LatLon {
+	if x != nil {
+		return x.Points
+	}
+	return nil
+}
+
+type LatLon struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Lat           float32                `protobuf:"fixed32,1,opt,name=lat,proto3" json:"lat,omitempty"`
+	Lon           float32                `protobuf:"fixed32,2,opt,name=lon,proto3" json:"lon,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LatLon) Reset() {
+	*x = LatLon{}
+	mi := &file_cache_v2_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LatLon) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LatLon) ProtoMessage() {}
+
+func (x *LatLon) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_v2_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LatLon.ProtoReflect.Descriptor instead.
+func (*LatLon) Descriptor() ([]byte, []int) {
+	return file_cache_v2_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *LatLon) GetLat() float32 {
+	if x != nil {
+		return x.Lat
+	}
+	return 0
+}
+
+func (x *LatLon) GetLon() float32 {
+	if x != nil {
+		return x.Lon
+	}
+	return 0
 }
 
 var File_cache_v2_proto protoreflect.FileDescriptor
 
 const file_cache_v2_proto_rawDesc = "" +
 	"\n" +
-	"\x0ecache_v2.proto\x12\x12cachesaver.save.v2\"q\n" +
+	"\x0ecache_v2.proto\x12\x12cachesaver.save.v2\"z\n" +
 	"\bV2Header\x12#\n" +
-	"\rmetadata_size\x18\x01 \x01(\rR\fmetadataSize\x12!\n" +
-	"\fstrings_size\x18\x02 \x01(\rR\vstringsSize\x12\x1d\n" +
+	"\rmetadata_size\x18\x01 \x01(\rR\fmetadataSize\x12*\n" +
+	"\x11strings_blob_size\x18\x02 \x01(\rR\x0fstringsBlobSize\x12\x1d\n" +
 	"\n" +
-	"zones_size\x18\x03 \x01(\rR\tzonesSize\"\x97\x01\n" +
-	"\x0eStringsTableV2\x12\x14\n" +
-	"\x05names\x18\x01 \x03(\tR\x05names\x12\x18\n" +
-	"\astreets\x18\x02 \x03(\tR\astreets\x12#\n" +
-	"\rhouse_numbers\x18\x03 \x03(\tR\fhouseNumbers\x12\x16\n" +
-	"\x06cities\x18\x04 \x03(\tR\x06cities\x12\x18\n" +
-	"\aregions\x18\x05 \x03(\tR\aregionsB\x0fZ\r./savev2protob\x06proto3"
+	"zones_size\x18\x03 \x01(\rR\tzonesSize\"F\n" +
+	"\x0eV2ZonesSection\x124\n" +
+	"\x05blobs\x18\x01 \x03(\v2\x1e.cachesaver.save.v2.V2ZoneBlobR\x05blobs\"[\n" +
+	"\n" +
+	"V2ZoneBlob\x12\x1b\n" +
+	"\tzone_type\x18\x01 \x01(\rR\bzoneType\x120\n" +
+	"\x05zones\x18\x02 \x03(\v2\x1a.cachesaver.save.v2.V2ZoneR\x05zones\"\x97\x01\n" +
+	"\x06V2Zone\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\fR\x04name\x122\n" +
+	"\x06bounds\x18\x02 \x01(\v2\x1a.cachesaver.save.v2.BoundsR\x06bounds\x12E\n" +
+	"\rmulti_polygon\x18\x03 \x01(\v2 .cachesaver.save.v2.MultiPolygonR\fmultiPolygon\"d\n" +
+	"\x06Bounds\x12,\n" +
+	"\x03max\x18\x01 \x01(\v2\x1a.cachesaver.save.v2.LatLonR\x03max\x12,\n" +
+	"\x03min\x18\x02 \x01(\v2\x1a.cachesaver.save.v2.LatLonR\x03min\"G\n" +
+	"\fMultiPolygon\x127\n" +
+	"\bpolygons\x18\x01 \x03(\v2\x1b.cachesaver.save.v2.PolygonR\bpolygons\"9\n" +
+	"\aPolygon\x12.\n" +
+	"\x05rings\x18\x01 \x03(\v2\x18.cachesaver.save.v2.RingR\x05rings\":\n" +
+	"\x04Ring\x122\n" +
+	"\x06points\x18\x01 \x03(\v2\x1a.cachesaver.save.v2.LatLonR\x06points\",\n" +
+	"\x06LatLon\x12\x10\n" +
+	"\x03lat\x18\x01 \x01(\x02R\x03lat\x12\x10\n" +
+	"\x03lon\x18\x02 \x01(\x02R\x03lonB\x0fZ\r./savev2protob\x06proto3"
 
 var (
 	file_cache_v2_proto_rawDescOnce sync.Once
@@ -186,17 +518,33 @@ func file_cache_v2_proto_rawDescGZIP() []byte {
 	return file_cache_v2_proto_rawDescData
 }
 
-var file_cache_v2_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_cache_v2_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_cache_v2_proto_goTypes = []any{
 	(*V2Header)(nil),       // 0: cachesaver.save.v2.V2Header
-	(*StringsTableV2)(nil), // 1: cachesaver.save.v2.StringsTableV2
+	(*V2ZonesSection)(nil), // 1: cachesaver.save.v2.V2ZonesSection
+	(*V2ZoneBlob)(nil),     // 2: cachesaver.save.v2.V2ZoneBlob
+	(*V2Zone)(nil),         // 3: cachesaver.save.v2.V2Zone
+	(*Bounds)(nil),         // 4: cachesaver.save.v2.Bounds
+	(*MultiPolygon)(nil),   // 5: cachesaver.save.v2.MultiPolygon
+	(*Polygon)(nil),        // 6: cachesaver.save.v2.Polygon
+	(*Ring)(nil),           // 7: cachesaver.save.v2.Ring
+	(*LatLon)(nil),         // 8: cachesaver.save.v2.LatLon
 }
 var file_cache_v2_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: cachesaver.save.v2.V2ZonesSection.blobs:type_name -> cachesaver.save.v2.V2ZoneBlob
+	3, // 1: cachesaver.save.v2.V2ZoneBlob.zones:type_name -> cachesaver.save.v2.V2Zone
+	4, // 2: cachesaver.save.v2.V2Zone.bounds:type_name -> cachesaver.save.v2.Bounds
+	5, // 3: cachesaver.save.v2.V2Zone.multi_polygon:type_name -> cachesaver.save.v2.MultiPolygon
+	8, // 4: cachesaver.save.v2.Bounds.max:type_name -> cachesaver.save.v2.LatLon
+	8, // 5: cachesaver.save.v2.Bounds.min:type_name -> cachesaver.save.v2.LatLon
+	6, // 6: cachesaver.save.v2.MultiPolygon.polygons:type_name -> cachesaver.save.v2.Polygon
+	7, // 7: cachesaver.save.v2.Polygon.rings:type_name -> cachesaver.save.v2.Ring
+	8, // 8: cachesaver.save.v2.Ring.points:type_name -> cachesaver.save.v2.LatLon
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_cache_v2_proto_init() }
@@ -210,7 +558,7 @@ func file_cache_v2_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cache_v2_proto_rawDesc), len(file_cache_v2_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

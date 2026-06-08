@@ -46,7 +46,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		}},
 	}
 
-	// Zones are serialized in order: regions first, then countries (same as v1).
+	// Zones: regions first, then countries (serialization order)
 	zones := []cachemodel.Zone{
 		{
 			Type:   cachemodel.ZoneRegion,
@@ -107,17 +107,15 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Errorf("Locale mismatch: %s != %s", loadedMeta.Locale, meta.Locale)
 	}
 
-	// Verify points count
+	// Verify counts
 	if len(loadedPoints) != len(points) {
 		t.Fatalf("Points count mismatch: %d != %d", len(loadedPoints), len(points))
 	}
-
-	// Verify zones count
 	if len(loadedZones) != len(zones) {
 		t.Fatalf("Zones count mismatch: %d != %d", len(loadedZones), len(zones))
 	}
 
-	// Verify point data (name and city should be preserved)
+	// Verify point data
 	for i, p := range points {
 		lp := loadedPoints[i]
 		if lp.Data.Name.Value() != p.Data.Name.Value() {
@@ -190,7 +188,6 @@ func TestEmptySaveLoad(t *testing.T) {
 	}
 }
 
-// sliceToSeq converts a slice to an iter.Seq.
 func sliceToSeq[T any](slice []T) func(yield func(T) bool) {
 	return func(yield func(T) bool) {
 		for _, v := range slice {

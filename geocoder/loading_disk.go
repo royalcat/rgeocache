@@ -75,16 +75,12 @@ func LoadGeoCoderFromFileDisk(file string, opts ...Option) (*RGeoCoderDisk, erro
 	)
 
 	return &RGeoCoderDisk{
-		diskTree:        result.DiskBush,
-		nameHandles:     result.NameHandles,
-		streetHandles:   result.StreetHandles,
-		houseNumHandles: result.HouseNumHandles,
-		cityHandles:     result.CityHandles,
-		regionHandles:   result.RegionHandles,
-		regions:         regions,
-		countries:       countries,
-		searchRadius:    options.searchRadius,
-		logger:          log,
-		mmapReader:      reader,
+		diskTree:          result.DiskBush,
+		mmapReader:        reader,
+		stringsBlobOffset: result.StringsBlobOffset,
+		regions:           regions,
+		countries:         countries,
+		searchRadius:      options.searchRadius,
+		logger:            log,
 	}, nil
 }

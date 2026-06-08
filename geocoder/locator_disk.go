@@ -13,21 +13,16 @@ import (
 )
 
 // RGeoCoderDisk is a disk-backed reverse geocoder that uses mmap for the
-// spatial index. Point data is read lazily from disk only for spatial matches.
-//
-// The zero value is not usable; use LoadGeoCoderFromFileDisk to create one.
+// spatial index and for lazy string resolution. Strings are read from the
+// mmap'd file only when a point is matched.
 type RGeoCoderDisk struct {
-	diskTree        *kdbush.DiskKDBush[savev2.V2PointData, *savev2.V2PointData]
-	nameHandles     []unique.Handle[string]
-	streetHandles   []unique.Handle[string]
-	houseNumHandles []unique.Handle[string]
-	cityHandles     []unique.Handle[string]
-	regionHandles   []unique.Handle[string]
-	regions         *bordertree.BorderTree[unique.Handle[string]]
-	countries       *bordertree.BorderTree[unique.Handle[string]]
-	searchRadius    float64
-	logger          *slog.Logger
-	mmapReader      *mmap.ReaderAt // kept for Close()
+	diskTree          *kdbush.DiskKDBush[savev2.V2PointData, *savev2.V2PointData]
+	mmapReader        *mmap.ReaderAt
+	stringsBlobOffset int64 // byte offset of the string blob in the mmap'd file
+	regions           *bordertree.BorderTree[unique.Handle[string]]
+	countries         *bordertree.BorderTree[unique.Handle[string]]
+	searchRadius      float64
+	logger            *slog.Logger
 }
 
 // Find returns the closest address for the given coordinates.
@@ -55,7 +50,6 @@ func (f *RGeoCoderDisk) FindInRadius(lat, lon float64, radius float64) (i InfoMo
 		return InfoModel{}, false
 	}
 
-	// Point found (happy path)
 	if hasBest {
 		gi := f.resolvePointData(finPoint.Data)
 		out := InfoModel{Info: gi.value()}
@@ -65,17 +59,15 @@ func (f *RGeoCoderDisk) FindInRadius(lat, lon float64, radius float64) (i InfoMo
 				out.Region = region.Value()
 			}
 		}
-
 		if out.Country == "" && f.countries != nil {
 			if country, ok := f.countries.QueryPoint(orb.Point{lon, lat}); ok {
 				out.Country = country.Value()
 			}
 		}
-
 		return out, true
 	}
 
-	// Point not found, try region/country from borders alone
+	// Fallback: region/country from borders alone
 	out := InfoModel{}
 	if f.countries != nil {
 		country, ok := f.countries.QueryPoint(orb.Point{lon, lat})
@@ -96,29 +88,31 @@ func (f *RGeoCoderDisk) FindInRadius(lat, lon float64, radius float64) (i InfoMo
 	return InfoModel{}, false
 }
 
-// resolvePointData converts V2PointData indices to a geoInfo using pre-resolved
-// handle arrays. O(1) array lookups — no map access at query time.
+// resolvePointData reads strings lazily from the mmap'd string blob.
 func (f *RGeoCoderDisk) resolvePointData(data savev2.V2PointData) *geoInfo {
 	return &geoInfo{
-		Name:        resolveHandle(f.nameHandles, data.NameStrIdx),
-		Street:      resolveHandle(f.streetHandles, data.StreetStrIdx),
-		HouseNumber: resolveHandle(f.houseNumHandles, data.HouseNumberStrIdx),
-		City:        resolveHandle(f.cityHandles, data.CityStrIdx),
-		Region:      resolveHandle(f.regionHandles, data.RegionStrIdx),
+		Name:        f.readStr(data.NameOffset, data.NameLen),
+		Street:      f.readStr(data.StreetOffset, data.StreetLen),
+		HouseNumber: f.readStr(data.HouseNumberOffset, data.HouseNumberLen),
+		City:        f.readStr(data.CityOffset, data.CityLen),
+		Region:      f.readStr(data.RegionOffset, data.RegionLen),
 		Weight:      data.Weight,
 	}
 }
 
-// resolveHandle safely looks up a handle by index.
-// Returns the zero value (empty string) if the index is out of bounds.
-func resolveHandle(handles []unique.Handle[string], idx uint32) unique.Handle[string] {
-	if int(idx) < len(handles) {
-		return handles[idx]
+// readStr reads a string from the mmap'd string blob at the given offset and length.
+func (f *RGeoCoderDisk) readStr(off int64, length uint32) unique.Handle[string] {
+	if length == 0 {
+		return unique.Make("")
 	}
-	return unique.Make("")
+	buf := make([]byte, length)
+	if _, err := f.mmapReader.ReadAt(buf, f.stringsBlobOffset+off); err != nil {
+		return unique.Make("")
+	}
+	return unique.Make(string(buf))
 }
 
-// Close releases the mmap resources. The geocoder must not be used after Close.
+// Close releases the mmap resources.
 func (f *RGeoCoderDisk) Close() error {
 	if f.mmapReader != nil {
 		return f.mmapReader.Close()
