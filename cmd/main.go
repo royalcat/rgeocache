@@ -130,6 +130,18 @@ func main() {
 				},
 				Action: generate,
 			},
+			{
+				Name: "analyze",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:      "points",
+						Aliases:   []string{"p"},
+						Required:  true,
+						TakesFile: true,
+					},
+				},
+				Action: analyze,
+			},
 		},
 	}
 
@@ -137,6 +149,12 @@ func main() {
 		log.Fatal(err)
 	}
 
+}
+
+func analyze(ctx context.Context, cmd *cli.Command) error {
+	// log := slog.Default()
+	// points :=
+	return geocoder.PrintCacheSizeAnalysisForFile(cmd.String("points"))
 }
 
 func generate(ctx context.Context, cmd *cli.Command) error {
