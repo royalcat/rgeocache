@@ -100,7 +100,11 @@ func PrintCacheSizeAnalysis(r io.Reader) error {
 	}
 	switch compatibilityLevel {
 	case savev1.COMPATIBILITY_LEVEL:
+		slog.Info("Loading v1 cache format")
 		return savev1.PrintCacheAnalysis(r)
+	case savev2.COMPATIBILITY_LEVEL:
+		slog.Info("Loading v2 cache format")
+		return savev2.PrintCacheAnalysis(r)
 	default:
 		return fmt.Errorf("Cache version %d not supported", compatibilityLevel)
 	}
