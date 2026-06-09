@@ -13,7 +13,8 @@ import (
 // printCacheSizeAnalysisFromHeader prints the non-KDBH parts from the header.
 func printCacheSizeAnalysisFromHeader(header *savev2proto.V2Header) {
 	fmt.Printf("Metadata size: %s\n", humanize.Bytes(uint64(header.MetadataSize)))
-	fmt.Printf("Strings blob size: %s\n", humanize.Bytes(uint64(header.StringsBlobSize)))
+	fmt.Printf("Strings index size: %s\n", humanize.Bytes(uint64(header.StringsIndexSize)))
+	fmt.Printf("Strings data size: %s\n", humanize.Bytes(uint64(header.StringsDataSize)))
 	fmt.Printf("Zones size: %s\n", humanize.Bytes(uint64(header.ZonesSize)))
 }
 
@@ -41,8 +42,8 @@ func PrintCacheAnalysis(r io.Reader) error {
 
 	printCacheSizeAnalysisFromHeader(&header)
 
-	// 2. Skip metadata + string blob + zones to reach the KDBH block.
-	skipSize := int64(header.MetadataSize) + int64(header.StringsBlobSize) + int64(header.ZonesSize)
+	// 2. Skip metadata + string index + string data + zones to reach the KDBH block.
+	skipSize := int64(header.MetadataSize) + int64(header.StringsIndexSize) + int64(header.StringsDataSize) + int64(header.ZonesSize)
 	if _, err := io.CopyN(io.Discard, r, skipSize); err != nil {
 		return fmt.Errorf("v2 analyze: failed to skip to KDBH: %w", err)
 	}
@@ -94,7 +95,8 @@ func PrintCacheAnalysis(r io.Reader) error {
 	// 7. Grand total.
 	totalSize := headerOverhead +
 		uint64(header.MetadataSize) +
-		uint64(header.StringsBlobSize) +
+		uint64(header.StringsIndexSize) +
+		uint64(header.StringsDataSize) +
 		uint64(header.ZonesSize) +
 		kdbhTotal
 	fmt.Printf("Total uncompressed size: %s\n", humanize.Bytes(totalSize))

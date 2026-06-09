@@ -6,7 +6,8 @@ option go_package = "./savev2proto";
 
 message V2Header {
   uint32 metadata_size = 1;
-  uint32 strings_blob_size = 2;
+  uint32 strings_index_size = 4;  // total bytes for offset index (N unique strings × 4)
+  uint32 strings_data_size = 5;   // total bytes for null-terminated string data
   uint32 zones_size = 3;
 }
 

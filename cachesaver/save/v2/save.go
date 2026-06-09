@@ -24,15 +24,15 @@ const defaultNodeSize = 64
 //	[8..11]      uint32 v2header_size
 //	[12..H]      V2Header protobuf
 //	[H+..]       CacheMetadata protobuf
-//	[..+M]       raw string blob (concatenated unique strings)
+//	[..+I]       offset index: []uint32 (N unique strings × 4)
+//	[..+D]       string data block (null-terminated concatenation)
 //	[..+S]       ZonesSection protobuf (V2ZonesSection)
 //	[..+Z]       KDBH binary block
 func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], meta cachemodel.Metadata) error {
 	dedup := newStringsDedup()
 
-	// Phase 1: Materialize points with placeholder data, collect zone info.
-	// We can't fill V2PointData yet because string offsets aren't known until
-	// the string blob is built.
+	// Phase 1: Materialize points with placeholder data.
+	// Register strings to get IDs; we'll fill V2PointData after building the index.
 	type rawPoint struct {
 		x, y float64
 		name, street, houseNumber, city, region string
@@ -49,7 +49,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 			region:      p.Data.Region.Value(),
 			weight:      p.Data.Weight,
 		})
-		// Register strings in dedup maps to reserve offsets
+		// Register strings to reserve IDs
 		dedup.names.Add(p.Data.Name.Value())
 		dedup.streets.Add(p.Data.Street.Value())
 		dedup.houseNumbers.Add(p.Data.HouseNumber.Value())
@@ -57,38 +57,34 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 		dedup.regions.Add(p.Data.Region.Value())
 	}
 
-	// Phase 2: Build string blob and finalize V2PointData
-	stringsBlob := buildStringsBlob(dedup)
+	// Phase 2: Build offset index and null-terminated string data block
+	offsetIndex, stringData := buildStringIndex(dedup)
 
+	// Phase 3: Fill V2PointData using the assigned IDs
 	v2points := make([]kdbush.Point[V2PointData], len(rawPoints))
 	for i, rp := range rawPoints {
 		v2points[i] = kdbush.Point[V2PointData]{
 			X: rp.x, Y: rp.y,
 			Data: V2PointData{
-				NameOffset:        dedup.names.Add(rp.name).offset,
-				NameLen:           dedup.names.Add(rp.name).length,
-				StreetOffset:      dedup.streets.Add(rp.street).offset,
-				StreetLen:         dedup.streets.Add(rp.street).length,
-				HouseNumberOffset: dedup.houseNumbers.Add(rp.houseNumber).offset,
-				HouseNumberLen:    dedup.houseNumbers.Add(rp.houseNumber).length,
-				CityOffset:        dedup.cities.Add(rp.city).offset,
-				CityLen:           dedup.cities.Add(rp.city).length,
-				RegionOffset:      dedup.regions.Add(rp.region).offset,
-				RegionLen:         dedup.regions.Add(rp.region).length,
-				Weight:            rp.weight,
+				NameID:        dedup.names.Add(rp.name),
+				StreetID:      dedup.streets.Add(rp.street),
+				HouseNumberID: dedup.houseNumbers.Add(rp.houseNumber),
+				CityID:        dedup.cities.Add(rp.city),
+				RegionID:      dedup.regions.Add(rp.region),
+				Weight:        rp.weight,
 			},
 		}
 	}
 	rawPoints = nil // release to GC
 
-	// Phase 3: Materialize zones with inline names
+	// Phase 4: Materialize zones with inline names
 	zonesSection := buildZonesSection(zones)
 	zonesBytes, err := proto.Marshal(zonesSection)
 	if err != nil {
 		return err
 	}
 
-	// Phase 4: Marshal metadata
+	// Phase 5: Marshal metadata
 	metadataProto := &savev1proto.CacheMetadata{
 		Version:     meta.Version,
 		DateCreated: meta.DateCreated.Format(time.RFC3339),
@@ -99,18 +95,19 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 		return err
 	}
 
-	// Phase 5: V2Header
+	// Phase 6: V2Header
 	header := &savev2proto.V2Header{
-		MetadataSize:    uint32(len(metadataBytes)),
-		StringsBlobSize: uint32(len(stringsBlob)),
-		ZonesSize:       uint32(len(zonesBytes)),
+		MetadataSize:     uint32(len(metadataBytes)),
+		StringsIndexSize: uint32(len(offsetIndex) * 4),
+		StringsDataSize:  uint32(len(stringData)),
+		ZonesSize:        uint32(len(zonesBytes)),
 	}
 	headerBytes, err := proto.Marshal(header)
 	if err != nil {
 		return err
 	}
 
-	// Phase 6: Write everything sequentially
+	// Phase 7: Write everything sequentially
 	if err := binary.Write(w, binary.LittleEndian, uint32(len(headerBytes))); err != nil {
 		return err
 	}
@@ -120,7 +117,11 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 	if _, err := w.Write(metadataBytes); err != nil {
 		return err
 	}
-	if _, err := w.Write(stringsBlob); err != nil {
+	// Write offset index as raw uint32 array
+	if err := binary.Write(w, binary.LittleEndian, offsetIndex); err != nil {
+		return err
+	}
+	if _, err := w.Write(stringData); err != nil {
 		return err
 	}
 	if _, err := w.Write(zonesBytes); err != nil {
@@ -133,20 +134,6 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 	}
 
 	return nil
-}
-
-// buildStringsBlob concatenates all dedup'd strings into a single blob.
-// All dedup maps share the same underlying map, so we only need to iterate one.
-func buildStringsBlob(dedup *stringsDedup) []byte {
-	dm := dedup.names // shared across all categories
-	blob := make([]byte, dm.nextOff)
-	for s, off := range dm.m {
-		if off.length == 0 {
-			continue
-		}
-		copy(blob[off.offset:off.offset+int64(off.length)], s)
-	}
-	return blob
 }
 
 // buildZonesSection converts zones to V2ZonesSection proto with inline names and geometry.

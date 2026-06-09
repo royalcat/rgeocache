@@ -22,12 +22,13 @@ const (
 )
 
 type V2Header struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	MetadataSize    uint32                 `protobuf:"varint,1,opt,name=metadata_size,json=metadataSize,proto3" json:"metadata_size,omitempty"`
-	StringsBlobSize uint32                 `protobuf:"varint,2,opt,name=strings_blob_size,json=stringsBlobSize,proto3" json:"strings_blob_size,omitempty"`
-	ZonesSize       uint32                 `protobuf:"varint,3,opt,name=zones_size,json=zonesSize,proto3" json:"zones_size,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	MetadataSize     uint32                 `protobuf:"varint,1,opt,name=metadata_size,json=metadataSize,proto3" json:"metadata_size,omitempty"`
+	StringsIndexSize uint32                 `protobuf:"varint,4,opt,name=strings_index_size,json=stringsIndexSize,proto3" json:"strings_index_size,omitempty"` // total bytes for offset index (N unique strings × 4)
+	StringsDataSize  uint32                 `protobuf:"varint,5,opt,name=strings_data_size,json=stringsDataSize,proto3" json:"strings_data_size,omitempty"`    // total bytes for null-terminated string data
+	ZonesSize        uint32                 `protobuf:"varint,3,opt,name=zones_size,json=zonesSize,proto3" json:"zones_size,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *V2Header) Reset() {
@@ -67,9 +68,16 @@ func (x *V2Header) GetMetadataSize() uint32 {
 	return 0
 }
 
-func (x *V2Header) GetStringsBlobSize() uint32 {
+func (x *V2Header) GetStringsIndexSize() uint32 {
 	if x != nil {
-		return x.StringsBlobSize
+		return x.StringsIndexSize
+	}
+	return 0
+}
+
+func (x *V2Header) GetStringsDataSize() uint32 {
+	if x != nil {
+		return x.StringsDataSize
 	}
 	return 0
 }
@@ -477,10 +485,11 @@ var File_cache_v2_proto protoreflect.FileDescriptor
 
 const file_cache_v2_proto_rawDesc = "" +
 	"\n" +
-	"\x0ecache_v2.proto\x12\x12cachesaver.save.v2\"z\n" +
+	"\x0ecache_v2.proto\x12\x12cachesaver.save.v2\"\xa8\x01\n" +
 	"\bV2Header\x12#\n" +
-	"\rmetadata_size\x18\x01 \x01(\rR\fmetadataSize\x12*\n" +
-	"\x11strings_blob_size\x18\x02 \x01(\rR\x0fstringsBlobSize\x12\x1d\n" +
+	"\rmetadata_size\x18\x01 \x01(\rR\fmetadataSize\x12,\n" +
+	"\x12strings_index_size\x18\x04 \x01(\rR\x10stringsIndexSize\x12*\n" +
+	"\x11strings_data_size\x18\x05 \x01(\rR\x0fstringsDataSize\x12\x1d\n" +
 	"\n" +
 	"zones_size\x18\x03 \x01(\rR\tzonesSize\"F\n" +
 	"\x0eV2ZonesSection\x124\n" +

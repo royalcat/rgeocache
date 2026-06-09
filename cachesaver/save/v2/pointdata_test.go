@@ -6,17 +6,12 @@ import (
 
 func TestV2PointDataRoundTrip(t *testing.T) {
 	orig := V2PointData{
-		NameOffset:        10,
-		NameLen:           7,
-		StreetOffset:      20,
-		StreetLen:         12,
-		HouseNumberOffset: 40,
-		HouseNumberLen:    3,
-		CityOffset:        50,
-		CityLen:           6,
-		RegionOffset:      60,
-		RegionLen:         8,
-		Weight:            10,
+		NameID:        1,
+		StreetID:      2,
+		HouseNumberID: 3,
+		CityID:        4,
+		RegionID:      5,
+		Weight:        10,
 	}
 
 	data, err := orig.MarshalBinary()

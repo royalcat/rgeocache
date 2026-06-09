@@ -1,6 +1,7 @@
 package savev2
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -42,10 +43,17 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 		return nil, nil, nil, fmt.Errorf("v2 load: failed to read metadata: %w", err)
 	}
 
-	// Read string blob into memory (needed for the streaming path)
-	stringsBlob := make([]byte, header.StringsBlobSize)
-	if _, err := io.ReadFull(r, stringsBlob); err != nil {
-		return nil, nil, nil, fmt.Errorf("v2 load: failed to read string blob: %w", err)
+	// Read offset index into memory
+	numStrings := header.StringsIndexSize / 4
+	stringsIndex := make([]uint32, numStrings)
+	if err := binary.Read(r, binary.LittleEndian, &stringsIndex); err != nil {
+		return nil, nil, nil, fmt.Errorf("v2 load: failed to read string index: %w", err)
+	}
+
+	// Read string data block into memory (needed for the streaming path)
+	stringsData := make([]byte, header.StringsDataSize)
+	if _, err := io.ReadFull(r, stringsData); err != nil {
+		return nil, nil, nil, fmt.Errorf("v2 load: failed to read string data: %w", err)
 	}
 
 	// Read and parse zones section
@@ -66,7 +74,7 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 	}
 	numPoints := int64(binary.LittleEndian.Uint64(kdbhHeader[16:24]))
 
-	// Points iterator: reads V2PointData blobs and resolves strings from the in-memory blob.
+	// Points iterator: reads V2PointData blobs and resolves strings from the in-memory index.
 	pointsIter := func(yield func(cachemodel.Point, error) bool) {
 		skipSize := numPoints*8 + numPoints*16
 		if _, err := io.CopyN(io.Discard, r, skipSize); err != nil {
@@ -98,7 +106,7 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 					return
 				}
 			}
-			point := resolvePointFromBlob(stringsBlob, data)
+			point := resolvePointFromIndex(stringsIndex, stringsData, data)
 			if !yield(point, nil) {
 				return
 			}
@@ -134,8 +142,8 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 // LoadMmapResult holds the results of loading a v2 cache via mmap.
 type LoadMmapResult struct {
 	DiskBush          *kdbush.DiskKDBush[V2PointData, *V2PointData]
-	StringsBlobOffset int64 // byte offset of the string blob within the mmap'd file
-	StringsBlobSize   int64
+	StringsIndex      []uint32 // offset index: id → byte offset into string data
+	StringsDataOffset int64    // byte offset of the string data block within the mmap'd file
 	Zones             []cachemodel.Zone
 	Metadata          *cachemodel.Metadata
 	mmapReader        *mmap.ReaderAt
@@ -182,10 +190,21 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 		return nil, fmt.Errorf("v2 mmap: failed to unmarshal metadata: %w", err)
 	}
 
-	// Record string blob position (don't read it — lazy access)
-	stringsBlobOffset := offset
-	stringsBlobSize := int64(header.StringsBlobSize)
-	offset += int64(header.StringsBlobSize)
+	// Read offset index into memory (small — N×4 bytes)
+	numStrings := header.StringsIndexSize / 4
+	stringsIndex := make([]uint32, numStrings)
+	indexBytes := make([]byte, header.StringsIndexSize)
+	if _, err := reader.ReadAt(indexBytes, offset); err != nil {
+		return nil, fmt.Errorf("v2 mmap: failed to read string index: %w", err)
+	}
+	for i := range numStrings {
+		stringsIndex[i] = binary.LittleEndian.Uint32(indexBytes[i*4 : (i+1)*4])
+	}
+	offset += int64(header.StringsIndexSize)
+
+	// Record string data block position (don't read it — lazy access)
+	stringsDataOffset := offset
+	offset += int64(header.StringsDataSize)
 
 	// Read and parse zones section
 	zonesBytes := make([]byte, header.ZonesSize)
@@ -212,8 +231,8 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 
 	return &LoadMmapResult{
 		DiskBush:          diskBush,
-		StringsBlobOffset: stringsBlobOffset,
-		StringsBlobSize:   stringsBlobSize,
+		StringsIndex:      stringsIndex,
+		StringsDataOffset: stringsDataOffset,
 		Zones:             parsedZones,
 		Metadata: &cachemodel.Metadata{
 			Version:     metadata.Version,
@@ -236,31 +255,35 @@ func readProto(r io.Reader, size uint32, msg proto.Message) error {
 	return proto.Unmarshal(buf, msg)
 }
 
-// resolvePointFromBlob resolves V2PointData to cachemodel.Point using an in-memory string blob.
-func resolvePointFromBlob(blob []byte, data V2PointData) cachemodel.Point {
+// resolvePointFromIndex resolves V2PointData to cachemodel.Point using the string index.
+func resolvePointFromIndex(index []uint32, dataBlock []byte, data V2PointData) cachemodel.Point {
 	return cachemodel.Point{
 		X: 0, Y: 0, // coords not available in streaming path
 		Data: cachemodel.Info{
-			Name:        unique.Make(readStr(blob, data.NameOffset, data.NameLen)),
-			Street:      unique.Make(readStr(blob, data.StreetOffset, data.StreetLen)),
-			HouseNumber: unique.Make(readStr(blob, data.HouseNumberOffset, data.HouseNumberLen)),
-			City:        unique.Make(readStr(blob, data.CityOffset, data.CityLen)),
-			Region:      unique.Make(readStr(blob, data.RegionOffset, data.RegionLen)),
+			Name:        unique.Make(readStrByID(index, dataBlock, data.NameID)),
+			Street:      unique.Make(readStrByID(index, dataBlock, data.StreetID)),
+			HouseNumber: unique.Make(readStrByID(index, dataBlock, data.HouseNumberID)),
+			City:        unique.Make(readStrByID(index, dataBlock, data.CityID)),
+			Region:      unique.Make(readStrByID(index, dataBlock, data.RegionID)),
 			Weight:      data.Weight,
 		},
 	}
 }
 
-// readStr reads a string from a byte slice at the given offset and length.
-func readStr(blob []byte, off int64, length uint32) string {
-	if length == 0 {
+// readStrByID reads a null-terminated string from dataBlock using the offset index.
+func readStrByID(index []uint32, dataBlock []byte, id uint32) string {
+	if id == 0 {
 		return ""
 	}
-	end := off + int64(length)
-	if off < 0 || end > int64(len(blob)) {
+	start := index[id]
+	if int(start) >= len(dataBlock) {
 		return ""
 	}
-	return string(blob[off:end])
+	end := bytes.IndexByte(dataBlock[start:], 0)
+	if end < 0 {
+		return string(dataBlock[start:])
+	}
+	return string(dataBlock[start : start+uint32(end)])
 }
 
 // parseV2Zones parses the V2ZonesSection protobuf.

@@ -6,7 +6,7 @@ import (
 	"unique"
 
 	"github.com/paulmach/orb"
-	"github.com/royalcat/rgeocache/cachesaver/save/v2"
+	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
 	"github.com/royalcat/rgeocache/internal/bordertree"
 	"github.com/royalcat/rgeocache/kdbush"
 	"golang.org/x/exp/mmap"
@@ -18,7 +18,8 @@ import (
 type RGeoCoderDisk struct {
 	diskTree          *kdbush.DiskKDBush[savev2.V2PointData, *savev2.V2PointData]
 	mmapReader        *mmap.ReaderAt
-	stringsBlobOffset int64 // byte offset of the string blob in the mmap'd file
+	stringsIndex      []uint32 // offset index: id → byte offset into string data
+	stringsDataOffset int64    // byte offset of the string data block in the mmap'd file
 	regions           *bordertree.BorderTree[unique.Handle[string]]
 	countries         *bordertree.BorderTree[unique.Handle[string]]
 	searchRadius      float64
@@ -88,28 +89,40 @@ func (f *RGeoCoderDisk) FindInRadius(lat, lon float64, radius float64) (i InfoMo
 	return InfoModel{}, false
 }
 
-// resolvePointData reads strings lazily from the mmap'd string blob.
+// resolvePointData reads strings lazily from the mmap'd string data block.
 func (f *RGeoCoderDisk) resolvePointData(data savev2.V2PointData) *geoInfo {
 	return &geoInfo{
-		Name:        f.readStr(data.NameOffset, data.NameLen),
-		Street:      f.readStr(data.StreetOffset, data.StreetLen),
-		HouseNumber: f.readStr(data.HouseNumberOffset, data.HouseNumberLen),
-		City:        f.readStr(data.CityOffset, data.CityLen),
-		Region:      f.readStr(data.RegionOffset, data.RegionLen),
+		Name:        f.readStr(data.NameID),
+		Street:      f.readStr(data.StreetID),
+		HouseNumber: f.readStr(data.HouseNumberID),
+		City:        f.readStr(data.CityID),
+		Region:      f.readStr(data.RegionID),
 		Weight:      data.Weight,
 	}
 }
 
-// readStr reads a string from the mmap'd string blob at the given offset and length.
-func (f *RGeoCoderDisk) readStr(off int64, length uint32) unique.Handle[string] {
-	if length == 0 {
+// readStr reads a null-terminated string from the mmap'd string data block by ID.
+func (f *RGeoCoderDisk) readStr(id uint32) unique.Handle[string] {
+	if id == 0 {
 		return unique.Make("")
 	}
-	buf := make([]byte, length)
-	if _, err := f.mmapReader.ReadAt(buf, f.stringsBlobOffset+off); err != nil {
+	start := f.stringsIndex[id]
+	// Read a buffer large enough for any address string.
+	// The null terminator tells us where the string ends.
+	buf := make([]byte, 512)
+	n, err := f.mmapReader.ReadAt(buf, f.stringsDataOffset+int64(start))
+	if err != nil && n == 0 {
 		return unique.Make("")
 	}
-	return unique.Make(string(buf))
+	// Find null terminator
+	end := n
+	for i := 0; i < n; i++ {
+		if buf[i] == 0 {
+			end = i
+			break
+		}
+	}
+	return unique.Make(string(buf[:end]))
 }
 
 // Close releases the mmap resources.
