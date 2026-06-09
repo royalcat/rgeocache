@@ -77,7 +77,8 @@ func LoadGeoCoderFromFileDisk(file string, opts ...Option) (*RGeoCoderDisk, erro
 	return &RGeoCoderDisk{
 		diskTree:          result.DiskBush,
 		mmapReader:        reader,
-		stringsBlobOffset: result.StringsBlobOffset,
+		stringsIndex:      result.StringsIndex,
+		stringsDataOffset: result.StringsDataOffset,
 		regions:           regions,
 		countries:         countries,
 		searchRadius:      options.searchRadius,
