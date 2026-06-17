@@ -95,6 +95,12 @@ func main() {
 						DefaultText: "1",
 					},
 					&cli.StringFlag{
+						Name:        "cache-format",
+						Usage:       "cache format: v1 or v2",
+						Value:       "v1",
+						DefaultText: "v1",
+					},
+					&cli.StringFlag{
 						Name:        "preferred-localization",
 						Aliases:     []string{"l"},
 						DefaultText: "official",
@@ -269,9 +275,15 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	cacheFormat := cmd.String("cache-format")
+	if cacheFormat == "v2" {
+		cacheFormat = "2"
+	}
+
 	config := geoparser.ConfigDefault()
 	config.PreferredLocalization = preferredLocalization
 	config.Version = uint32(version)
+	config.CacheFormat = cacheFormat
 
 	geoGen, err := geoparser.NewGeoGen(osmdb, config, outputFile)
 	if err != nil {

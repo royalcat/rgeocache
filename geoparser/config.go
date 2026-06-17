@@ -5,6 +5,7 @@ import "runtime"
 type Config struct {
 	Threads               int
 	Version               uint32
+	CacheFormat           string // "1" or "2" — controls v1 vs v2 cache format
 	PreferredLocalization string
 	HighwayPointsDistance float64
 }
