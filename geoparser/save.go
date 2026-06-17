@@ -62,7 +62,10 @@ func (f *GeoGen) saveWorker() error {
 		DateCreated: time.Now(),
 	}
 
-	return cachesaver.Save(points, zones, meta, f.output)
+	if f.config.CacheFormat == "2" {
+		return cachesaver.SaveV2(points, zones, meta, f.output)
+	}
+	return cachesaver.SaveV1(points, zones, meta, f.output)
 }
 
 func uniqueGeoPoints(points []geoPoint) []geoPoint {

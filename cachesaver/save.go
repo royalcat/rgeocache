@@ -29,7 +29,7 @@ func SaveV1(points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], 
 }
 
 // SaveV2 writes a v2 cache file with the mmap-compatible KDBH spatial index.
-func Save(points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], meta cachemodel.Metadata, w io.Writer) error {
+func SaveV2(points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], meta cachemodel.Metadata, w io.Writer) error {
 	_, err := w.Write(MAGIC_BYTES)
 	if err != nil {
 		return err
