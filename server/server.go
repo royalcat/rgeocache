@@ -57,7 +57,7 @@ func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder, log *slo
 	r.Handle(http.MethodGet, "/metrics", fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler()))
 
 	server := &fasthttp.Server{
-		ReadTimeout:        time.Second,
+		ReadTimeout:        time.Second * 30,
 		MaxRequestBodySize: MaxBodySize,
 		Handler:            r.Handler,
 		// Logger:             logrus.NewEntry(log).WithField("component", "fasthttp"),
