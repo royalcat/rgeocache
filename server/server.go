@@ -151,7 +151,8 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 			res = append(res, info.Info)
 		}
 	} else {
-		res = s.multithreadedFind(req, max(1, len(req)/1000, runtime.GOMAXPROCS(0)/2))
+		threads := min(max(2, len(req)/1000), runtime.GOMAXPROCS(0)/2)
+		res = s.multithreadedFind(req, threads)
 	}
 
 	data, err := res.MarshalJSON()
