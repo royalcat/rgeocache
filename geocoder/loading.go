@@ -83,6 +83,16 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 	return nil
 }
 
+// NewGeoCoderFromPoints builds an RGeoCoder from pre-constructed cache model points.
+// This is useful for testing with known data. Regions and countries are initialized empty.
+func NewGeoCoderFromPoints(points []cachemodel.Point, opts ...Option) *RGeoCoder {
+	optimized := optimizePoints(points)
+	tree := kdbush.NewBush(optimized, 128)
+	regions := bordertree.NewBorderTree[unique.Handle[string]]()
+	countries := bordertree.NewBorderTree[unique.Handle[string]]()
+	return newRGeoCoder(tree, regions, countries, opts...)
+}
+
 func newRGeoCoder(tree *kdbush.KDBush[*geoInfo], regions *bordertree.BorderTree[unique.Handle[string]], countries *bordertree.BorderTree[unique.Handle[string]], opts ...Option) *RGeoCoder {
 	options := loadOptions(opts...)
 	options.logger.Info("Initializing geocoder")

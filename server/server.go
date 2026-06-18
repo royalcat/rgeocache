@@ -7,6 +7,7 @@ import (
 	stdlog "log"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -143,9 +144,14 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 	s.metricAddressesEncoded.Add(ctx, int64(len(req)))
 
 	res := geomodel.InfoList{}
-	for _, p := range req {
-		info, _ := s.rgeo.Find(p[0], p[1])
-		res = append(res, info.Info)
+
+	if len(req) < 1000 {
+		for _, p := range req {
+			info, _ := s.rgeo.Find(p[0], p[1])
+			res = append(res, info.Info)
+		}
+	} else {
+		res = s.multithreadedFind(req, max(1, len(req)/1000, runtime.GOMAXPROCS(0)/2))
 	}
 
 	data, err := res.MarshalJSON()
@@ -156,4 +162,30 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 
 	ctx.Response.SetStatusCode(http.StatusOK)
 	ctx.Response.SetBody(data)
+}
+
+func (s *server) multithreadedFind(points [][2]float64, threads int) []geomodel.Info {
+	var res = make([]geomodel.Info, len(points))
+	var taskChan = make(chan int, threads)
+
+	go func() {
+		for i := range points {
+			taskChan <- i
+		}
+		close(taskChan)
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(threads)
+	for range threads {
+		go func() {
+			for i := range taskChan {
+				info, _ := s.rgeo.Find(points[i][0], points[i][1])
+				res[i] = info.Info
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	return res
 }
