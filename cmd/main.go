@@ -50,6 +50,12 @@ func main() {
 						Usage:       "search radius in degrees",
 						DefaultText: "0.01",
 					},
+					&cli.Int64Flag{
+						Name:        "points-per-thread",
+						Usage:       "points per thread",
+						DefaultText: "1000",
+						Value:       1000,
+					},
 					&cli.StringFlag{
 						Name:        "pprof.listen",
 						DefaultText: "",
@@ -311,6 +317,11 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		log.Info("Using custom search radius", "radius", radius)
 	}
 
+	pointsPerThread := cmd.Int64("points-per-thread")
+	if pointsPerThread <= 0 {
+		pointsPerThread = 1000
+	}
+
 	cacheFile := cmd.String("points")
 
 	err := geocoder.PrintCacheSizeAnalysisForFile(cacheFile)
@@ -325,7 +336,7 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 
 	runtime.GC()
 
-	return server.Run(ctx, cmd.String("listen"), rgeo, log)
+	return server.Run(ctx, cmd.String("listen"), rgeo, pointsPerThread, log)
 }
 
 func tuneGC() error {

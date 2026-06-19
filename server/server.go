@@ -26,7 +26,7 @@ const MaxBodySize = 32 * 1000 * 1000 // 32MB
 
 var meter = otel.Meter("github.com/royalcat/rgeocache/server")
 
-func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder, log *slog.Logger) error {
+func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder, pointsPerThread int64, log *slog.Logger) error {
 	if err := setupTelemetry(ctx); err != nil {
 		return fmt.Errorf("failed to initialize otel metrics: %w", err)
 	}
@@ -80,7 +80,8 @@ func Run(ctx context.Context, address string, rgeo *geocoder.RGeoCoder, log *slo
 }
 
 type server struct {
-	rgeo *geocoder.RGeoCoder
+	rgeo            *geocoder.RGeoCoder
+	pointsPerThread int
 
 	metricHttpAddressCallCount      metric.Int64Counter
 	metricHttpAddressMultiCallCount metric.Int64Counter
@@ -145,13 +146,13 @@ func (s *server) RGeoMultipleCodeHandler(ctx *fasthttp.RequestCtx) {
 
 	res := geomodel.InfoList{}
 
-	if len(req) < 1000 {
+	if len(req) < s.pointsPerThread {
 		for _, p := range req {
 			info, _ := s.rgeo.Find(p[0], p[1])
 			res = append(res, info.Info)
 		}
 	} else {
-		threads := min(max(2, len(req)/1000), runtime.GOMAXPROCS(0)/2)
+		threads := min(max(2, len(req)/s.pointsPerThread), runtime.GOMAXPROCS(0)/2)
 		res = s.multithreadedFind(req, threads)
 	}
 
