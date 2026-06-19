@@ -4,5 +4,6 @@
   "countries",
   "low-memory-cache",
   "master",
-  "stream-points-saving"
+  "stream-points-saving",
+  "thread-count-selection"
 ]
