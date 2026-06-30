@@ -12,11 +12,15 @@ import (
 type cachePoint orb.Point
 
 func (p cachePoint) ToBytes() []byte {
-	return nodePointByte(p[0], p[1])
+	b := make([]byte, 16)
+	binary.LittleEndian.PutUint64(b[:8], math.Float64bits(p[0]))
+	binary.LittleEndian.PutUint64(b[8:], math.Float64bits(p[1]))
+	return b
 }
 
 func (p cachePoint) FromBytes(b []byte) cachePoint {
-	p[0], p[1] = bytePoint(b)
+	p[0] = math.Float64frombits(binary.LittleEndian.Uint64(b[:8]))
+	p[1] = math.Float64frombits(binary.LittleEndian.Uint64(b[8:]))
 	return p
 }
 
@@ -38,17 +42,4 @@ func (p cacheWay) FromBytes(b []byte) cacheWay {
 	}
 	way, _ := data.(orb.LineString)
 	return cacheWay(way)
-}
-
-func nodePointByte(x, y float64) []byte {
-	b := make([]byte, 16)
-	binary.LittleEndian.PutUint64(b[:8], math.Float64bits(x))
-	binary.LittleEndian.PutUint64(b[8:], math.Float64bits(y))
-	return b
-}
-
-func bytePoint(b []byte) (x, y float64) {
-	x = math.Float64frombits(binary.LittleEndian.Uint64(b[:8]))
-	y = math.Float64frombits(binary.LittleEndian.Uint64(b[8:]))
-	return x, y
 }
