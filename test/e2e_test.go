@@ -47,12 +47,12 @@ func TestLondon(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault(), pointsFileOut)
+	gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = gg.ParseOSMData()
+	err = gg.ParseOSMData([]geoparser.ParseOutput{{Format: "v2", Writer: pointsFileOut}})
 	if err != nil {
 		t.Fatal(err)
 	}

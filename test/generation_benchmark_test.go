@@ -40,12 +40,12 @@ func BenchmarkGenerationLondon(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault(), io.Discard)
+		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		err = gg.ParseOSMData()
+		err = gg.ParseOSMData([]geoparser.ParseOutput{{Format: "v2", Writer: io.Discard}})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -86,12 +86,12 @@ func BenchmarkGenerationGreatBritan(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault(), io.Discard)
+		gg, err := geoparser.NewGeoGen(osmdb, geoparser.ConfigDefault())
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		err = gg.ParseOSMData()
+		err = gg.ParseOSMData([]geoparser.ParseOutput{{Format: "v2", Writer: io.Discard}})
 		if err != nil {
 			b.Fatal(err)
 		}
