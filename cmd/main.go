@@ -74,9 +74,18 @@ func main() {
 				Usage:   "generates a rgeocache points data",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:      "points",
-						Aliases:   []string{"p"},
-						Required:  true,
+						Name: "output",
+						Aliases: []string{
+							"o",
+							"points", "p", // legacy naming
+						},
+						Required:  false,
+						TakesFile: true,
+					},
+					&cli.StringFlag{
+						Name:      "output-v2",
+						Aliases:   []string{"o-v2"},
+						Required:  false,
 						TakesFile: true,
 					},
 					&cli.StringSliceFlag{
@@ -93,12 +102,6 @@ func main() {
 						Name:        "version",
 						Aliases:     []string{},
 						DefaultText: "1",
-					},
-					&cli.StringFlag{
-						Name:        "cache-format",
-						Usage:       "cache format: v1 or v2",
-						Value:       "v1",
-						DefaultText: "v1",
 					},
 					&cli.StringFlag{
 						Name:        "preferred-localization",
@@ -164,6 +167,10 @@ func analyze(ctx context.Context, cmd *cli.Command) error {
 }
 
 func generate(ctx context.Context, cmd *cli.Command) error {
+	if !cmd.IsSet("output") && !cmd.IsSet("output-v2") {
+		return fmt.Errorf("either 'output' or 'output-v2' must be set")
+	}
+
 	telemetryClient, err := telemetry.Setup(ctx, "rgeocache", cmd.String("otel.endpoint"))
 	if err != nil {
 		return fmt.Errorf("error setting up telemetry: %w", err)
@@ -250,17 +257,6 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 		inputsReaders = append(inputsReaders, file)
 	}
 
-	saveFilePath := cmd.String("points")
-	if !strings.HasSuffix(saveFilePath, ".rgc") {
-		saveFilePath = saveFilePath + ".rgc"
-	}
-
-	outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
-	if err != nil {
-		return err
-	}
-	defer outputFile.Close()
-
 	log.Info("Tuning gc to respect only soft mem limit")
 	err = tuneGC()
 	if err != nil {
@@ -283,16 +279,58 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 	config := geoparser.ConfigDefault()
 	config.PreferredLocalization = preferredLocalization
 	config.Version = uint32(version)
-	config.CacheFormat = cacheFormat
 
-	geoGen, err := geoparser.NewGeoGen(osmdb, config, outputFile)
+	geoGen, err := geoparser.NewGeoGen(osmdb, config)
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
 
-	log.Info("Creating OSM cache", "output", saveFilePath)
+	log.Info("Creating OSM cache")
 
-	err = geoGen.ParseOSMData()
+	outputs := []geoparser.ParseOutput{}
+	if saveFilePath := cmd.String("output"); saveFilePath != "" {
+		if !strings.HasSuffix(saveFilePath, ".rgc") {
+			saveFilePath = saveFilePath + ".rgc"
+		}
+
+		log.Info("Saving cache in v1 format", "path", saveFilePath)
+
+		outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+		if err != nil {
+			return err
+		}
+		defer outputFile.Close()
+
+		outputs = append(outputs, geoparser.ParseOutput{
+			Format: "v1",
+			Writer: outputFile,
+		})
+	}
+	if saveFilePath := cmd.String("output-v2"); saveFilePath != "" {
+		if !strings.HasSuffix(saveFilePath, ".rgc") {
+			saveFilePath = saveFilePath + ".rgc"
+		}
+
+		outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+		if err != nil {
+			return err
+		}
+		defer outputFile.Close()
+
+		log.Info("Saving cache in v2 format", "path", saveFilePath)
+
+		outputs = append(outputs, geoparser.ParseOutput{
+			Format: "v2",
+			Writer: outputFile,
+		})
+	}
+
+	if len(outputs) == 0 {
+		log.Info("No output specified")
+		return nil
+	}
+
+	err = geoGen.ParseOSMData(outputs)
 	if err != nil {
 		return fmt.Errorf("error parsing osm with error: %s", err.Error())
 	}

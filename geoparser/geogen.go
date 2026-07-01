@@ -41,12 +41,10 @@ type GeoGen struct {
 	countriesMu sync.Mutex
 	countries   []geomodel.Zone
 
-	output io.Writer
-
 	log *slog.Logger
 }
 
-func NewGeoGen(db osmpbfdb.OsmDB, config Config, output io.Writer) (*GeoGen, error) {
+func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 	return &GeoGen{
 		osmdb:  db,
 		config: config,
@@ -62,8 +60,6 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config, output io.Writer) (*GeoGen, err
 		regions:   []geomodel.Zone{},
 		countries: []geomodel.Zone{},
 
-		output: output,
-
 		log: slog.Default(),
 	}, nil
 }
@@ -77,12 +73,19 @@ func (f *GeoGen) ResetCache() error {
 	return nil
 }
 
-func (f *GeoGen) ParseOSMData() error {
+type ParseOutput struct {
+	Format string
+	Writer io.Writer
+}
+
+func (f *GeoGen) ParseOSMData(outputs []ParseOutput) error {
 	f.parsedPoints = make(chan geoPoint, 10)
 	f.parsingDone = make(chan struct{})
 
 	var wg errgroup.Group
-	wg.Go(f.saveWorker)
+	wg.Go(func() error {
+		return f.saveWorker(outputs)
+	})
 	wg.Go(func() error {
 		err := f.fillRelCache()
 		if err != nil {
