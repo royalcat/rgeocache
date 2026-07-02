@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/royalcat/osmpbfdb"
+	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
 	"github.com/royalcat/rgeocache/internal/stats"
@@ -64,6 +66,11 @@ func main() {
 						Name:  "listen",
 						Value: ":8080",
 					},
+					&cli.BoolFlag{
+						Name:  "no-mmap",
+						Usage: "Disable mmap and load v2 cache fully into memory",
+						Value: false,
+					},
 				},
 				Action: serve,
 			},
@@ -73,9 +80,18 @@ func main() {
 				Usage:   "generates a rgeocache points data",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:      "points",
-						Aliases:   []string{"p"},
-						Required:  true,
+						Name: "output",
+						Aliases: []string{
+							"o",
+							"points", "p", // legacy naming
+						},
+						Required:  false,
+						TakesFile: true,
+					},
+					&cli.StringFlag{
+						Name:      "output-v2",
+						Aliases:   []string{"o-v2"},
+						Required:  false,
 						TakesFile: true,
 					},
 					&cli.StringSliceFlag{
@@ -129,6 +145,18 @@ func main() {
 				},
 				Action: generate,
 			},
+			{
+				Name: "analyze",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:      "points",
+						Aliases:   []string{"p"},
+						Required:  true,
+						TakesFile: true,
+					},
+				},
+				Action: analyze,
+			},
 		},
 	}
 
@@ -138,7 +166,17 @@ func main() {
 
 }
 
+func analyze(ctx context.Context, cmd *cli.Command) error {
+	// log := slog.Default()
+	// points :=
+	return geocoder.PrintCacheSizeAnalysisForFile(cmd.String("points"))
+}
+
 func generate(ctx context.Context, cmd *cli.Command) error {
+	if !cmd.IsSet("output") && !cmd.IsSet("output-v2") {
+		return fmt.Errorf("either 'output' or 'output-v2' must be set")
+	}
+
 	telemetryClient, err := telemetry.Setup(ctx, "rgeocache", cmd.String("otel.endpoint"))
 	if err != nil {
 		return fmt.Errorf("error setting up telemetry: %w", err)
@@ -190,7 +228,7 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 
 	if pprofListen := cmd.String("pprof.listen"); pprofListen != "" {
 		go func() {
-			log.Info("Starting pprof server")
+			log.Info("Starting pprof server", "address", pprofListen)
 			err := http.ListenAndServe(pprofListen, nil)
 			if err != nil {
 				log.Error("Error starting pprof server", "error", err)
@@ -225,17 +263,6 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 		inputsReaders = append(inputsReaders, file)
 	}
 
-	saveFilePath := cmd.String("points")
-	if !strings.HasSuffix(saveFilePath, ".rgc") {
-		saveFilePath = saveFilePath + ".rgc"
-	}
-
-	outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
-	if err != nil {
-		return err
-	}
-	defer outputFile.Close()
-
 	log.Info("Tuning gc to respect only soft mem limit")
 	err = tuneGC()
 	if err != nil {
@@ -250,18 +277,66 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	cacheFormat := cmd.String("cache-format")
+	if cacheFormat == "v2" {
+		cacheFormat = "2"
+	}
+
 	config := geoparser.ConfigDefault()
 	config.PreferredLocalization = preferredLocalization
 	config.Version = uint32(version)
 
-	geoGen, err := geoparser.NewGeoGen(osmdb, config, outputFile)
+	geoGen, err := geoparser.NewGeoGen(osmdb, config)
 	if err != nil {
 		return fmt.Errorf("error creating geoGen: %w", err)
 	}
 
-	log.Info("Creating OSM cache", "output", saveFilePath)
+	log.Info("Creating OSM cache")
 
-	err = geoGen.ParseOSMData()
+	outputs := []geoparser.ParseOutput{}
+	if saveFilePath := cmd.String("output"); saveFilePath != "" {
+		if !strings.HasSuffix(saveFilePath, ".rgc") {
+			saveFilePath = saveFilePath + ".rgc"
+		}
+
+		log.Info("Saving cache in v1 format", "path", saveFilePath)
+
+		outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+		if err != nil {
+			return err
+		}
+		defer outputFile.Close()
+
+		outputs = append(outputs, geoparser.ParseOutput{
+			Format: "v1",
+			Writer: outputFile,
+		})
+	}
+	if saveFilePath := cmd.String("output-v2"); saveFilePath != "" {
+		if !strings.HasSuffix(saveFilePath, ".rgc") {
+			saveFilePath = saveFilePath + ".rgc"
+		}
+
+		outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+		if err != nil {
+			return err
+		}
+		defer outputFile.Close()
+
+		log.Info("Saving cache in v2 format", "path", saveFilePath)
+
+		outputs = append(outputs, geoparser.ParseOutput{
+			Format: "v2",
+			Writer: outputFile,
+		})
+	}
+
+	if len(outputs) == 0 {
+		log.Info("No output specified")
+		return nil
+	}
+
+	err = geoGen.ParseOSMData(outputs)
 	if err != nil {
 		return fmt.Errorf("error parsing osm with error: %s", err.Error())
 	}
@@ -301,7 +376,7 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 
 	if pprofListen := cmd.String("pprof.listen"); pprofListen != "" {
 		go func() {
-			log.Info("Starting pprof server")
+			log.Info("Starting pprof server", "address", pprofListen)
 			err := http.ListenAndServe(pprofListen, nil)
 			if err != nil {
 				log.Error("Error starting pprof server", "error", err)
@@ -323,20 +398,67 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	cacheFile := cmd.String("points")
+	noMmap := cmd.Bool("no-mmap")
 
-	err := geocoder.PrintCacheSizeAnalysisForFile(cacheFile)
-	if err != nil {
-		log.Error("Failed to analyze cache file", "error", err)
+	// Detect cache format to decide loading path
+	isV2 := detectV2Cache(cacheFile)
+
+	var rgeo geocoder.Geocoder
+	var closer io.Closer
+
+	if isV2 && !noMmap {
+		log.Info("Detected v2 cache, loading via mmap (use --no-mmap to force full load)")
+		rgeoDisk, err := geocoder.LoadGeoCoderFromFileDisk(cacheFile,
+			geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
+		if err != nil {
+			return err
+		}
+		rgeo = rgeoDisk
+		closer = rgeoDisk
+	} else {
+		if isV2 {
+			log.Info("Detected v2 cache, loading fully into memory (--no-mmap)")
+		}
+		rgeoMem, err := geocoder.LoadGeoCoderFromFile(cacheFile,
+			geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
+		if err != nil {
+			return err
+		}
+		rgeo = rgeoMem
 	}
 
-	rgeo, err := geocoder.LoadGeoCoderFromFile(cacheFile, geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
-	if err != nil {
-		return err
+	if closer != nil {
+		defer closer.Close()
 	}
 
 	runtime.GC()
 
 	return server.Run(ctx, cmd.String("listen"), rgeo, pointsPerThread, log)
+}
+
+// detectV2Cache reads the first 8 bytes of a cache file and returns true
+// if it's a v2 format cache (magic "RGEO" + compat level 2).
+func detectV2Cache(file string) bool {
+	f, err := os.Open(file)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	var magic [4]byte
+	if _, err := f.Read(magic[:]); err != nil {
+		return false
+	}
+	if string(magic[:]) != "RGEO" {
+		return false
+	}
+
+	var compatBuf [4]byte
+	if _, err := f.Read(compatBuf[:]); err != nil {
+		return false
+	}
+
+	return binary.LittleEndian.Uint32(compatBuf[:]) == savev2.COMPATIBILITY_LEVEL
 }
 
 func tuneGC() error {
