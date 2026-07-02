@@ -85,12 +85,19 @@ jobs:
           chmod +x ./rgeocache
           ./rgeocache generate --pprof.profile --pprof.heap --stats stats.txt \
             -l ${{ matrix.locale }} --version ${{ github.run_id }} \
-            -p ${{ matrix.name }}_points ${MAPS_FILES}
+            --output ${{ matrix.name }}_points.rgc \
+            --output-v2 ${{ matrix.name }}_points_v2.rgc \
+            ${MAPS_FILES}
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}_points
           path: |
             cache_build/${{ matrix.name }}_points.rgc
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}_points_v2
+          path: |
+            cache_build/${{ matrix.name }}_points_v2.rgc
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}_profile

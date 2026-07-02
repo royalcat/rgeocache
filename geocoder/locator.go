@@ -32,6 +32,11 @@ func (g *geoInfo) value() geomodel.Info {
 	}
 }
 
+// Geocoder is the common interface for both in-memory and disk-backed geocoders.
+type Geocoder interface {
+	Find(lat, lon float64) (InfoModel, bool)
+}
+
 type RGeoCoder struct {
 	tree         *kdbush.KDBush[*geoInfo]
 	regions      *bordertree.BorderTree[unique.Handle[string]]

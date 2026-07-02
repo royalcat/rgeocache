@@ -11,6 +11,7 @@ import (
 
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
+	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
@@ -68,6 +69,16 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemod
 			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated)
 		}
 		return points, zones, nil
+	case savev2.COMPATIBILITY_LEVEL:
+		log.Info("Loading v2 cache format")
+		points, zones, metadata, err := loadV2Cache(reader)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error loading v2 cache: %s", err.Error())
+		}
+		if metadata != nil {
+			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated)
+		}
+		return points, zones, nil
 	}
 
 	return nil, nil, fmt.Errorf("unsupported compatibility level: %d", compatibilityLevel)
@@ -89,7 +100,11 @@ func PrintCacheSizeAnalysis(r io.Reader) error {
 	}
 	switch compatibilityLevel {
 	case savev1.COMPATIBILITY_LEVEL:
+		slog.Info("Loading v1 cache format")
 		return savev1.PrintCacheAnalysis(r)
+	case savev2.COMPATIBILITY_LEVEL:
+		slog.Info("Loading v2 cache format")
+		return savev2.PrintCacheAnalysis(r)
 	default:
 		return fmt.Errorf("Cache version %d not supported", compatibilityLevel)
 	}
