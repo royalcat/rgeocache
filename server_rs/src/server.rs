@@ -34,15 +34,14 @@ impl Metrics {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let registry = Registry::new();
 
-        let mut single_opts = Opts::new("rgeocode_requests_total", "Total reverse geocode requests");
-        single_opts.const_labels =
-            HashMap::from([("endpoint".into(), "address".into())]);
+        let mut single_opts =
+            Opts::new("rgeocode_requests_total", "Total reverse geocode requests");
+        single_opts.const_labels = HashMap::from([("endpoint".into(), "address".into())]);
         let requests_single = Counter::with_opts(single_opts)?;
         registry.register(Box::new(requests_single.clone()))?;
 
         let mut multi_opts = Opts::new("rgeocode_requests_total", "Total reverse geocode requests");
-        multi_opts.const_labels =
-            HashMap::from([("endpoint".into(), "multiaddress".into())]);
+        multi_opts.const_labels = HashMap::from([("endpoint".into(), "multiaddress".into())]);
         let requests_multi = Counter::with_opts(multi_opts)?;
         registry.register(Box::new(requests_multi.clone()))?;
 

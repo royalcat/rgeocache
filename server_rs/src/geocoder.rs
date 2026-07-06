@@ -89,7 +89,8 @@ impl Geocoder {
                     let dist = sq_dist(x, y, lon, lat);
                     if dist <= r2 {
                         let data = cache.read_point_data(idxs[i] as usize);
-                        if dist < best_dist || data.weight > best_point.map(|p| p.weight).unwrap_or(0)
+                        if dist < best_dist
+                            || data.weight > best_point.map(|p| p.weight).unwrap_or(0)
                         {
                             best_dist = dist;
                             best_point = Some(data);
@@ -116,13 +117,21 @@ impl Geocoder {
             let next_axis = (axis + 1) % 2;
 
             // Decide which children to visit
-            let cmp = if axis == 0 { lon - radius } else { lat - radius };
+            let cmp = if axis == 0 {
+                lon - radius
+            } else {
+                lat - radius
+            };
             let coord_val = if axis == 0 { x } else { y };
 
             if cmp <= coord_val {
                 stack.push((left, m as i64 - 1, next_axis));
             }
-            let cmp = if axis == 0 { lon + radius } else { lat + radius };
+            let cmp = if axis == 0 {
+                lon + radius
+            } else {
+                lat + radius
+            };
             if cmp >= coord_val {
                 stack.push((m as i64 + 1, right, next_axis));
             }
