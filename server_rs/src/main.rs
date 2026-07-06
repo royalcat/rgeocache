@@ -8,6 +8,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
+use ntex::http::HttpServiceConfig;
+use ntex::io::IoConfig;
+use ntex::web::{HttpServer, WebAppConfig};
+use ntex::SharedCfg;
 
 /// Low-memory reverse geocoding server (v2 cache, mmap-only).
 #[derive(Parser, Debug)]
@@ -53,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Starting server on {}", args.listen);
 
-    ntex::web::server(move || {
+    HttpServer::new(async move || {
         ntex::web::App::new()
             .state(state.clone())
             .route(
@@ -64,11 +68,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "/rgeocode/multiaddress",
                 ntex::web::post().to(server::rgeocode_multi_handler),
             )
-            .route(
-                "/metrics",
-                ntex::web::get().to(server::metrics_handler),
-            )
+            .route("/metrics", ntex::web::get().to(server::metrics_handler))
     })
+    .config(
+        SharedCfg::new("rgeocache")
+            .add(IoConfig::default())
+            .add(HttpServiceConfig::default())
+            .add(WebAppConfig::default()),
+    )
+    // .workers(1)
     .bind(&args.listen)?
     .run()
     .await?;

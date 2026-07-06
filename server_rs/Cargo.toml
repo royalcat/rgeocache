@@ -15,7 +15,7 @@ tracing = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dependencies]
 # Web framework
-ntex = { version = "2", features = ["compio", "compress"] }
+ntex = { version = "3.10", features = ["compio", "compress"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -24,18 +24,21 @@ serde_json = "1"
 # Memory-mapped files
 memmap2 = "0.9"
 
+# Zero-copy binary parsing from mmap
+zerocopy = { version = "0.8", features = ["derive"] }
+
 # Protobuf
-prost = "0.13"
+prost = "0.14"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
 
 # Geometry
-geo = "0.28"
-rstar = "0.12"
+geo = "0.33"
+rstar = "0.13"
 
 # Metrics (always available, always compiled)
-prometheus = { version = "0.13", features = ["process"] }
+prometheus = { version = "0.14", features = ["process"] }
 
 # Logging
 log = "0.4"
@@ -46,13 +49,14 @@ tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
 
 [build-dependencies]
-prost-build = "0.13"
+prost-build = "0.14"
 
 [profile.release]
-lto = true
+lto = "thin"
 codegen-units = 1
 opt-level = 3
 
 [profile.profiling]
 inherits = "release"
 debug = true
+lto = false

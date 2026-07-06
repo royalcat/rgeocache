@@ -28,6 +28,8 @@
 
 use memmap2::Mmap;
 use prost::Message;
+use zerocopy::byteorder::little_endian::{I64 as I64LE, U32 as U32LE};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::proto;
 
@@ -46,34 +48,25 @@ pub const V2_POINT_DATA_SIZE: usize = 21;
 // V2PointData — on-disk point payload (21 bytes, little-endian)
 // ---------------------------------------------------------------------------
 
-/// On-disk point data: 5× string IDs + weight.  ID 0 means empty string.
-#[derive(Clone, Copy, Debug, Default)]
+/// On-disk point data: 5× u32 string IDs (LE) + weight.
+/// ID 0 means empty string.
+///
+/// Derives `FromBytes` + `IntoBytes` for zero-cost transmutation from/to
+/// the mmap'd byte region.  `#[repr(C)]` guarantees the exact 21-byte
+/// layout with no padding.
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Clone, Copy, Debug, Default)]
+#[repr(C)]
 pub struct V2PointData {
-    pub name_id: u32,
-    pub street_id: u32,
-    pub house_number_id: u32,
-    pub city_id: u32,
-    pub region_id: u32,
+    pub name_id: U32LE,
+    pub street_id: U32LE,
+    pub house_number_id: U32LE,
+    pub city_id: U32LE,
+    pub region_id: U32LE,
     pub weight: u8,
 }
 
 impl V2PointData {
-    /// Deserialize from exactly 21 bytes.
-    pub fn from_bytes(data: &[u8]) -> Option<Self> {
-        if data.len() < V2_POINT_DATA_SIZE {
-            return None;
-        }
-        Some(Self {
-            name_id: u32::from_le_bytes([data[0], data[1], data[2], data[3]]),
-            street_id: u32::from_le_bytes([data[4], data[5], data[6], data[7]]),
-            house_number_id: u32::from_le_bytes([data[8], data[9], data[10], data[11]]),
-            city_id: u32::from_le_bytes([data[12], data[13], data[14], data[15]]),
-            region_id: u32::from_le_bytes([data[16], data[17], data[18], data[19]]),
-            weight: data[20],
-        })
-    }
-
-    /// Read from bytes (for empty blobs).
+    /// Create an empty (all-zeros) point data.
     pub fn empty() -> Self {
         Self::default()
     }
@@ -137,6 +130,22 @@ pub struct CacheFile {
     pub data_blobs_offset: usize,   // absolute position of concatenated blobs
 }
 
+// Helper: read a U32LE from mmap at the given offset.
+#[inline]
+fn read_u32le(mmap: &Mmap, offset: usize) -> Result<u32, String> {
+    U32LE::read_from_bytes(&mmap[offset..offset + 4])
+        .map(|v| v.get())
+        .map_err(|e| format!("failed to read u32 at {offset}: {e}"))
+}
+
+// Helper: read an I64LE from mmap at the given offset.
+#[inline]
+fn read_i64le(mmap: &Mmap, offset: usize) -> Result<i64, String> {
+    I64LE::read_from_bytes(&mmap[offset..offset + 8])
+        .map(|v| v.get())
+        .map_err(|e| format!("failed to read i64 at {offset}: {e}"))
+}
+
 impl CacheFile {
     /// Open and parse a v2 cache file via mmap.
     pub fn open(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
@@ -155,12 +164,7 @@ impl CacheFile {
         offset += 4;
 
         // --- Verify compatibility level ---
-        let compat = u32::from_le_bytes([
-            mmap[offset],
-            mmap[offset + 1],
-            mmap[offset + 2],
-            mmap[offset + 3],
-        ]);
+        let compat = read_u32le(&mmap, offset)?;
         if compat != COMPAT_LEVEL_V2 {
             return Err(format!(
                 "expected v2 cache (compat level {}), got {}",
@@ -171,12 +175,7 @@ impl CacheFile {
         offset += 4;
 
         // --- Read V2Header protobuf ---
-        let header_size = u32::from_le_bytes([
-            mmap[offset],
-            mmap[offset + 1],
-            mmap[offset + 2],
-            mmap[offset + 3],
-        ]) as usize;
+        let header_size = read_u32le(&mmap, offset)? as usize;
         offset += 4;
 
         let header = proto::V2Header::decode(&mmap[offset..offset + header_size])?;
@@ -193,12 +192,7 @@ impl CacheFile {
         let mut strings_index = Vec::with_capacity(num_strings);
         for i in 0..num_strings {
             let base = offset + i * 4;
-            strings_index.push(u32::from_le_bytes([
-                mmap[base],
-                mmap[base + 1],
-                mmap[base + 2],
-                mmap[base + 3],
-            ]));
+            strings_index.push(read_u32le(&mmap, base)?);
         }
         offset += strings_index_size;
 
@@ -221,12 +215,7 @@ impl CacheFile {
             return Err(format!("invalid KDBH magic: {kdbh_magic:?}").into());
         }
 
-        let kdbh_version = u32::from_le_bytes([
-            mmap[kdbh_base + 4],
-            mmap[kdbh_base + 5],
-            mmap[kdbh_base + 6],
-            mmap[kdbh_base + 7],
-        ]);
+        let kdbh_version = read_u32le(&mmap, kdbh_base + 4)?;
         if kdbh_version != KDBH_VERSION {
             return Err(format!(
                 "unsupported KDBH version {} (want {})",
@@ -235,27 +224,8 @@ impl CacheFile {
             .into());
         }
 
-        let node_size = i64::from_le_bytes([
-            mmap[kdbh_base + 8],
-            mmap[kdbh_base + 9],
-            mmap[kdbh_base + 10],
-            mmap[kdbh_base + 11],
-            mmap[kdbh_base + 12],
-            mmap[kdbh_base + 13],
-            mmap[kdbh_base + 14],
-            mmap[kdbh_base + 15],
-        ]) as usize;
-
-        let num_points = i64::from_le_bytes([
-            mmap[kdbh_base + 16],
-            mmap[kdbh_base + 17],
-            mmap[kdbh_base + 18],
-            mmap[kdbh_base + 19],
-            mmap[kdbh_base + 20],
-            mmap[kdbh_base + 21],
-            mmap[kdbh_base + 22],
-            mmap[kdbh_base + 23],
-        ]) as usize;
+        let node_size = read_i64le(&mmap, kdbh_base + 8)? as usize;
+        let num_points = read_i64le(&mmap, kdbh_base + 16)? as usize;
 
         let idxs_offset = kdbh_base + KDBH_HEADER_SIZE;
         let coords_offset = idxs_offset + num_points * 8;
@@ -282,46 +252,32 @@ impl CacheFile {
     #[inline]
     pub fn read_idx(&self, i: usize) -> i64 {
         let pos = self.idxs_offset + i * 8;
-        i64::from_le_bytes([
-            self.mmap[pos],
-            self.mmap[pos + 1],
-            self.mmap[pos + 2],
-            self.mmap[pos + 3],
-            self.mmap[pos + 4],
-            self.mmap[pos + 5],
-            self.mmap[pos + 6],
-            self.mmap[pos + 7],
-        ])
+        I64LE::read_from_bytes(&self.mmap[pos..pos + 8])
+            .map(|v| v.get())
+            .unwrap_or(0)
     }
 
     /// Read the (x, y) coordinate pair for sorted position `i`.
+    /// Coordinates are stored as f64 LE.  We read the bits via I64LE and
+    /// transmute to f64 — this is valid because f64 LE has the same byte
+    /// layout as a little-endian u64.
     #[inline]
     pub fn read_coord(&self, i: usize) -> (f64, f64) {
         let pos = self.coords_offset + i * 16;
-        let x = f64::from_le_bytes([
-            self.mmap[pos],
-            self.mmap[pos + 1],
-            self.mmap[pos + 2],
-            self.mmap[pos + 3],
-            self.mmap[pos + 4],
-            self.mmap[pos + 5],
-            self.mmap[pos + 6],
-            self.mmap[pos + 7],
-        ]);
-        let y = f64::from_le_bytes([
-            self.mmap[pos + 8],
-            self.mmap[pos + 9],
-            self.mmap[pos + 10],
-            self.mmap[pos + 11],
-            self.mmap[pos + 12],
-            self.mmap[pos + 13],
-            self.mmap[pos + 14],
-            self.mmap[pos + 15],
-        ]);
+        let x = I64LE::read_from_bytes(&self.mmap[pos..pos + 8])
+            .map(|v| f64::from_bits(v.get() as u64))
+            .unwrap_or(0.0);
+        let y = I64LE::read_from_bytes(&self.mmap[pos + 8..pos + 16])
+            .map(|v| f64::from_bits(v.get() as u64))
+            .unwrap_or(0.0);
         (x, y)
     }
 
     /// Batch-read indices and coordinates for leaf range `[left, right]` inclusive.
+    ///
+    /// Uses zerocopy `read_from_bytes` for each element — cleaner and equivalently
+    /// fast compared to manual `from_le_bytes`, since the compiler optimizes both
+    /// to direct memory loads on little-endian hardware.
     pub fn read_leaf(&self, left: usize, right: usize) -> (Vec<i64>, Vec<f64>) {
         let count = right - left + 1;
         let mut idxs = Vec::with_capacity(count);
@@ -338,30 +294,13 @@ impl CacheFile {
     }
 
     /// Read the V2PointData blob for the point at original index `orig_idx`.
+    /// Uses zerocopy [`FromBytes`] for zero-cost transmutation from the mmap'd bytes.
     #[inline]
     pub fn read_point_data(&self, orig_idx: usize) -> V2PointData {
-        // Read offsets[orig_idx] and offsets[orig_idx+1] as two consecutive i64 values
+        // Read offsets[orig_idx] and offsets[orig_idx+1] as two consecutive i64 LE values.
         let off_pos = self.data_offsets_offset + orig_idx * 8;
-        let blob_start = i64::from_le_bytes([
-            self.mmap[off_pos],
-            self.mmap[off_pos + 1],
-            self.mmap[off_pos + 2],
-            self.mmap[off_pos + 3],
-            self.mmap[off_pos + 4],
-            self.mmap[off_pos + 5],
-            self.mmap[off_pos + 6],
-            self.mmap[off_pos + 7],
-        ]) as usize;
-        let blob_end = i64::from_le_bytes([
-            self.mmap[off_pos + 8],
-            self.mmap[off_pos + 9],
-            self.mmap[off_pos + 10],
-            self.mmap[off_pos + 11],
-            self.mmap[off_pos + 12],
-            self.mmap[off_pos + 13],
-            self.mmap[off_pos + 14],
-            self.mmap[off_pos + 15],
-        ]) as usize;
+        let blob_start = read_i64le(&self.mmap, off_pos).unwrap_or(0) as usize;
+        let blob_end = read_i64le(&self.mmap, off_pos + 8).unwrap_or(0) as usize;
 
         let blob_len = blob_end - blob_start;
         if blob_len == 0 {
@@ -369,8 +308,8 @@ impl CacheFile {
         }
 
         let blob_pos = self.data_blobs_offset + blob_start;
-        V2PointData::from_bytes(&self.mmap[blob_pos..blob_pos + blob_len])
-            .unwrap_or_else(V2PointData::empty)
+        V2PointData::read_from_bytes(&self.mmap[blob_pos..blob_pos + V2_POINT_DATA_SIZE])
+            .unwrap_or_else(|_| V2PointData::empty())
     }
 
     /// Read a null-terminated string from the string data block by its ID.
@@ -411,40 +350,33 @@ fn parse_metadata_manual(data: &[u8]) -> Result<CacheMetadata, Box<dyn std::erro
 
         match (field_num, wire_type) {
             (1, 0) => {
-                // uint32 version (varint)
                 let (val, c) = read_varint(&data[pos..]);
                 version = val as u32;
                 pos += c;
             }
             (2, 2) => {
-                // string date_created
                 let (len, c) = read_varint(&data[pos..]);
                 pos += c;
                 date_created = String::from_utf8_lossy(&data[pos..pos + len as usize]).into_owned();
                 pos += len as usize;
             }
             (3, 2) => {
-                // string locale
                 let (len, c) = read_varint(&data[pos..]);
                 pos += c;
                 locale = String::from_utf8_lossy(&data[pos..pos + len as usize]).into_owned();
                 pos += len as usize;
             }
-            _ => {
-                // Unknown field — skip
-                match wire_type {
-                    0 => {
-                        // varint
-                        let (_, c) = read_varint(&data[pos..]);
-                        pos += c;
-                    }
-                    2 => {
-                        let (len, c) = read_varint(&data[pos..]);
-                        pos += c + len as usize;
-                    }
-                    _ => break,
+            _ => match wire_type {
+                0 => {
+                    let (_, c) = read_varint(&data[pos..]);
+                    pos += c;
                 }
-            }
+                2 => {
+                    let (len, c) = read_varint(&data[pos..]);
+                    pos += c + len as usize;
+                }
+                _ => break,
+            },
         }
     }
 
@@ -529,7 +461,6 @@ fn convert_multi_polygon(mp: Option<&proto::MultiPolygon>) -> geo::MultiPolygon<
                 })
                 .collect();
 
-            // First ring is exterior, rest are holes
             let exterior = rings
                 .first()
                 .cloned()

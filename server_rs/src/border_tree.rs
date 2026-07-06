@@ -73,7 +73,7 @@ impl BorderTree {
         let geo_point: geo::Point = geo::Coord { x, y }.into();
 
         // Find all candidates whose bounding box contains the point
-        for entry in self.tree.locate_all_at_point(&point) {
+        for entry in self.tree.locate_all_at_point(point) {
             if entry.polygon.contains(&geo_point) {
                 return Some(&entry.name);
             }
@@ -111,5 +111,7 @@ fn polygon_bbox(mp: &geo::MultiPolygon<f64>) -> geo::Rect<f64> {
             }
         }
     }
-    bbox.unwrap_or_else(|| geo::Rect::new(geo::Coord { x: 0.0, y: 0.0 }, geo::Coord { x: 0.0, y: 0.0 }))
+    bbox.unwrap_or_else(|| {
+        geo::Rect::new(geo::Coord { x: 0.0, y: 0.0 }, geo::Coord { x: 0.0, y: 0.0 })
+    })
 }

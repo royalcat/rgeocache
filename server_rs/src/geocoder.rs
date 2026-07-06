@@ -181,11 +181,11 @@ impl Geocoder {
 /// Resolve string IDs from V2PointData using the cache's string table.
 fn resolve(cache: &CacheFile, data: V2PointData) -> Info {
     Info {
-        name: cache.read_string(data.name_id),
-        street: cache.read_string(data.street_id),
-        house_number: cache.read_string(data.house_number_id),
-        city: cache.read_string(data.city_id),
-        region: cache.read_string(data.region_id),
+        name: cache.read_string(data.name_id.get()),
+        street: cache.read_string(data.street_id.get()),
+        house_number: cache.read_string(data.house_number_id.get()),
+        city: cache.read_string(data.city_id.get()),
+        region: cache.read_string(data.region_id.get()),
         country: String::new(), // country only from border trees
         weight: data.weight,
     }
