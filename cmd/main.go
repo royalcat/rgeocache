@@ -392,7 +392,7 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		log.Info("Using custom search radius", "radius", radius)
 	}
 
-	pointsPerThread := cmd.Int64("points-per-thread")
+	pointsPerThread := cmd.Int("points-per-thread")
 	if pointsPerThread <= 0 {
 		pointsPerThread = 1000
 	}
