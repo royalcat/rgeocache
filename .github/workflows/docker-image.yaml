@@ -11,6 +11,7 @@ on:
       - "docs/**"
       - "generate_scripts/**"
       - "README**"
+      - "server_rs/**"
 
 jobs:
   build-and-push-image:

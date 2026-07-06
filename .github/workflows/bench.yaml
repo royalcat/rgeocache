@@ -2,6 +2,11 @@ name: benches
 
 on:
   push:
+    paths:
+      - ".github/workflows/bench.yaml"
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
 
 permissions:
   contents: write
