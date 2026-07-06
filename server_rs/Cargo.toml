@@ -49,6 +49,8 @@ env_logger = "0.11"
 # Tracing (feature-gated)
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
+async-rayon = "0.1.0"
+rayon = "1.12.0"
 
 [build-dependencies]
 prost-build = "0.14"

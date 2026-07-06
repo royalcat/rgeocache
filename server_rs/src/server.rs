@@ -6,6 +6,7 @@ use std::sync::Arc;
 use ntex::http::header;
 use ntex::web::{self, HttpResponse};
 use prometheus::{Counter, Encoder, Histogram, HistogramOpts, Opts, Registry, TextEncoder};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::geocoder::{Geocoder, Info};
 
@@ -14,7 +15,7 @@ use crate::geocoder::{Geocoder, Info};
 // ---------------------------------------------------------------------------
 
 pub struct AppState {
-    pub geocoder: Geocoder,
+    pub geocoder: Arc<Geocoder>,
     pub metrics: Metrics,
 }
 
@@ -115,22 +116,40 @@ pub async fn rgeocode_multi_handler(
     let points = body.into_inner();
     state.metrics.addresses_total.inc_by(points.len() as f64);
 
-    let geocoder = &state.geocoder;
+    let geocoder = state.geocoder.clone();
 
-    let results: Vec<Info> = points
-        .iter()
-        .map(|&[lat, lon]| {
-            geocoder.find(lat, lon).unwrap_or_else(|| Info {
-                name: String::new(),
-                street: String::new(),
-                house_number: String::new(),
-                city: String::new(),
-                region: String::new(),
-                country: String::new(),
-                weight: 0,
+    let results = async_rayon::spawn_fifo(move || {
+        points
+            .par_iter()
+            .map(|&[lat, lon]| {
+                geocoder.find(lat, lon).unwrap_or_else(|| Info {
+                    name: String::new(),
+                    street: String::new(),
+                    house_number: String::new(),
+                    city: String::new(),
+                    region: String::new(),
+                    country: String::new(),
+                    weight: 0,
+                })
             })
-        })
-        .collect();
+            .collect::<Vec<_>>()
+    })
+    .await;
+
+    // let results: Vec<Info> = points
+    //     .iter()
+    //     .map(|&[lat, lon]| {
+    //         geocoder.find(lat, lon).unwrap_or_else(|| Info {
+    //             name: String::new(),
+    //             street: String::new(),
+    //             house_number: String::new(),
+    //             city: String::new(),
+    //             region: String::new(),
+    //             country: String::new(),
+    //             weight: 0,
+    //         })
+    //     })
+    //     .collect();
 
     HttpResponse::Ok().json(&results)
 }

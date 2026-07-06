@@ -53,13 +53,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let metrics = server::Metrics::new()?;
 
-    let state = Arc::new(server::AppState { geocoder, metrics });
+    let state = Arc::new(server::AppState {
+        geocoder: Arc::new(geocoder),
+        metrics,
+    });
 
     log::info!("Starting server on {}", args.listen);
 
     HttpServer::new(async move || {
         ntex::web::App::new()
             .state(state.clone())
+            .state(ntex::web::types::JsonConfig::default().limit(32 * 1024 * 1024))
             .route(
                 "/rgeocode/address/{lat}/{lon}",
                 ntex::web::get().to(server::rgeocode_handler),
