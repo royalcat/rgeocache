@@ -9,13 +9,15 @@ name = "rgeocache-server"
 path = "src/main.rs"
 
 [features]
-default = ["metrics"]
+default = ["metrics", "tokio"]
 metrics = []
+tokio = ["ntex/tokio"]
+compio = ["ntex/compio"]
 tracing = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dependencies]
 # Web framework
-ntex = { version = "3.10", features = ["compio", "compress"] }
+ntex = { version = "3.10", features = ["compress"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
