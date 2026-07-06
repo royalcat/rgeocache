@@ -1,0 +1,543 @@
+//! V2 cache file loader (mmap-only).
+//!
+//! The v2 cache format:
+//!
+//! ```text
+//! [0..4)   Magic "RGEO"
+//! [4..8)   Compat level u32 LE (must be 2)
+//! [8..12)  V2Header protobuf size u32 LE
+//! [12..H)  V2Header protobuf
+//! [H..)    CacheMetadata protobuf (metadata_size bytes)
+//! ...      String offset index (strings_index_size bytes, N × u32 LE)
+//! ...      String data block (strings_data_size bytes, null-terminated)
+//! ...      V2ZonesSection protobuf (zones_size bytes)
+//! ...      KDBH binary block (32-byte header + tree + data)
+//! ```
+//!
+//! KDBH binary block (after the 32-byte header):
+//!
+//! ```text
+//! Tree section (N = num_points):
+//!   [H      .. H+N*8)   idxs     N × i64 LE   (sorted original indices)
+//!   [H+N*8  .. H+N*24)  coords   N × 2 × f64 LE (sorted x,y pairs)
+//!
+//! Data section:
+//!   [D      .. D+(N+1)*8)   offsets  (N+1) × i64 LE  (cumulative byte offsets)
+//!   [B      .. EOF)         blobs    concatenated 21-byte V2PointData records
+//! ```
+
+use memmap2::Mmap;
+use prost::Message;
+
+use crate::proto;
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+pub const MAGIC: &[u8; 4] = b"RGEO";
+pub const COMPAT_LEVEL_V2: u32 = 2;
+const KDBH_MAGIC: &[u8; 4] = b"KDBH";
+const KDBH_VERSION: u32 = 1;
+const KDBH_HEADER_SIZE: usize = 32;
+pub const V2_POINT_DATA_SIZE: usize = 21;
+
+// ---------------------------------------------------------------------------
+// V2PointData — on-disk point payload (21 bytes, little-endian)
+// ---------------------------------------------------------------------------
+
+/// On-disk point data: 5× string IDs + weight.  ID 0 means empty string.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct V2PointData {
+    pub name_id: u32,
+    pub street_id: u32,
+    pub house_number_id: u32,
+    pub city_id: u32,
+    pub region_id: u32,
+    pub weight: u8,
+}
+
+impl V2PointData {
+    /// Deserialize from exactly 21 bytes.
+    pub fn from_bytes(data: &[u8]) -> Option<Self> {
+        if data.len() < V2_POINT_DATA_SIZE {
+            return None;
+        }
+        Some(Self {
+            name_id: u32::from_le_bytes([data[0], data[1], data[2], data[3]]),
+            street_id: u32::from_le_bytes([data[4], data[5], data[6], data[7]]),
+            house_number_id: u32::from_le_bytes([data[8], data[9], data[10], data[11]]),
+            city_id: u32::from_le_bytes([data[12], data[13], data[14], data[15]]),
+            region_id: u32::from_le_bytes([data[16], data[17], data[18], data[19]]),
+            weight: data[20],
+        })
+    }
+
+    /// Read from bytes (for empty blobs).
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CacheMetadata — parsed manually (simple fields, avoids v1 proto dependency)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct CacheMetadata {
+    #[allow(dead_code)]
+    pub version: u32,
+    #[allow(dead_code)]
+    pub date_created: String,
+    #[allow(dead_code)]
+    pub locale: String,
+}
+
+// ---------------------------------------------------------------------------
+// IndexedZone — resolved zone ready for border tree insertion
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct IndexedZone {
+    pub name: String,
+    pub zone_type: ZoneType,
+    pub polygon: geo::MultiPolygon<f64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZoneType {
+    Region = 1,
+    Country = 2,
+}
+
+// ---------------------------------------------------------------------------
+// CacheFile — mmap'd v2 cache
+// ---------------------------------------------------------------------------
+
+/// An open, mmap'd v2 cache file.
+///
+/// The spatial index stays on disk; only the string offset index and zone data
+/// are loaded into memory.
+pub struct CacheFile {
+    mmap: Mmap,
+
+    // String resolution
+    pub strings_index: Vec<u32>, // id → byte offset into string data block
+    pub strings_data_offset: usize, // absolute position in the mmap'd file
+
+    // Zone data
+    pub zones: Vec<IndexedZone>,
+
+    // KDBH spatial index layout
+    pub num_points: usize,
+    pub node_size: usize,
+    pub idxs_offset: usize,         // absolute position of sorted indices
+    pub coords_offset: usize,       // absolute position of sorted coords
+    pub data_offsets_offset: usize, // absolute position of cumulative data offsets
+    pub data_blobs_offset: usize,   // absolute position of concatenated blobs
+}
+
+impl CacheFile {
+    /// Open and parse a v2 cache file via mmap.
+    pub fn open(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let file = std::fs::File::open(path)?;
+        let mmap = unsafe { Mmap::map(&file)? };
+
+        mmap.advise(memmap2::Advice::Random)?;
+
+        let mut offset: usize = 0;
+
+        // --- Verify magic bytes ---
+        let magic = &mmap[offset..offset + 4];
+        if magic != MAGIC {
+            return Err(format!("invalid magic bytes: {magic:?}").into());
+        }
+        offset += 4;
+
+        // --- Verify compatibility level ---
+        let compat = u32::from_le_bytes([
+            mmap[offset],
+            mmap[offset + 1],
+            mmap[offset + 2],
+            mmap[offset + 3],
+        ]);
+        if compat != COMPAT_LEVEL_V2 {
+            return Err(format!(
+                "expected v2 cache (compat level {}), got {}",
+                COMPAT_LEVEL_V2, compat
+            )
+            .into());
+        }
+        offset += 4;
+
+        // --- Read V2Header protobuf ---
+        let header_size = u32::from_le_bytes([
+            mmap[offset],
+            mmap[offset + 1],
+            mmap[offset + 2],
+            mmap[offset + 3],
+        ]) as usize;
+        offset += 4;
+
+        let header = proto::V2Header::decode(&mmap[offset..offset + header_size])?;
+        offset += header_size;
+
+        // --- Read CacheMetadata (manual protobuf decode for the 3-field message) ---
+        let metadata_size = header.metadata_size as usize;
+        let _metadata = parse_metadata_manual(&mmap[offset..offset + metadata_size])?;
+        offset += metadata_size;
+
+        // --- Read string offset index into memory ---
+        let strings_index_size = header.strings_index_size as usize;
+        let num_strings = strings_index_size / 4;
+        let mut strings_index = Vec::with_capacity(num_strings);
+        for i in 0..num_strings {
+            let base = offset + i * 4;
+            strings_index.push(u32::from_le_bytes([
+                mmap[base],
+                mmap[base + 1],
+                mmap[base + 2],
+                mmap[base + 3],
+            ]));
+        }
+        offset += strings_index_size;
+
+        // --- Record string data block position (lazy reads) ---
+        let strings_data_offset = offset;
+        offset += header.strings_data_size as usize;
+
+        // --- Read and parse zones section ---
+        let zones_size = header.zones_size as usize;
+        let zones_section = proto::V2ZonesSection::decode(&mmap[offset..offset + zones_size])?;
+        let zones = parse_zones(&zones_section);
+        offset += zones_size;
+
+        // --- Parse KDBH header and pre-compute section offsets ---
+        let kdbh_base = offset;
+
+        // Verify KDBH magic
+        let kdbh_magic = &mmap[kdbh_base..kdbh_base + 4];
+        if kdbh_magic != KDBH_MAGIC {
+            return Err(format!("invalid KDBH magic: {kdbh_magic:?}").into());
+        }
+
+        let kdbh_version = u32::from_le_bytes([
+            mmap[kdbh_base + 4],
+            mmap[kdbh_base + 5],
+            mmap[kdbh_base + 6],
+            mmap[kdbh_base + 7],
+        ]);
+        if kdbh_version != KDBH_VERSION {
+            return Err(format!(
+                "unsupported KDBH version {} (want {})",
+                kdbh_version, KDBH_VERSION
+            )
+            .into());
+        }
+
+        let node_size = i64::from_le_bytes([
+            mmap[kdbh_base + 8],
+            mmap[kdbh_base + 9],
+            mmap[kdbh_base + 10],
+            mmap[kdbh_base + 11],
+            mmap[kdbh_base + 12],
+            mmap[kdbh_base + 13],
+            mmap[kdbh_base + 14],
+            mmap[kdbh_base + 15],
+        ]) as usize;
+
+        let num_points = i64::from_le_bytes([
+            mmap[kdbh_base + 16],
+            mmap[kdbh_base + 17],
+            mmap[kdbh_base + 18],
+            mmap[kdbh_base + 19],
+            mmap[kdbh_base + 20],
+            mmap[kdbh_base + 21],
+            mmap[kdbh_base + 22],
+            mmap[kdbh_base + 23],
+        ]) as usize;
+
+        let idxs_offset = kdbh_base + KDBH_HEADER_SIZE;
+        let coords_offset = idxs_offset + num_points * 8;
+        let data_offsets_offset = coords_offset + num_points * 16;
+        let data_blobs_offset = data_offsets_offset + (num_points + 1) * 8;
+
+        Ok(Self {
+            mmap,
+            strings_index,
+            strings_data_offset,
+            zones,
+            num_points,
+            node_size,
+            idxs_offset,
+            coords_offset,
+            data_offsets_offset,
+            data_blobs_offset,
+        })
+    }
+
+    // --- Low-level mmap reads (used by the KD-tree traversal) ---
+
+    /// Read a single original-index value at sorted position `i`.
+    #[inline]
+    pub fn read_idx(&self, i: usize) -> i64 {
+        let pos = self.idxs_offset + i * 8;
+        i64::from_le_bytes([
+            self.mmap[pos],
+            self.mmap[pos + 1],
+            self.mmap[pos + 2],
+            self.mmap[pos + 3],
+            self.mmap[pos + 4],
+            self.mmap[pos + 5],
+            self.mmap[pos + 6],
+            self.mmap[pos + 7],
+        ])
+    }
+
+    /// Read the (x, y) coordinate pair for sorted position `i`.
+    #[inline]
+    pub fn read_coord(&self, i: usize) -> (f64, f64) {
+        let pos = self.coords_offset + i * 16;
+        let x = f64::from_le_bytes([
+            self.mmap[pos],
+            self.mmap[pos + 1],
+            self.mmap[pos + 2],
+            self.mmap[pos + 3],
+            self.mmap[pos + 4],
+            self.mmap[pos + 5],
+            self.mmap[pos + 6],
+            self.mmap[pos + 7],
+        ]);
+        let y = f64::from_le_bytes([
+            self.mmap[pos + 8],
+            self.mmap[pos + 9],
+            self.mmap[pos + 10],
+            self.mmap[pos + 11],
+            self.mmap[pos + 12],
+            self.mmap[pos + 13],
+            self.mmap[pos + 14],
+            self.mmap[pos + 15],
+        ]);
+        (x, y)
+    }
+
+    /// Batch-read indices and coordinates for leaf range `[left, right]` inclusive.
+    pub fn read_leaf(&self, left: usize, right: usize) -> (Vec<i64>, Vec<f64>) {
+        let count = right - left + 1;
+        let mut idxs = Vec::with_capacity(count);
+        let mut coords = Vec::with_capacity(count * 2);
+
+        for i in left..=right {
+            idxs.push(self.read_idx(i));
+            let (x, y) = self.read_coord(i);
+            coords.push(x);
+            coords.push(y);
+        }
+
+        (idxs, coords)
+    }
+
+    /// Read the V2PointData blob for the point at original index `orig_idx`.
+    #[inline]
+    pub fn read_point_data(&self, orig_idx: usize) -> V2PointData {
+        // Read offsets[orig_idx] and offsets[orig_idx+1] as two consecutive i64 values
+        let off_pos = self.data_offsets_offset + orig_idx * 8;
+        let blob_start = i64::from_le_bytes([
+            self.mmap[off_pos],
+            self.mmap[off_pos + 1],
+            self.mmap[off_pos + 2],
+            self.mmap[off_pos + 3],
+            self.mmap[off_pos + 4],
+            self.mmap[off_pos + 5],
+            self.mmap[off_pos + 6],
+            self.mmap[off_pos + 7],
+        ]) as usize;
+        let blob_end = i64::from_le_bytes([
+            self.mmap[off_pos + 8],
+            self.mmap[off_pos + 9],
+            self.mmap[off_pos + 10],
+            self.mmap[off_pos + 11],
+            self.mmap[off_pos + 12],
+            self.mmap[off_pos + 13],
+            self.mmap[off_pos + 14],
+            self.mmap[off_pos + 15],
+        ]) as usize;
+
+        let blob_len = blob_end - blob_start;
+        if blob_len == 0 {
+            return V2PointData::empty();
+        }
+
+        let blob_pos = self.data_blobs_offset + blob_start;
+        V2PointData::from_bytes(&self.mmap[blob_pos..blob_pos + blob_len])
+            .unwrap_or_else(V2PointData::empty)
+    }
+
+    /// Read a null-terminated string from the string data block by its ID.
+    /// ID 0 is the empty string.
+    #[inline]
+    pub fn read_string(&self, id: u32) -> String {
+        if id == 0 {
+            return String::new();
+        }
+        let start = self.strings_index[id as usize] as usize;
+        let pos = self.strings_data_offset + start;
+
+        // Scan for null terminator (strings are at most ~500 bytes)
+        let end = self.mmap[pos..].iter().position(|&b| b == 0).unwrap_or(512);
+        String::from_utf8_lossy(&self.mmap[pos..pos + end]).into_owned()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Manually parse a CacheMetadata protobuf message.
+///
+/// Wire format (proto3):
+///   field 1: uint32 version     (varint, wire type 0)
+///   field 2: string date_created (length-delimited, wire type 2)
+///   field 3: string locale       (length-delimited, wire type 2)
+fn parse_metadata_manual(data: &[u8]) -> Result<CacheMetadata, Box<dyn std::error::Error>> {
+    let mut version: u32 = 0;
+    let mut date_created = String::new();
+    let mut locale = String::new();
+    let mut pos = 0;
+
+    while pos < data.len() {
+        let (field_num, wire_type, consumed) = read_varint_tag(&data[pos..]);
+        pos += consumed;
+
+        match (field_num, wire_type) {
+            (1, 0) => {
+                // uint32 version (varint)
+                let (val, c) = read_varint(&data[pos..]);
+                version = val as u32;
+                pos += c;
+            }
+            (2, 2) => {
+                // string date_created
+                let (len, c) = read_varint(&data[pos..]);
+                pos += c;
+                date_created = String::from_utf8_lossy(&data[pos..pos + len as usize]).into_owned();
+                pos += len as usize;
+            }
+            (3, 2) => {
+                // string locale
+                let (len, c) = read_varint(&data[pos..]);
+                pos += c;
+                locale = String::from_utf8_lossy(&data[pos..pos + len as usize]).into_owned();
+                pos += len as usize;
+            }
+            _ => {
+                // Unknown field — skip
+                match wire_type {
+                    0 => {
+                        // varint
+                        let (_, c) = read_varint(&data[pos..]);
+                        pos += c;
+                    }
+                    2 => {
+                        let (len, c) = read_varint(&data[pos..]);
+                        pos += c + len as usize;
+                    }
+                    _ => break,
+                }
+            }
+        }
+    }
+
+    Ok(CacheMetadata {
+        version,
+        date_created,
+        locale,
+    })
+}
+
+/// Read a protobuf varint-encoded tag. Returns (field_number, wire_type, bytes_consumed).
+fn read_varint_tag(data: &[u8]) -> (u32, u32, usize) {
+    let (tag, consumed) = read_varint(data);
+    let field_num = (tag >> 3) as u32;
+    let wire_type = (tag & 0x7) as u32;
+    (field_num, wire_type, consumed)
+}
+
+/// Read a protobuf varint. Returns (value, bytes_consumed).
+fn read_varint(data: &[u8]) -> (u64, usize) {
+    let mut value: u64 = 0;
+    let mut shift = 0;
+    for (i, &b) in data.iter().enumerate() {
+        value |= ((b & 0x7F) as u64) << shift;
+        if b & 0x80 == 0 {
+            return (value, i + 1);
+        }
+        shift += 7;
+    }
+    (value, data.len())
+}
+
+/// Convert proto geometry types to geo::MultiPolygon.
+fn parse_zones(section: &proto::V2ZonesSection) -> Vec<IndexedZone> {
+    let mut zones = Vec::new();
+
+    for blob in &section.blobs {
+        let zone_type = match blob.zone_type {
+            1 => ZoneType::Region,
+            2 => ZoneType::Country,
+            _ => continue,
+        };
+
+        for zone in &blob.zones {
+            let name = String::from_utf8_lossy(&zone.name).into_owned();
+            let polygon = convert_multi_polygon(zone.multi_polygon.as_ref());
+            zones.push(IndexedZone {
+                name,
+                zone_type,
+                polygon,
+            });
+        }
+    }
+
+    zones
+}
+
+/// Convert a proto MultiPolygon to geo::MultiPolygon.
+fn convert_multi_polygon(mp: Option<&proto::MultiPolygon>) -> geo::MultiPolygon<f64> {
+    let mp = match mp {
+        Some(m) => m,
+        None => return geo::MultiPolygon::new(vec![]),
+    };
+
+    let polygons: Vec<geo::Polygon<f64>> = mp
+        .polygons
+        .iter()
+        .map(|p| {
+            let rings: Vec<geo::LineString<f64>> = p
+                .rings
+                .iter()
+                .map(|r| {
+                    let coords: Vec<geo::Coord<f64>> = r
+                        .points
+                        .iter()
+                        .map(|ll| geo::Coord {
+                            x: ll.lon as f64,
+                            y: ll.lat as f64,
+                        })
+                        .collect();
+                    geo::LineString::new(coords)
+                })
+                .collect();
+
+            // First ring is exterior, rest are holes
+            let exterior = rings
+                .first()
+                .cloned()
+                .unwrap_or_else(|| geo::LineString::new(vec![]));
+            let interiors = rings.iter().skip(1).cloned().collect();
+            geo::Polygon::new(exterior, interiors)
+        })
+        .collect();
+
+    geo::MultiPolygon::new(polygons)
+}
