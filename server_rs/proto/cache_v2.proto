@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package cachesaver.save.v2;
+
+option go_package = "./savev2proto";
+
+message V2Header {
+  uint32 metadata_size = 1;
+  uint32 strings_index_size = 4;  // total bytes for offset index (N unique strings × 4)
+  uint32 strings_data_size = 5;   // total bytes for null-terminated string data
+  uint32 zones_size = 3;
+}
+
+message V2ZonesSection {
+  repeated V2ZoneBlob blobs = 1;
+}
+
+message V2ZoneBlob {
+  uint32 zone_type = 1; // 1=region, 2=country
+  repeated V2Zone zones = 2;
+}
+
+message V2Zone {
+  bytes name = 1;
+  Bounds bounds = 2;
+  MultiPolygon multi_polygon = 3;
+}
+
+message Bounds {
+  LatLon max = 1;
+  LatLon min = 2;
+}
+
+message MultiPolygon {
+  repeated Polygon polygons = 1;
+}
+
+message Polygon {
+  repeated Ring rings = 1;
+}
+
+message Ring {
+  repeated LatLon points = 1;
+}
+
+message LatLon {
+  float lat = 1;
+  float lon = 2;
+}
