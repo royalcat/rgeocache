@@ -4,6 +4,7 @@
   "countries",
   "low-memory-cache",
   "master",
+  "rust-server",
   "stream-points-saving",
   "thread-count-selection"
 ]
