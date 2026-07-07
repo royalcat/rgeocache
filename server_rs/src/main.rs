@@ -13,7 +13,6 @@ use ntex::io::IoConfig;
 use ntex::web::{HttpServer, WebAppConfig};
 use ntex::SharedCfg;
 
-/// Low-memory reverse geocoding server (v2 cache, mmap-only).
 #[derive(Parser, Debug)]
 #[command(name = "rgeocache-server")]
 struct Args {
@@ -28,6 +27,14 @@ struct Args {
     /// Search radius in degrees
     #[arg(long, default_value_t = 0.01)]
     search_radius: f64,
+
+    /// Number of HTTP worker threads (default: number of CPU cores)
+    #[arg(long)]
+    workers: Option<usize>,
+
+    /// Maximum request body size in bytes (default: 32 MiB)
+    #[arg(long, default_value_t = 32 * 1024 * 1024)]
+    max_request_size: usize,
 }
 
 #[ntex::main]
@@ -60,10 +67,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Starting server on {}", args.listen);
 
-    HttpServer::new(async move || {
+    let max_request_size = args.max_request_size;
+
+    let mut srv = HttpServer::new(async move || {
         ntex::web::App::new()
             .state(state.clone())
-            .state(ntex::web::types::JsonConfig::default().limit(32 * 1024 * 1024))
+            .state(ntex::web::types::JsonConfig::default().limit(max_request_size))
             .route(
                 "/rgeocode/address/{lat}/{lon}",
                 ntex::web::get().to(server::rgeocode_handler),
@@ -79,11 +88,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .add(IoConfig::default())
             .add(HttpServiceConfig::default())
             .add(WebAppConfig::default()),
-    )
-    // .workers(1)
-    .bind(&args.listen)?
-    .run()
-    .await?;
+    );
+
+    if let Some(w) = args.workers {
+        srv = srv.workers(w);
+    }
+
+    srv.bind(&args.listen)?.run().await?;
 
     Ok(())
 }

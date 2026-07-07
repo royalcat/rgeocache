@@ -136,21 +136,6 @@ pub async fn rgeocode_multi_handler(
     })
     .await;
 
-    // let results: Vec<Info> = points
-    //     .iter()
-    //     .map(|&[lat, lon]| {
-    //         geocoder.find(lat, lon).unwrap_or_else(|| Info {
-    //             name: String::new(),
-    //             street: String::new(),
-    //             house_number: String::new(),
-    //             city: String::new(),
-    //             region: String::new(),
-    //             country: String::new(),
-    //             weight: 0,
-    //         })
-    //     })
-    //     .collect();
-
     HttpResponse::Ok().json(&results)
 }
 
