@@ -154,6 +154,11 @@ impl CacheFile {
 
         mmap.advise(memmap2::Advice::Random)?;
 
+        // should be no-op in worst case, but positive performance gain in good cases. no harm enabling it
+        if let Err(err) = mmap.advise(memmap2::Advice::HugePage) {
+            log::info!("huge page not avalible: {err}; continuing without it");
+        }
+
         let mut offset: usize = 0;
 
         // --- Verify magic bytes ---
