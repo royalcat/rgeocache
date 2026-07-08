@@ -1,12 +1,14 @@
 //! ntex HTTP server handlers and metrics.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
+use async_stream::try_stream;
+use futures::Stream;
 use ntex::http::header;
+use ntex::util::Bytes;
 use ntex::web::{self, HttpResponse};
 use prometheus::{Counter, Encoder, Histogram, HistogramOpts, Opts, Registry, TextEncoder};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::geocoder::{Geocoder, Info};
 
@@ -136,7 +138,30 @@ pub async fn rgeocode_multi_handler(
     })
     .await;
 
-    HttpResponse::Ok().json(&results)
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .streaming(Box::pin(serialize_results(results)))
+}
+
+fn serialize_results(
+    results: impl IntoIterator<Item = Info>,
+) -> impl Stream<Item = Result<ntex::util::Bytes, serde_json::Error>> {
+    try_stream! {
+        yield Bytes::from_static(b"[");
+        let mut first = true;
+
+        for info in results {
+            if first {
+                yield Bytes::from_static(b",");
+                first = false
+            }
+
+            let json = serde_json::to_string(&info)?;
+            yield Bytes::from(json);
+
+        }
+        yield Bytes::from_static(b"]");
+    }
 }
 
 /// GET /metrics — Prometheus text format.

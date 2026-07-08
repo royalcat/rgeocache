@@ -18,26 +18,25 @@ tracing = ["dep:tracing", "dep:tracing-subscriber"]
 [dependencies]
 # Web framework
 ntex = { version = "3.10", features = ["compress"] }
-
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
 # Memory-mapped files
 memmap2 = "0.9"
-
 # Zero-copy binary parsing from mmap
 zerocopy = { version = "0.8", features = ["derive"] }
-
 # Protobuf
 prost = "0.14"
-
 # CLI
 clap = { version = "4", features = ["derive"] }
-
 # Geometry
 geo = "0.33"
 rstar = "0.13"
+# Multiprocessing for multiaddress handler
+rayon = "1.12.0"
+async-rayon = "0.1.0"
+futures = "0.3.32"
+async-stream = "0.3.6"
 
 # Metrics (always available, always compiled)
 prometheus = { version = "0.14", features = ["process"] }
@@ -49,8 +48,7 @@ env_logger = "0.11"
 # Tracing (feature-gated)
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
-async-rayon = "0.1.0"
-rayon = "1.12.0"
+
 
 [build-dependencies]
 prost-build = "0.14"
