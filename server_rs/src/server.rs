@@ -141,6 +141,7 @@ pub async fn rgeocode_multi_handler(
     HttpResponse::Ok()
         .content_type("application/json")
         .streaming(Box::pin(serialize_results(results)))
+    // HttpResponse::Ok().json(&results)
 }
 
 fn serialize_results(
@@ -151,10 +152,10 @@ fn serialize_results(
         let mut first = true;
 
         for info in results {
-            if first {
+            if !first {
                 yield Bytes::from_static(b",");
-                first = false
             }
+            first = false;
 
             let json = serde_json::to_string(&info)?;
             yield Bytes::from(json);
