@@ -27,7 +27,7 @@ func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 	}
 
 	points := optimizePoints(pointsRaw)
-	tree := kdbush.NewBush(points, 128)
+	tree := kdbush.NewBush(points, kdbush.DefaultNodeSize)
 
 	regions := bordertree.NewBorderTree[unique.Handle[string]]()
 	countries := bordertree.NewBorderTree[unique.Handle[string]]()

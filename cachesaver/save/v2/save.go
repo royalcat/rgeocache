@@ -13,7 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const defaultNodeSize = 64
+const defaultNodeSize = kdbush.DefaultNodeSize
 
 // Save writes a v2 cache to w.
 //
@@ -34,9 +34,9 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 	// Phase 1: Materialize points with placeholder data.
 	// Register strings to get IDs; we'll fill V2PointData after building the index.
 	type rawPoint struct {
-		x, y float64
+		x, y                                    float64
 		name, street, houseNumber, city, region string
-		weight uint8
+		weight                                  uint8
 	}
 	var rawPoints []rawPoint
 	for p := range points {

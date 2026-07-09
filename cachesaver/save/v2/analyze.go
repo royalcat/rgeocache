@@ -83,7 +83,7 @@ func PrintCacheAnalysis(r io.Reader) error {
 	indicesSize := numPoints * 8
 	coordsSize := numPoints * 16
 	offsetsSize := offsetCount * 8
-	kdbhTotal := uint64(32 + indicesSize + coordsSize + offsetsSize) + uint64(totalBlobSize)
+	kdbhTotal := uint64(32+indicesSize+coordsSize+offsetsSize) + uint64(totalBlobSize)
 
 	fmt.Printf("Points count: %d (node size: %d)\n", numPoints, nodeSize)
 	fmt.Printf("  Tree indices: %s\n", humanize.Bytes(indicesSize))

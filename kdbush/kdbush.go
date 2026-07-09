@@ -4,6 +4,8 @@ import (
 	"math"
 )
 
+const DefaultNodeSize = 64
+
 type Point[T any] struct {
 	X    float64
 	Y    float64
