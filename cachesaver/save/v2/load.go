@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"math"
 	"time"
 	"unique"
 
@@ -76,11 +77,42 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 
 	// Points iterator: reads V2PointData blobs and resolves strings from the in-memory index.
 	pointsIter := func(yield func(cachemodel.Point, error) bool) {
-		skipSize := numPoints*8 + numPoints*16
-		if _, err := io.CopyN(io.Discard, r, skipSize); err != nil {
-			yield(cachemodel.Point{}, fmt.Errorf("v2 load: failed to skip tree: %w", err))
-			return
+		// Read the KD-tree indices (sorted order → original index mapping).
+		indices := make([]int, numPoints)
+		{
+			buf := make([]byte, numPoints*8)
+			if _, err := io.ReadFull(r, buf); err != nil {
+				yield(cachemodel.Point{}, fmt.Errorf("v2 load: failed to read indices: %w", err))
+				return
+			}
+			for i := range numPoints {
+				indices[i] = int(binary.LittleEndian.Uint64(buf[i*8:]))
+			}
 		}
+
+		// Read the sorted coordinates.
+		sortedCoords := make([]float64, numPoints*2)
+		{
+			buf := make([]byte, numPoints*16)
+			if _, err := io.ReadFull(r, buf); err != nil {
+				yield(cachemodel.Point{}, fmt.Errorf("v2 load: failed to read coords: %w", err))
+				return
+			}
+			for i := range numPoints * 2 {
+				sortedCoords[i] = math.Float64frombits(binary.LittleEndian.Uint64(buf[i*8:]))
+			}
+		}
+
+		// Build reverse mapping: original index → (x, y).
+		origCoords := make([]float64, numPoints*2)
+		for treePos := range numPoints {
+			origIdx := indices[treePos]
+			origCoords[origIdx*2] = sortedCoords[treePos*2]
+			origCoords[origIdx*2+1] = sortedCoords[treePos*2+1]
+		}
+		// Release temporary slices to free memory early.
+		indices = nil
+		sortedCoords = nil
 
 		offsetTable := make([]int64, numPoints+1)
 		for i := range offsetTable {
@@ -106,7 +138,9 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 					return
 				}
 			}
-			point := resolvePointFromIndex(stringsIndex, stringsData, data)
+			x := origCoords[i*2]
+			y := origCoords[i*2+1]
+			point := resolvePointFromIndex(stringsIndex, stringsData, data, x, y)
 			if !yield(point, nil) {
 				return
 			}
@@ -256,9 +290,9 @@ func readProto(r io.Reader, size uint32, msg proto.Message) error {
 }
 
 // resolvePointFromIndex resolves V2PointData to cachemodel.Point using the string index.
-func resolvePointFromIndex(index []uint32, dataBlock []byte, data V2PointData) cachemodel.Point {
+func resolvePointFromIndex(index []uint32, dataBlock []byte, data V2PointData, x, y float64) cachemodel.Point {
 	return cachemodel.Point{
-		X: 0, Y: 0, // coords not available in streaming path
+		X: x, Y: y,
 		Data: cachemodel.Info{
 			Name:        unique.Make(readStrByID(index, dataBlock, data.NameID)),
 			Street:      unique.Make(readStrByID(index, dataBlock, data.StreetID)),
