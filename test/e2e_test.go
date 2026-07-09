@@ -56,13 +56,15 @@ func TestLondon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pointsFileOut.Close()
 
 	t.Log("Loading points from file")
 
-	rgeo, err := geocoder.LoadGeoCoderFromFile(pointsFile, geocoder.WithSearchRadius(1))
+	rgeo, err := geocoder.LoadGeoCoderFromFileDisk(pointsFile, geocoder.WithSearchRadius(1))
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer rgeo.Close()
 
 	i, ok := rgeo.Find(51.501834, -0.125409)
 	if !ok {

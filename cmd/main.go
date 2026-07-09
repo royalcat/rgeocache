@@ -66,11 +66,6 @@ func main() {
 						Name:  "listen",
 						Value: ":8080",
 					},
-					&cli.BoolFlag{
-						Name:  "no-mmap",
-						Usage: "Disable mmap and load v2 cache fully into memory",
-						Value: false,
-					},
 				},
 				Action: serve,
 			},
@@ -398,7 +393,6 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	cacheFile := cmd.String("points")
-	noMmap := cmd.Bool("no-mmap")
 
 	// Detect cache format to decide loading path
 	isV2 := detectV2Cache(cacheFile)
@@ -406,8 +400,8 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 	var rgeo geocoder.Geocoder
 	var closer io.Closer
 
-	if isV2 && !noMmap {
-		log.Info("Detected v2 cache, loading via mmap (use --no-mmap to force full load)")
+	if isV2 {
+		log.Info("Detected v2 cache, loading via mmap")
 		rgeoDisk, err := geocoder.LoadGeoCoderFromFileDisk(cacheFile,
 			geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
 		if err != nil {
@@ -416,9 +410,6 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		rgeo = rgeoDisk
 		closer = rgeoDisk
 	} else {
-		if isV2 {
-			log.Info("Detected v2 cache, loading fully into memory (--no-mmap)")
-		}
 		rgeoMem, err := geocoder.LoadGeoCoderFromFile(cacheFile,
 			geocoder.WithLogger(log), geocoder.WithSearchRadius(radius))
 		if err != nil {
