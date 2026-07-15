@@ -33,7 +33,7 @@ struct Args {
     workers: Option<usize>,
 
     /// Maximum request body size in bytes (default: 32 MiB)
-    #[arg(long, default_value_t = 32 * 1024 * 1024)]
+    #[arg(long, default_value_t = 64 * 1024 * 1024)]
     max_request_size: usize,
 }
 
