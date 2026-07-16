@@ -188,7 +188,14 @@ impl CacheFile {
 
         // --- Read CacheMetadata (manual protobuf decode for the 3-field message) ---
         let metadata_size = header.metadata_size as usize;
-        let _metadata = parse_metadata_manual(&mmap[offset..offset + metadata_size])?;
+        let metadata =
+            proto::cache_v1::CacheMetadata::decode(&mmap[offset..offset + metadata_size])?;
+        log::info!(
+            "cache metadata: version={} date_created={} locale={}",
+            metadata.version,
+            metadata.date_created,
+            metadata.locale
+        );
         offset += metadata_size;
 
         // --- Read string offset index into memory ---
@@ -333,90 +340,9 @@ impl CacheFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/// Manually parse a CacheMetadata protobuf message.
-///
-/// Wire format (proto3):
-///   field 1: uint32 version     (varint, wire type 0)
-///   field 2: string date_created (length-delimited, wire type 2)
-///   field 3: string locale       (length-delimited, wire type 2)
-fn parse_metadata_manual(data: &[u8]) -> Result<CacheMetadata, Box<dyn std::error::Error>> {
-    let mut version: u32 = 0;
-    let mut date_created = String::new();
-    let mut locale = String::new();
-    let mut pos = 0;
-
-    while pos < data.len() {
-        let (field_num, wire_type, consumed) = read_varint_tag(&data[pos..]);
-        pos += consumed;
-
-        match (field_num, wire_type) {
-            (1, 0) => {
-                let (val, c) = read_varint(&data[pos..]);
-                version = val as u32;
-                pos += c;
-            }
-            (2, 2) => {
-                let (len, c) = read_varint(&data[pos..]);
-                pos += c;
-                date_created = String::from_utf8_lossy(&data[pos..pos + len as usize]).into_owned();
-                pos += len as usize;
-            }
-            (3, 2) => {
-                let (len, c) = read_varint(&data[pos..]);
-                pos += c;
-                locale = String::from_utf8_lossy(&data[pos..pos + len as usize]).into_owned();
-                pos += len as usize;
-            }
-            _ => match wire_type {
-                0 => {
-                    let (_, c) = read_varint(&data[pos..]);
-                    pos += c;
-                }
-                2 => {
-                    let (len, c) = read_varint(&data[pos..]);
-                    pos += c + len as usize;
-                }
-                _ => break,
-            },
-        }
-    }
-
-    Ok(CacheMetadata {
-        version,
-        date_created,
-        locale,
-    })
-}
-
-/// Read a protobuf varint-encoded tag. Returns (field_number, wire_type, bytes_consumed).
-fn read_varint_tag(data: &[u8]) -> (u32, u32, usize) {
-    let (tag, consumed) = read_varint(data);
-    let field_num = (tag >> 3) as u32;
-    let wire_type = (tag & 0x7) as u32;
-    (field_num, wire_type, consumed)
-}
-
-/// Read a protobuf varint. Returns (value, bytes_consumed).
-fn read_varint(data: &[u8]) -> (u64, usize) {
-    let mut value: u64 = 0;
-    let mut shift = 0;
-    for (i, &b) in data.iter().enumerate() {
-        value |= ((b & 0x7F) as u64) << shift;
-        if b & 0x80 == 0 {
-            return (value, i + 1);
-        }
-        shift += 7;
-    }
-    (value, data.len())
-}
-
 /// Convert proto geometry types to geo::MultiPolygon.
 fn parse_zones(section: &proto::V2ZonesSection) -> Vec<IndexedZone> {
-    let mut zones = Vec::new();
+    let mut zones = Vec::with_capacity(section.blobs.len());
 
     for blob in &section.blobs {
         let zone_type = match blob.zone_type {
@@ -435,6 +361,8 @@ fn parse_zones(section: &proto::V2ZonesSection) -> Vec<IndexedZone> {
             });
         }
     }
+
+    zones.shrink_to_fit();
 
     zones
 }
