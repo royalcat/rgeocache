@@ -1,7 +1,7 @@
 [package]
 name = "rgeocache-server"
-version = "0.1.0"
-edition = "2021"
+version = "0.2.0"
+edition = "2024"
 description = "Low-memory reverse geocoding server (v2 cache, mmap-only)"
 
 [[bin]]
@@ -48,6 +48,7 @@ env_logger = "0.11"
 # Tracing (feature-gated)
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
+custom_float = "0.3.1"
 
 
 [build-dependencies]

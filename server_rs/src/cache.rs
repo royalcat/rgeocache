@@ -26,6 +26,7 @@
 //!   [B      .. EOF)         blobs    concatenated 21-byte V2PointData records
 //! ```
 
+use custom_float::Fp;
 use memmap2::Mmap;
 use prost::Message;
 use zerocopy::byteorder::little_endian::{I64 as I64LE, U32 as U32LE};
@@ -76,11 +77,13 @@ impl V2PointData {
 // IndexedZone — resolved zone ready for border tree insertion
 // ---------------------------------------------------------------------------
 
+type FpGeo = Fp<u32, true, 4, 0, 27, 2>;
+
 #[derive(Clone, Debug)]
 pub struct IndexedZone {
     pub name: String,
     pub zone_type: ZoneType,
-    pub polygon: geo::MultiPolygon<f64>,
+    pub polygon: geo::MultiPolygon<FpGeo>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -354,26 +357,26 @@ fn parse_zones(section: &proto::V2ZonesSection) -> Vec<IndexedZone> {
 }
 
 /// Convert a proto MultiPolygon to geo::MultiPolygon.
-fn convert_multi_polygon(mp: Option<&proto::MultiPolygon>) -> geo::MultiPolygon<f64> {
+fn convert_multi_polygon(mp: Option<&proto::MultiPolygon>) -> geo::MultiPolygon<FpGeo> {
     let mp = match mp {
         Some(m) => m,
         None => return geo::MultiPolygon::new(vec![]),
     };
 
-    let polygons: Vec<geo::Polygon<f64>> = mp
+    let polygons: Vec<geo::Polygon<FpGeo>> = mp
         .polygons
         .iter()
         .map(|p| {
-            let rings: Vec<geo::LineString<f64>> = p
+            let rings: Vec<geo::LineString<FpGeo>> = p
                 .rings
                 .iter()
                 .map(|r| {
-                    let coords: Vec<geo::Coord<f64>> = r
+                    let coords: Vec<geo::Coord<FpGeo>> = r
                         .points
                         .iter()
-                        .map(|ll| geo::Coord {
-                            x: ll.lon as f64,
-                            y: ll.lat as f64,
+                        .map(|ll| geo::Coord::<FpGeo> {
+                            x: FpGeo::from(ll.lon),
+                            y: FpGeo::from(ll.lat),
                         })
                         .collect();
                     geo::LineString::new(coords)
