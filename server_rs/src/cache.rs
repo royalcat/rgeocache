@@ -73,20 +73,6 @@ impl V2PointData {
 }
 
 // ---------------------------------------------------------------------------
-// CacheMetadata — parsed manually (simple fields, avoids v1 proto dependency)
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct CacheMetadata {
-    #[allow(dead_code)]
-    pub version: u32,
-    #[allow(dead_code)]
-    pub date_created: String,
-    #[allow(dead_code)]
-    pub locale: String,
-}
-
-// ---------------------------------------------------------------------------
 // IndexedZone — resolved zone ready for border tree insertion
 // ---------------------------------------------------------------------------
 
