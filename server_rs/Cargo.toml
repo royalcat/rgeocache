@@ -48,6 +48,7 @@ env_logger = "0.11"
 # Tracing (feature-gated)
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
+multiversion = "0.8.0"
 
 
 [build-dependencies]
