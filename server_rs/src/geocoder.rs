@@ -5,6 +5,7 @@
 //! for region/country when a point is not found or is missing those fields.
 
 use multiversion::multiversion;
+use vecpool::PoolVec;
 
 use crate::border_tree::BorderTree;
 use crate::cache::{CacheFile, V2PointData};
@@ -60,18 +61,18 @@ impl Geocoder {
 
     /// Find the closest address within the given radius (degrees).
     pub fn find_in_radius(&self, lat: f64, lon: f64, radius: f64) -> Option<Info> {
-        let cache = &self.cache;
-
-        if cache.num_points == 0 {
+        if self.cache.num_points == 0 {
             return self.border_fallback(lat, lon);
         }
+
+        let cache = &self.cache;
 
         let mut best_point: Option<V2PointData> = None;
         let mut best_dist: f64 = f64::INFINITY;
         let r2 = radius * radius;
 
         // Stack-based KD-tree traversal (ported from kdbush_disk.go)
-        let mut stack: Vec<(i64, i64, u8)> = Vec::with_capacity(64);
+        let mut stack: PoolVec<(i64, i64, u8)> = vecpool::with_capacity(64);
         stack.push((0, cache.num_points as i64 - 1, 0));
 
         while let Some((left, right, axis)) = stack.pop() {
