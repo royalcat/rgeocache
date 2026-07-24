@@ -6,7 +6,7 @@ use ntex::http::header;
 use ntex::util::Bytes;
 use ntex::web::{self, HttpResponse};
 use prometheus::{Counter, Encoder, Histogram, HistogramOpts, Opts, Registry, TextEncoder};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -122,8 +122,8 @@ pub async fn rgeocode_multi_handler(
 
     let results = async_rayon::spawn_fifo(move || {
         points
-            .par_iter()
-            .map(|&[lat, lon]| {
+            .into_par_iter()
+            .map(|[lat, lon]| {
                 geocoder.find(lat, lon).unwrap_or_else(|| Info {
                     name: String::new(),
                     street: String::new(),
@@ -141,7 +141,6 @@ pub async fn rgeocode_multi_handler(
     HttpResponse::Ok()
         .content_type("application/json")
         .streaming(Box::pin(serialize_results(results)))
-    // HttpResponse::Ok().json(&results)
 }
 
 fn serialize_results(
