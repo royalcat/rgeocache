@@ -3,7 +3,6 @@
 //! Uses the mmap'd KD-tree spatial index for radius search, resolves string
 //! IDs lazily from the string data block, and falls back to border trees
 //! for region/country when a point is not found or is missing those fields.
-
 use multiversion::multiversion;
 use vecpool::PoolVec;
 
@@ -205,7 +204,7 @@ fn resolve(cache: &CacheFile, data: V2PointData) -> Info {
 
 /// Squared distance between two points (x=lon, y=lat).
 #[inline]
-#[multiversion(targets("x86_64+avx512f", "aarch64+neon"))]
+#[multiversion(targets = "simd")]
 fn sq_dist(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     let dx = ax - bx;
     let dy = ay - by;

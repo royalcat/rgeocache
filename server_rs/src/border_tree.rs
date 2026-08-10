@@ -4,6 +4,7 @@
 //! containment via the `geo` crate. Read-only after construction.
 
 use geo::Contains;
+use multiversion::multiversion;
 use rstar::{PointDistance, RTree, RTreeObject, AABB};
 
 use crate::cache::ZoneType;
@@ -22,12 +23,14 @@ struct ZoneEntry {
 impl RTreeObject for ZoneEntry {
     type Envelope = AABB<[f64; 2]>;
 
+    #[inline]
     fn envelope(&self) -> Self::Envelope {
         self.envelope
     }
 }
 
 impl PointDistance for ZoneEntry {
+    #[inline]
     fn distance_2(&self, point: &[f64; 2]) -> f64 {
         self.envelope.distance_2(point)
     }
@@ -74,12 +77,18 @@ impl BorderTree {
 
         // Find all candidates whose bounding box contains the point
         for entry in self.tree.locate_all_at_point(point) {
-            if entry.polygon.contains(&geo_point) {
+            if multipolygon_contains(&entry.polygon, &geo_point) {
                 return Some(&entry.name);
             }
         }
         None
     }
+}
+
+#[inline(always)]
+#[multiversion(targets = "simd")]
+fn multipolygon_contains(polygon: &geo::MultiPolygon<f64>, point: &geo::Point) -> bool {
+    return polygon.contains(point);
 }
 
 /// Compute the bounding box of a MultiPolygon.
