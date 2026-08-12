@@ -50,9 +50,11 @@ tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
 multiversion = "0.8.0"
 vecpool = "0.1.0"
+buffa = "0.9.1"
 
 
 [build-dependencies]
+buffa-build = "0.9.1"
 prost-build = "0.14"
 
 [profile.release]

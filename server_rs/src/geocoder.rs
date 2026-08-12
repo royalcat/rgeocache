@@ -3,11 +3,10 @@
 //! Uses the mmap'd KD-tree spatial index for radius search, resolves string
 //! IDs lazily from the string data block, and falls back to border trees
 //! for region/country when a point is not found or is missing those fields.
-use multiversion::multiversion;
-use vecpool::PoolVec;
-
 use crate::border_tree::BorderTree;
 use crate::cache::{CacheFile, V2PointData};
+use multiversion::multiversion;
+use vecpool::PoolVec;
 
 /// JSON-serializable reverse geocode result.
 #[derive(serde::Serialize, Clone, Debug)]
@@ -88,9 +87,9 @@ impl Geocoder {
                 for i in 0..idxs.len() {
                     let x = coords[i * 2];
                     let y = coords[i * 2 + 1];
-                    let dist = sq_dist(x, y, lon, lat);
+                    let dist = sq_dist(x.get(), y.get(), lon, lat);
                     if dist <= r2 {
-                        let data = cache.read_point_data(idxs[i] as usize);
+                        let data = cache.read_point_data(idxs[i].get() as usize);
                         if dist < best_dist
                             || data.weight > best_point.map(|p| p.weight).unwrap_or(0)
                         {
@@ -106,9 +105,9 @@ impl Geocoder {
             let m = ((left + right) as f64 / 2.0).floor() as usize;
             let (x, y) = cache.read_coord(m);
 
-            let dist = sq_dist(x, y, lon, lat);
+            let dist = sq_dist(x.get(), y.get(), lon, lat);
             if dist <= r2 {
-                let idx = cache.read_idx(m) as usize;
+                let idx = cache.read_idx(m).get() as usize;
                 let data = cache.read_point_data(idx);
                 if dist < best_dist || data.weight > best_point.map(|p| p.weight).unwrap_or(0) {
                     best_dist = dist;
@@ -126,7 +125,7 @@ impl Geocoder {
             };
             let coord_val = if axis == 0 { x } else { y };
 
-            if cmp <= coord_val {
+            if cmp <= coord_val.get() {
                 stack.push((left, m as i64 - 1, next_axis));
             }
             let cmp = if axis == 0 {
@@ -134,7 +133,7 @@ impl Geocoder {
             } else {
                 lat + radius
             };
-            if cmp >= coord_val {
+            if cmp >= coord_val.get() {
                 stack.push((m as i64 + 1, right, next_axis));
             }
         }

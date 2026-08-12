@@ -26,9 +26,10 @@
 //!   [B      .. EOF)         blobs    concatenated 21-byte V2PointData records
 //! ```
 
+use buffa::{Message, MessageView};
 use memmap2::Mmap;
-use prost::Message;
-use zerocopy::byteorder::little_endian::{I64 as I64LE, U32 as U32LE};
+use vecpool::PoolVec;
+use zerocopy::byteorder::little_endian::{F64 as F64LE, I64 as I64LE, U32 as U32LE};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::proto;
@@ -101,7 +102,7 @@ pub struct CacheFile {
     mmap: Mmap,
 
     // String resolution
-    pub strings_index: Vec<u32>, // id → byte offset into string data block
+    pub strings_index: Vec<U32LE>, // id → byte offset into string data block
     pub strings_data_offset: usize, // absolute position in the mmap'd file
 
     // Zone data
@@ -118,18 +119,14 @@ pub struct CacheFile {
 
 // Helper: read a U32LE from mmap at the given offset.
 #[inline]
-fn read_u32le(mmap: &Mmap, offset: usize) -> Result<u32, String> {
-    U32LE::read_from_bytes(&mmap[offset..offset + 4])
-        .map(|v| v.get())
-        .map_err(|e| format!("failed to read u32 at {offset}: {e}"))
+fn read_u32le(mmap: &Mmap, offset: usize) -> U32LE {
+    U32LE::read_from_bytes(&mmap[offset..offset + 4]).unwrap()
 }
 
 // Helper: read an I64LE from mmap at the given offset.
 #[inline]
-fn read_i64le(mmap: &Mmap, offset: usize) -> Result<i64, String> {
-    I64LE::read_from_bytes(&mmap[offset..offset + 8])
-        .map(|v| v.get())
-        .map_err(|e| format!("failed to read i64 at {offset}: {e}"))
+fn read_i64le(mmap: &Mmap, offset: usize) -> I64LE {
+    I64LE::read_from_bytes(&mmap[offset..offset + 8]).unwrap()
 }
 
 impl CacheFile {
@@ -155,7 +152,7 @@ impl CacheFile {
         offset += 4;
 
         // --- Verify compatibility level ---
-        let compat = read_u32le(&mmap, offset)?;
+        let compat = read_u32le(&mmap, offset);
         if compat != COMPAT_LEVEL_V2 {
             return Err(format!(
                 "expected v2 cache (compat level {}), got {}",
@@ -166,16 +163,17 @@ impl CacheFile {
         offset += 4;
 
         // --- Read V2Header protobuf ---
-        let header_size = read_u32le(&mmap, offset)? as usize;
+        let header_size = read_u32le(&mmap, offset).get() as usize;
         offset += 4;
 
-        let header = proto::V2Header::decode(&mmap[offset..offset + header_size])?;
+        let header = proto::V2Header::decode_from_slice(&mmap[offset..offset + header_size])?;
         offset += header_size;
 
         // --- Read CacheMetadata (manual protobuf decode for the 3-field message) ---
         let metadata_size = header.metadata_size as usize;
-        let metadata =
-            proto::cache_v1::CacheMetadata::decode(&mmap[offset..offset + metadata_size])?;
+        let metadata = proto::cache_v1::CacheMetadata::decode_from_slice(
+            &mmap[offset..offset + metadata_size],
+        )?;
         log::info!(
             "cache metadata: version={} date_created={} locale={}",
             metadata.version,
@@ -190,7 +188,7 @@ impl CacheFile {
         let mut strings_index = Vec::with_capacity(num_strings);
         for i in 0..num_strings {
             let base = offset + i * 4;
-            strings_index.push(read_u32le(&mmap, base)?);
+            strings_index.push(read_u32le(&mmap, base));
         }
         offset += strings_index_size;
 
@@ -200,7 +198,8 @@ impl CacheFile {
 
         // --- Read and parse zones section ---
         let zones_size = header.zones_size as usize;
-        let zones_section = proto::V2ZonesSection::decode(&mmap[offset..offset + zones_size])?;
+        let zones_section =
+            proto::V2ZonesSectionView::decode_view(&mmap[offset..offset + zones_size])?;
         let zones = parse_zones(&zones_section);
         offset += zones_size;
 
@@ -213,7 +212,7 @@ impl CacheFile {
             return Err(format!("invalid KDBH magic: {kdbh_magic:?}").into());
         }
 
-        let kdbh_version = read_u32le(&mmap, kdbh_base + 4)?;
+        let kdbh_version = read_u32le(&mmap, kdbh_base + 4);
         if kdbh_version != KDBH_VERSION {
             return Err(format!(
                 "unsupported KDBH version {} (want {})",
@@ -222,8 +221,8 @@ impl CacheFile {
             .into());
         }
 
-        let node_size = read_i64le(&mmap, kdbh_base + 8)? as usize;
-        let num_points = read_i64le(&mmap, kdbh_base + 16)? as usize;
+        let node_size = read_i64le(&mmap, kdbh_base + 8).get() as usize;
+        let num_points = read_i64le(&mmap, kdbh_base + 16).get() as usize;
 
         let idxs_offset = kdbh_base + KDBH_HEADER_SIZE;
         let coords_offset = idxs_offset + num_points * 8;
@@ -248,11 +247,9 @@ impl CacheFile {
 
     /// Read a single original-index value at sorted position `i`.
     #[inline]
-    pub fn read_idx(&self, i: usize) -> i64 {
+    pub fn read_idx(&self, i: usize) -> I64LE {
         let pos = self.idxs_offset + i * 8;
-        I64LE::read_from_bytes(&self.mmap[pos..pos + 8])
-            .map(|v| v.get())
-            .unwrap_or(0)
+        I64LE::read_from_bytes(&self.mmap[pos..pos + 8]).unwrap()
     }
 
     /// Read the (x, y) coordinate pair for sorted position `i`.
@@ -260,14 +257,10 @@ impl CacheFile {
     /// transmute to f64 — this is valid because f64 LE has the same byte
     /// layout as a little-endian u64.
     #[inline]
-    pub fn read_coord(&self, i: usize) -> (f64, f64) {
+    pub fn read_coord(&self, i: usize) -> (F64LE, F64LE) {
         let pos = self.coords_offset + i * 16;
-        let x = I64LE::read_from_bytes(&self.mmap[pos..pos + 8])
-            .map(|v| f64::from_bits(v.get() as u64))
-            .unwrap_or(0.0);
-        let y = I64LE::read_from_bytes(&self.mmap[pos + 8..pos + 16])
-            .map(|v| f64::from_bits(v.get() as u64))
-            .unwrap_or(0.0);
+        let x = F64LE::read_from_bytes(&self.mmap[pos..pos + 8]).unwrap();
+        let y = F64LE::read_from_bytes(&self.mmap[pos + 8..pos + 16]).unwrap();
         (x, y)
     }
 
@@ -276,10 +269,10 @@ impl CacheFile {
     /// Uses zerocopy `read_from_bytes` for each element — cleaner and equivalently
     /// fast compared to manual `from_le_bytes`, since the compiler optimizes both
     /// to direct memory loads on little-endian hardware.
-    pub fn read_leaf(&self, left: usize, right: usize) -> (Vec<i64>, Vec<f64>) {
+    pub fn read_leaf(&self, left: usize, right: usize) -> (PoolVec<I64LE>, PoolVec<F64LE>) {
         let count = right - left + 1;
-        let mut idxs = Vec::with_capacity(count);
-        let mut coords = Vec::with_capacity(count * 2);
+        let mut idxs = vecpool::with_capacity(count);
+        let mut coords = vecpool::with_capacity(count * 2);
 
         for i in left..=right {
             idxs.push(self.read_idx(i));
@@ -297,8 +290,8 @@ impl CacheFile {
     pub fn read_point_data(&self, orig_idx: usize) -> V2PointData {
         // Read offsets[orig_idx] and offsets[orig_idx+1] as two consecutive i64 LE values.
         let off_pos = self.data_offsets_offset + orig_idx * 8;
-        let blob_start = read_i64le(&self.mmap, off_pos).unwrap_or(0) as usize;
-        let blob_end = read_i64le(&self.mmap, off_pos + 8).unwrap_or(0) as usize;
+        let blob_start = read_i64le(&self.mmap, off_pos).get() as usize;
+        let blob_end = read_i64le(&self.mmap, off_pos + 8).get() as usize;
 
         let blob_len = blob_end - blob_start;
         if blob_len == 0 {
@@ -317,7 +310,7 @@ impl CacheFile {
         if id == 0 {
             return String::new();
         }
-        let start = self.strings_index[id as usize] as usize;
+        let start = self.strings_index[id as usize].get() as usize;
         let pos = self.strings_data_offset + start;
 
         // Scan for null terminator (strings are at most ~500 bytes)
@@ -327,7 +320,7 @@ impl CacheFile {
 }
 
 /// Convert proto geometry types to geo::MultiPolygon.
-fn parse_zones(section: &proto::V2ZonesSection) -> Vec<IndexedZone> {
+fn parse_zones(section: &proto::V2ZonesSectionView) -> Vec<IndexedZone> {
     let mut zones = Vec::with_capacity(section.blobs.len());
 
     for blob in &section.blobs {
@@ -338,10 +331,9 @@ fn parse_zones(section: &proto::V2ZonesSection) -> Vec<IndexedZone> {
         };
 
         for zone in &blob.zones {
-            let name = String::from_utf8_lossy(&zone.name).into_owned();
-            let polygon = convert_multi_polygon(zone.multi_polygon.as_ref());
+            let polygon = convert_multi_polygon(Some(&zone.multi_polygon));
             zones.push(IndexedZone {
-                name,
+                name: zone.name.into(),
                 zone_type,
                 polygon,
             });
@@ -354,7 +346,7 @@ fn parse_zones(section: &proto::V2ZonesSection) -> Vec<IndexedZone> {
 }
 
 /// Convert a proto MultiPolygon to geo::MultiPolygon.
-fn convert_multi_polygon(mp: Option<&proto::MultiPolygon>) -> geo::MultiPolygon<f64> {
+fn convert_multi_polygon(mp: Option<&proto::MultiPolygonView>) -> geo::MultiPolygon<f64> {
     let mp = match mp {
         Some(m) => m,
         None => return geo::MultiPolygon::new(vec![]),
