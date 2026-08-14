@@ -102,11 +102,11 @@ pub struct CacheFile {
     mmap: Mmap,
 
     // String resolution
-    pub strings_index: Vec<U32LE>, // id → byte offset into string data block
-    pub strings_data_offset: usize, // absolute position in the mmap'd file
+    pub strings_index: Box<[U32LE]>, // id → byte offset into string data block
+    pub strings_data_offset: usize,  // absolute position in the mmap'd file
 
     // Zone data
-    pub zones: Vec<IndexedZone>,
+    pub zones: Box<[IndexedZone]>,
 
     // KDBH spatial index layout
     pub num_points: usize,
@@ -231,9 +231,9 @@ impl CacheFile {
 
         Ok(Self {
             mmap,
-            strings_index,
+            strings_index: strings_index.into_boxed_slice(),
             strings_data_offset,
-            zones,
+            zones: zones.into_boxed_slice(),
             num_points,
             node_size,
             idxs_offset,
