@@ -6,7 +6,7 @@
 use crate::border_tree::BorderTree;
 use crate::cache::{CacheFile, V2PointData};
 use multiversion::multiversion;
-use vecpool::PoolVec;
+use smallvec::SmallVec;
 
 /// JSON-serializable reverse geocode result.
 #[derive(serde::Serialize, Clone, Debug)]
@@ -70,7 +70,7 @@ impl Geocoder {
         let r2 = radius * radius;
 
         // Stack-based KD-tree traversal (ported from kdbush_disk.go)
-        let mut stack: PoolVec<(i64, i64, u8)> = vecpool::with_capacity(64);
+        let mut stack: SmallVec<(i64, i64, u8), 64> = SmallVec::with_capacity(64);
         stack.push((0, cache.num_points as i64 - 1, 0));
 
         while let Some((left, right, axis)) = stack.pop() {

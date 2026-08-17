@@ -399,7 +399,7 @@ dependencies = [
  "pin-project-lite",
  "polling",
  "slab",
- "smallvec",
+ "smallvec 1.15.2",
  "socket2",
  "synchrony",
  "thin-cell",
@@ -1806,7 +1806,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "redox_syscall",
- "smallvec",
+ "smallvec 1.15.2",
  "windows-link",
 ]
 
@@ -2123,6 +2123,7 @@ dependencies = [
  "rstar 0.13.0",
  "serde",
  "serde_json",
+ "smallvec 2.0.0-alpha.12",
  "tracing",
  "tracing-subscriber",
  "vecpool",
@@ -2143,7 +2144,7 @@ checksum = "421400d13ccfd26dfa5858199c30a5d76f9c54e0dba7575273025b43c5175dbb"
 dependencies = [
  "heapless",
  "num-traits",
- "smallvec",
+ "smallvec 1.15.2",
 ]
 
 [[package]]
@@ -2154,7 +2155,7 @@ checksum = "5912b862fa5ffb462607bfd1e35036c458c537921f508c8235a83d5f3987edfe"
 dependencies = [
  "heapless",
  "num-traits",
- "smallvec",
+ "smallvec 1.15.2",
 ]
 
 [[package]]
@@ -2372,6 +2373,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
+name = "smallvec"
+version = "2.0.0-alpha.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef784004ca8777809dcdad6ac37629f0a97caee4c685fcea805278d81dd8b857"
+
+[[package]]
 name = "smoothutf8"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2399,7 +2406,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "num-traits",
  "robust",
- "smallvec",
+ "smallvec 1.15.2",
 ]
 
 [[package]]
@@ -2605,7 +2612,7 @@ dependencies = [
  "once_cell",
  "regex-automata",
  "sharded-slab",
- "smallvec",
+ "smallvec 1.15.2",
  "thread_local",
  "tracing",
  "tracing-core",
