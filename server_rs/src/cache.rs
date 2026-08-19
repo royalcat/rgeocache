@@ -271,6 +271,7 @@ impl CacheFile {
     /// Uses zerocopy `read_from_bytes` for each element — cleaner and equivalently
     /// fast compared to manual `from_le_bytes`, since the compiler optimizes both
     /// to direct memory loads on little-endian hardware.
+    #[inline]
     pub fn read_leaf(
         &self,
         left: usize,
@@ -306,7 +307,7 @@ impl CacheFile {
 
         let blob_pos = self.data_blobs_offset + blob_start;
         V2PointData::read_from_bytes(&self.mmap[blob_pos..blob_pos + V2_POINT_DATA_SIZE])
-            .unwrap_or_else(|_| V2PointData::empty())
+            .unwrap_or(V2PointData::default())
     }
 
     /// Read a null-terminated string from the string data block by its ID.
