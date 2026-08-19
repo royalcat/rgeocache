@@ -28,7 +28,7 @@
 
 use buffa::{Message, MessageView};
 use memmap2::Mmap;
-use vecpool::PoolVec;
+use smallvec::SmallVec;
 use zerocopy::byteorder::little_endian::{F64 as F64LE, I64 as I64LE, U32 as U32LE};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -44,6 +44,7 @@ const KDBH_MAGIC: &[u8; 4] = b"KDBH";
 const KDBH_VERSION: u32 = 1;
 const KDBH_HEADER_SIZE: usize = 32;
 pub const V2_POINT_DATA_SIZE: usize = 21;
+const NODE_SIZE: usize = 64;
 
 // ---------------------------------------------------------------------------
 // V2PointData — on-disk point payload (21 bytes, little-endian)
@@ -166,7 +167,8 @@ impl CacheFile {
         let header_size = read_u32le(&mmap, offset).get() as usize;
         offset += 4;
 
-        let header = proto::V2Header::decode_from_slice(&mmap[offset..offset + header_size])?;
+        let header =
+            proto::cache_v2::V2Header::decode_from_slice(&mmap[offset..offset + header_size])?;
         offset += header_size;
 
         // --- Read CacheMetadata (manual protobuf decode for the 3-field message) ---
@@ -199,7 +201,7 @@ impl CacheFile {
         // --- Read and parse zones section ---
         let zones_size = header.zones_size as usize;
         let zones_section =
-            proto::V2ZonesSectionView::decode_view(&mmap[offset..offset + zones_size])?;
+            proto::cache_v2::V2ZonesSectionView::decode_view(&mmap[offset..offset + zones_size])?;
         let zones = parse_zones(&zones_section);
         offset += zones_size;
 
@@ -269,10 +271,14 @@ impl CacheFile {
     /// Uses zerocopy `read_from_bytes` for each element — cleaner and equivalently
     /// fast compared to manual `from_le_bytes`, since the compiler optimizes both
     /// to direct memory loads on little-endian hardware.
-    pub fn read_leaf(&self, left: usize, right: usize) -> (PoolVec<I64LE>, PoolVec<F64LE>) {
+    pub fn read_leaf(
+        &self,
+        left: usize,
+        right: usize,
+    ) -> (SmallVec<I64LE, NODE_SIZE>, SmallVec<F64LE, NODE_SIZE>) {
         let count = right - left + 1;
-        let mut idxs = vecpool::with_capacity(count);
-        let mut coords = vecpool::with_capacity(count * 2);
+        let mut idxs = SmallVec::with_capacity(count);
+        let mut coords = SmallVec::with_capacity(count * 2);
 
         for i in left..=right {
             idxs.push(self.read_idx(i));
@@ -320,7 +326,7 @@ impl CacheFile {
 }
 
 /// Convert proto geometry types to geo::MultiPolygon.
-fn parse_zones(section: &proto::V2ZonesSectionView) -> Vec<IndexedZone> {
+fn parse_zones(section: &proto::cache_v2::V2ZonesSectionView) -> Vec<IndexedZone> {
     let mut zones = Vec::with_capacity(section.blobs.len());
 
     for blob in &section.blobs {
@@ -346,7 +352,7 @@ fn parse_zones(section: &proto::V2ZonesSectionView) -> Vec<IndexedZone> {
 }
 
 /// Convert a proto MultiPolygon to geo::MultiPolygon.
-fn convert_multi_polygon(mp: Option<&proto::MultiPolygonView>) -> geo::MultiPolygon<f64> {
+fn convert_multi_polygon(mp: Option<&proto::cache_v2::MultiPolygonView>) -> geo::MultiPolygon<f64> {
     let mp = match mp {
         Some(m) => m,
         None => return geo::MultiPolygon::new(vec![]),
