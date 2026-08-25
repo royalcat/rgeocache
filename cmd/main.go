@@ -453,7 +453,7 @@ func detectV2Cache(file string) bool {
 }
 
 func tuneGC() error {
-	_, err := memlimit.SetGoMemLimitWithOpts(
+	_, err := memlimit.Set(
 		memlimit.WithRatio(0.5),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(
