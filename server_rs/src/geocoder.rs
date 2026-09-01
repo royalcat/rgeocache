@@ -65,78 +65,7 @@ impl Geocoder {
 
         let cache = &self.cache;
 
-        let mut best_point: Option<V2PointData> = None;
-        let mut best_dist: f64 = f64::INFINITY;
-        let r2 = radius * radius;
-
-        // Stack-based KD-tree traversal (ported from kdbush_disk.go)
-        let mut stack: SmallVec<(i64, i64, u8), 64> = SmallVec::with_capacity(64);
-        stack.push((0, cache.num_points as i64 - 1, 0));
-
-        while let Some((left, right, axis)) = stack.pop() {
-            if left > right {
-                continue;
-            }
-
-            let left_u = left as usize;
-            let right_u = right as usize;
-
-            // Leaf node: linear scan
-            if right_u - left_u <= cache.node_size {
-                let (idxs, coords) = cache.read_leaf(left_u, right_u);
-                for i in 0..idxs.len() {
-                    let x = coords[i * 2];
-                    let y = coords[i * 2 + 1];
-                    let dist = sq_dist(x.get(), y.get(), lon, lat);
-                    if dist <= r2 {
-                        let data = cache.read_point_data(idxs[i].get() as usize);
-                        if dist < best_dist
-                            || data.weight > best_point.map(|p| p.weight).unwrap_or(0)
-                        {
-                            best_dist = dist;
-                            best_point = Some(data);
-                        }
-                    }
-                }
-                continue;
-            }
-
-            // Internal node
-            let m = ((left + right) as f64 / 2.0).floor() as usize;
-            let (x, y) = cache.read_coord(m);
-
-            let dist = sq_dist(x.get(), y.get(), lon, lat);
-            if dist <= r2 {
-                let idx = cache.read_idx(m).get() as usize;
-                let data = cache.read_point_data(idx);
-                if dist < best_dist || data.weight > best_point.map(|p| p.weight).unwrap_or(0) {
-                    best_dist = dist;
-                    best_point = Some(data);
-                }
-            }
-
-            let next_axis = (axis + 1) % 2;
-
-            // Decide which children to visit
-            let cmp = if axis == 0 {
-                lon - radius
-            } else {
-                lat - radius
-            };
-            let coord_val = if axis == 0 { x } else { y };
-
-            if cmp <= coord_val.get() {
-                stack.push((left, m as i64 - 1, next_axis));
-            }
-            let cmp = if axis == 0 {
-                lon + radius
-            } else {
-                lat + radius
-            };
-            if cmp >= coord_val.get() {
-                stack.push((m as i64 + 1, right, next_axis));
-            }
-        }
+        let best_point = tree_find_in_radius(cache, lon, lat, radius);
 
         // --- Resolve the best match ---
         if let Some(data) = best_point {
@@ -182,6 +111,82 @@ impl Geocoder {
             None
         }
     }
+}
+
+#[multiversion(targets = "simd")]
+fn tree_find_in_radius(cache: &CacheFile, lon: f64, lat: f64, radius: f64) -> Option<V2PointData> {
+    let mut best_point: Option<V2PointData> = None;
+    let mut best_dist: f64 = f64::INFINITY;
+    let r2 = radius * radius;
+
+    // Stack-based KD-tree traversal (ported from kdbush_disk.go)
+    let mut stack: SmallVec<(i64, i64, u8), 64> = SmallVec::with_capacity(64);
+    stack.push((0, cache.num_points as i64 - 1, 0));
+
+    while let Some((left, right, axis)) = stack.pop() {
+        if left > right {
+            continue;
+        }
+
+        let left_u = left as usize;
+        let right_u = right as usize;
+
+        // Leaf node: linear scan
+        if right_u - left_u <= cache.node_size {
+            let (idxs, coords) = cache.read_leaf(left_u, right_u);
+            for i in 0..idxs.len() {
+                let x = coords[i * 2];
+                let y = coords[i * 2 + 1];
+                let dist = sq_dist(x.get(), y.get(), lon, lat);
+                if dist <= r2 {
+                    let data = cache.read_point_data(idxs[i].get() as usize);
+                    if dist < best_dist || data.weight > best_point.map(|p| p.weight).unwrap_or(0) {
+                        best_dist = dist;
+                        best_point = Some(data);
+                    }
+                }
+            }
+            continue;
+        }
+
+        // Internal node
+        let m = ((left + right) as f64 / 2.0).floor() as usize;
+        let (x, y) = cache.read_coord(m);
+
+        let dist = sq_dist(x.get(), y.get(), lon, lat);
+        if dist <= r2 {
+            let idx = cache.read_idx(m).get() as usize;
+            let data = cache.read_point_data(idx);
+            if dist < best_dist || data.weight > best_point.map(|p| p.weight).unwrap_or(0) {
+                best_dist = dist;
+                best_point = Some(data);
+            }
+        }
+
+        let next_axis = (axis + 1) % 2;
+
+        // Decide which children to visit
+        let cmp = if axis == 0 {
+            lon - radius
+        } else {
+            lat - radius
+        };
+        let coord_val = if axis == 0 { x } else { y };
+
+        if cmp <= coord_val.get() {
+            stack.push((left, m as i64 - 1, next_axis));
+        }
+        let cmp = if axis == 0 {
+            lon + radius
+        } else {
+            lat + radius
+        };
+        if cmp >= coord_val.get() {
+            stack.push((m as i64 + 1, right, next_axis));
+        }
+    }
+
+    best_point
 }
 
 // ---------------------------------------------------------------------------
