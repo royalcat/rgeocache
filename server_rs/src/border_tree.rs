@@ -3,7 +3,7 @@
 //! Uses an rstar R-tree for bounding-box filtering, then exact point-in-polygon
 //! containment via the `geo` crate. Read-only after construction.
 
-use geo::Contains;
+use geo::{Contains, SimplifyVw, SimplifyVwPreserve};
 use multiversion::multiversion;
 use rstar::{PointDistance, RTree, RTreeObject, AABB};
 
@@ -17,6 +17,8 @@ use crate::cache::ZoneType;
 struct ZoneEntry {
     name: String,
     polygon: geo::MultiPolygon<f64>,
+    // oversimplified polygon for faster point-in-polygon checks
+    oversimplified_polygon: geo::MultiPolygon<f64>,
     envelope: AABB<[f64; 2]>,
 }
 
@@ -45,6 +47,8 @@ pub struct BorderTree {
     tree: RTree<ZoneEntry>,
 }
 
+const OVERSIMPLIFIED_BORDER_EPSILON: f64 = 1_000_000.0;
+
 impl BorderTree {
     /// Build a border tree from a set of zones of the given type.
     pub fn build(zones: &[crate::cache::IndexedZone], filter_type: ZoneType) -> Self {
@@ -56,6 +60,10 @@ impl BorderTree {
                 ZoneEntry {
                     name: z.name.clone(),
                     polygon: z.polygon.clone(),
+                    oversimplified_polygon: z
+                        .polygon
+                        .clone()
+                        .simplify_vw_preserve(OVERSIMPLIFIED_BORDER_EPSILON),
                     envelope: AABB::from_corners(
                         [bbox.min().x, bbox.min().y],
                         [bbox.max().x, bbox.max().y],
@@ -77,6 +85,9 @@ impl BorderTree {
 
         // Find all candidates whose bounding box contains the point
         for entry in self.tree.locate_all_at_point(point) {
+            if multipolygon_contains(&entry.oversimplified_polygon, &geo_point) {
+                continue;
+            }
             if multipolygon_contains(&entry.polygon, &geo_point) {
                 return Some(&entry.name);
             }
