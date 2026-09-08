@@ -3,9 +3,9 @@
 //! Uses an rstar R-tree for bounding-box filtering, then exact point-in-polygon
 //! containment via the `geo` crate. Read-only after construction.
 
-use geo::{Contains, SimplifyVw, SimplifyVwPreserve};
+use geo::{Contains, SimplifyVwPreserve};
 use multiversion::multiversion;
-use rstar::{PointDistance, RTree, RTreeObject, AABB};
+use rstar::{PointDistance, RStarInsertionStrategy, RTree, RTreeObject, RTreeParams, AABB};
 
 use crate::cache::ZoneType;
 
@@ -42,9 +42,20 @@ impl PointDistance for ZoneEntry {
 // BorderTree
 // ---------------------------------------------------------------------------
 
+struct BorderRTreeNodeParameters;
+
+impl RTreeParams for BorderRTreeNodeParameters {
+    const MIN_SIZE: usize = 2;
+    const MAX_SIZE: usize = 6;
+    const REINSERTION_COUNT: usize = 3;
+    type DefaultInsertionStrategy = RStarInsertionStrategy;
+}
+
+type BorderRTree = RTree<ZoneEntry, BorderRTreeNodeParameters>;
+
 /// Spatial index for zone polygons (regions or countries).
 pub struct BorderTree {
-    tree: RTree<ZoneEntry>,
+    tree: BorderRTree,
 }
 
 const OVERSIMPLIFIED_BORDER_EPSILON: f64 = 1_000_000.0;
@@ -73,7 +84,7 @@ impl BorderTree {
             .collect();
 
         Self {
-            tree: RTree::bulk_load(entries),
+            tree: BorderRTree::bulk_load_with_params(entries),
         }
     }
 
