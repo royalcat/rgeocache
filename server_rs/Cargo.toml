@@ -51,6 +51,8 @@ tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter
 multiversion = "0.8.0"
 buffa = "0.9.1"
 smallvec = "2.0.0-alpha.12"
+tantivy = "0.26.2"
+tempfile = "3.27.0"
 
 
 [build-dependencies]

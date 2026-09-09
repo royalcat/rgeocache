@@ -113,7 +113,6 @@ impl Geocoder {
     }
 }
 
-#[multiversion(targets = "simd")]
 fn tree_find_in_radius(cache: &CacheFile, lon: f64, lat: f64, radius: f64) -> Option<V2PointData> {
     let mut best_point: Option<V2PointData> = None;
     let mut best_dist: f64 = f64::INFINITY;

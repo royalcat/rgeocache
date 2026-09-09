@@ -92,6 +92,21 @@ pub enum ZoneType {
 }
 
 // ---------------------------------------------------------------------------
+// Point — a single point read from the cache
+// ---------------------------------------------------------------------------
+
+/// A single point read from the cache, with its raw on-disk payload.
+///
+/// Coordinates are `lon`/`lat` in degrees; `data` holds the string IDs + weight.
+/// Resolve strings via [`CacheFile::read_string`].
+#[derive(Clone, Copy, Debug)]
+pub struct Point {
+    pub lon: f64,
+    pub lat: f64,
+    pub data: V2PointData,
+}
+
+// ---------------------------------------------------------------------------
 // CacheFile — mmap'd v2 cache
 // ---------------------------------------------------------------------------
 
@@ -255,9 +270,6 @@ impl CacheFile {
     }
 
     /// Read the (x, y) coordinate pair for sorted position `i`.
-    /// Coordinates are stored as f64 LE.  We read the bits via I64LE and
-    /// transmute to f64 — this is valid because f64 LE has the same byte
-    /// layout as a little-endian u64.
     #[inline]
     pub fn read_coord(&self, i: usize) -> (F64LE, F64LE) {
         let pos = self.coords_offset + i * 16;
@@ -323,6 +335,21 @@ impl CacheFile {
         // Scan for null terminator (strings are at most ~500 bytes)
         let end = self.mmap[pos..].iter().position(|&b| b == 0).unwrap_or(512);
         String::from_utf8_lossy(&self.mmap[pos..pos + end]).into_owned()
+    }
+
+    /// Lazily iterate over every point in the cache. Reads from the mmap on demand,
+    /// in KD-tree sorted order. Strings are not resolved here — use
+    /// [`Self::read_string`] on the returned [`V2PointData`] IDs when needed.
+    pub fn iter_points(&self) -> impl Iterator<Item = Point> + '_ {
+        (0..self.num_points).map(|i| {
+            let orig_idx = self.read_idx(i).get() as usize;
+            let (x, y) = self.read_coord(i);
+            Point {
+                lon: x.get(),
+                lat: y.get(),
+                data: self.read_point_data(orig_idx),
+            }
+        })
     }
 }
 

@@ -1,5 +1,6 @@
 mod border_tree;
 mod cache;
+mod geocode_index;
 mod geocoder;
 mod proto;
 mod server;
