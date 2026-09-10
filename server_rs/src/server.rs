@@ -10,6 +10,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::forward_geocoder::ForwardGeocoder;
 use crate::geocoder::{Geocoder, Info};
 
 // ---------------------------------------------------------------------------
@@ -18,6 +19,7 @@ use crate::geocoder::{Geocoder, Info};
 
 pub struct AppState {
     pub geocoder: Arc<Geocoder>,
+    pub forward_geocoder: Arc<ForwardGeocoder>,
     pub metrics: Metrics,
 }
 
@@ -172,4 +174,46 @@ pub async fn metrics_handler(state: web::types::State<Arc<AppState>>) -> HttpRes
             .body(text),
         Err(_) => HttpResponse::InternalServerError().finish(),
     }
+}
+
+#[derive(serde::Deserialize)]
+pub struct GeocodeQueryRequest {
+    query: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct GeocodeResponse {
+    results: Vec<GeocodeResponseItem>,
+}
+
+#[derive(serde::Serialize)]
+pub struct GeocodeResponseItem {
+    address: String,
+    score: f32,
+    lat: f64,
+    lon: f64,
+}
+
+pub async fn fgeocode_handle(
+    state: web::types::State<Arc<AppState>>,
+    web::types::Query(query_params): web::types::Query<GeocodeQueryRequest>,
+) -> impl web::Responder {
+    let results = match state.forward_geocoder.search(query_params.query) {
+        Ok(result) => result,
+        Err(_) => return HttpResponse::InternalServerError().finish(),
+    };
+
+    let resp = GeocodeResponse {
+        results: results
+            .iter()
+            .map(|v| GeocodeResponseItem {
+                address: v.0.clone(),
+                lat: v.1,
+                lon: v.2,
+                score: v.3,
+            })
+            .collect(),
+    };
+
+    web::HttpResponse::Ok().json(&resp)
 }

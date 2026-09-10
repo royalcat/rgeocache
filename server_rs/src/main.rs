@@ -1,6 +1,6 @@
 mod border_tree;
 mod cache;
-mod geocode_index;
+mod forward_geocoder;
 mod geocoder;
 mod proto;
 mod server;
@@ -59,10 +59,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.search_radius,
     )?;
 
+    let forward_geocoder = forward_geocoder::build_geocoder(&geocoder.cache)?;
+
     let metrics = server::Metrics::new()?;
 
     let state = Arc::new(server::AppState {
         geocoder: Arc::new(geocoder),
+        forward_geocoder: Arc::new(forward_geocoder),
         metrics,
     });
 
@@ -81,6 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .route(
                 "/rgeocode/multiaddress",
                 ntex::web::post().to(server::rgeocode_multi_handler),
+            )
+            .route(
+                "/fgeocode/search",
+                ntex::web::get().to(server::fgeocode_handle),
             )
             .route("/metrics", ntex::web::get().to(server::metrics_handler))
     })

@@ -22,7 +22,7 @@ pub struct Info {
 
 /// Disk-backed reverse geocoder.
 pub struct Geocoder {
-    cache: CacheFile,
+    pub cache: CacheFile,
     regions: BorderTree,
     countries: BorderTree,
     search_radius: f64,
