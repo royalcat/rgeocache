@@ -6,13 +6,16 @@ mod proto;
 mod server;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::thread;
 
 use clap::Parser;
 use ntex::http::HttpServiceConfig;
 use ntex::io::IoConfig;
 use ntex::web::{HttpServer, WebAppConfig};
 use ntex::SharedCfg;
+
+use crate::cache::CacheFile;
 
 #[derive(Parser, Debug)]
 #[command(name = "rgeocache-server")]
@@ -54,18 +57,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Loading v2 cache from: {}", args.points.display());
 
-    let geocoder = geocoder::Geocoder::load(
+    let cache = Arc::new(CacheFile::open(
         args.points.to_str().ok_or("invalid path")?,
-        args.search_radius,
-    )?;
+    )?);
 
-    let forward_geocoder = forward_geocoder::build_geocoder(&geocoder.cache)?;
+    let geocoder = geocoder::Geocoder::load(cache.clone(), args.search_radius)?;
 
     let metrics = server::Metrics::new()?;
 
+    let forward_geocoder_once = Arc::new(OnceLock::new());
+
+    let forward_geocoder_once_clone = forward_geocoder_once.clone();
+    thread::spawn(move || {
+        let forward_geocoder = forward_geocoder::build_geocoder(cache.as_ref()).unwrap();
+        forward_geocoder_once_clone.set(forward_geocoder).unwrap();
+    });
+
     let state = Arc::new(server::AppState {
         geocoder: Arc::new(geocoder),
-        forward_geocoder: forward_geocoder,
+        forward_geocoder: forward_geocoder_once,
         metrics,
     });
 

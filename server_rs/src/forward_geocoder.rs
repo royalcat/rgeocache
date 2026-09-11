@@ -7,6 +7,7 @@ use crate::cache::CacheFile;
 
 use tantivy::tokenizer::*;
 
+#[derive(Debug, Clone)]
 pub struct ForwardGeocoder {
     index: Index,
     region_field: Field,
@@ -108,7 +109,7 @@ pub fn build_geocoder(file: &CacheFile) -> tantivy::Result<ForwardGeocoder> {
     let lon_field = schema_builder.add_f64_field("lon", STORED);
     let schema = schema_builder.build();
 
-    let index = Index::create_in_ram(schema.clone());
+    let index = Index::create_from_tempdir(schema)?;
 
     index
         .tokenizers()

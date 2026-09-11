@@ -3,6 +3,8 @@
 //! Uses the mmap'd KD-tree spatial index for radius search, resolves string
 //! IDs lazily from the string data block, and falls back to border trees
 //! for region/country when a point is not found or is missing those fields.
+use std::sync::Arc;
+
 use crate::border_tree::BorderTree;
 use crate::cache::{CacheFile, V2PointData};
 use multiversion::multiversion;
@@ -22,7 +24,7 @@ pub struct Info {
 
 /// Disk-backed reverse geocoder.
 pub struct Geocoder {
-    pub cache: CacheFile,
+    pub cache: Arc<CacheFile>,
     regions: BorderTree,
     countries: BorderTree,
     search_radius: f64,
@@ -30,9 +32,10 @@ pub struct Geocoder {
 
 impl Geocoder {
     /// Load a v2 cache file and build border trees.
-    pub fn load(path: &str, search_radius: f64) -> Result<Self, Box<dyn std::error::Error>> {
-        let cache = CacheFile::open(path)?;
-
+    pub fn load(
+        cache: Arc<CacheFile>,
+        search_radius: f64,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let regions = BorderTree::build(&cache.zones, crate::cache::ZoneType::Region);
         let countries = BorderTree::build(&cache.zones, crate::cache::ZoneType::Country);
 

@@ -8,7 +8,7 @@ use ntex::web::{self, HttpResponse};
 use prometheus::{Counter, Encoder, Histogram, HistogramOpts, Opts, Registry, TextEncoder};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::forward_geocoder::ForwardGeocoder;
 use crate::geocoder::{Geocoder, Info};
@@ -19,7 +19,7 @@ use crate::geocoder::{Geocoder, Info};
 
 pub struct AppState {
     pub geocoder: Arc<Geocoder>,
-    pub forward_geocoder: ForwardGeocoder,
+    pub forward_geocoder: Arc<OnceLock<ForwardGeocoder>>,
     pub metrics: Metrics,
 }
 
@@ -198,7 +198,7 @@ pub async fn fgeocode_handle(
     state: web::types::State<Arc<AppState>>,
     web::types::Query(query_params): web::types::Query<GeocodeQueryRequest>,
 ) -> impl web::Responder {
-    let results = match state.forward_geocoder.search(query_params.q) {
+    let results = match state.forward_geocoder.wait().search(query_params.q) {
         Ok(result) => result,
         Err(_) => return HttpResponse::InternalServerError().finish(),
     };
