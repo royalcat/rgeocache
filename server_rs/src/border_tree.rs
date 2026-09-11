@@ -18,7 +18,7 @@ struct ZoneEntry {
     name: String,
     polygon: geo::MultiPolygon<f64>,
     // oversimplified polygon for faster point-in-polygon checks
-    oversimplified_polygon: geo::MultiPolygon<f64>,
+    // oversimplified_polygon: geo::MultiPolygon<f64>,
     envelope: AABB<[f64; 2]>,
 }
 
@@ -71,10 +71,10 @@ impl BorderTree {
                 ZoneEntry {
                     name: z.name.clone(),
                     polygon: z.polygon.clone(),
-                    oversimplified_polygon: z
-                        .polygon
-                        .clone()
-                        .simplify_vw_preserve(OVERSIMPLIFIED_BORDER_EPSILON),
+                    // oversimplified_polygon: z
+                    //     .polygon
+                    //     .clone()
+                    //     .simplify_vw_preserve(OVERSIMPLIFIED_BORDER_EPSILON),
                     envelope: AABB::from_corners(
                         [bbox.min().x, bbox.min().y],
                         [bbox.max().x, bbox.max().y],
@@ -96,9 +96,9 @@ impl BorderTree {
 
         // Find all candidates whose bounding box contains the point
         for entry in self.tree.locate_all_at_point(point) {
-            if multipolygon_contains(&entry.oversimplified_polygon, &geo_point) {
-                continue;
-            }
+            // if multipolygon_contains(&entry.oversimplified_polygon, &geo_point) {
+            //     continue;
+            // }
             if multipolygon_contains(&entry.polygon, &geo_point) {
                 return Some(&entry.name);
             }
