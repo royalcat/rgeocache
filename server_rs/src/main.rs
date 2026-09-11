@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = Arc::new(server::AppState {
         geocoder: Arc::new(geocoder),
-        forward_geocoder: Arc::new(forward_geocoder),
+        forward_geocoder: forward_geocoder,
         metrics,
     });
 

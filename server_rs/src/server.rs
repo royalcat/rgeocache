@@ -19,7 +19,7 @@ use crate::geocoder::{Geocoder, Info};
 
 pub struct AppState {
     pub geocoder: Arc<Geocoder>,
-    pub forward_geocoder: Arc<ForwardGeocoder>,
+    pub forward_geocoder: ForwardGeocoder,
     pub metrics: Metrics,
 }
 
@@ -178,7 +178,7 @@ pub async fn metrics_handler(state: web::types::State<Arc<AppState>>) -> HttpRes
 
 #[derive(serde::Deserialize)]
 pub struct GeocodeQueryRequest {
-    query: String,
+    q: String,
 }
 
 #[derive(serde::Serialize)]
@@ -188,7 +188,7 @@ pub struct GeocodeResponse {
 
 #[derive(serde::Serialize)]
 pub struct GeocodeResponseItem {
-    address: String,
+    address_string: String,
     score: f32,
     lat: f64,
     lon: f64,
@@ -198,7 +198,7 @@ pub async fn fgeocode_handle(
     state: web::types::State<Arc<AppState>>,
     web::types::Query(query_params): web::types::Query<GeocodeQueryRequest>,
 ) -> impl web::Responder {
-    let results = match state.forward_geocoder.search(query_params.query) {
+    let results = match state.forward_geocoder.search(query_params.q) {
         Ok(result) => result,
         Err(_) => return HttpResponse::InternalServerError().finish(),
     };
@@ -207,7 +207,7 @@ pub async fn fgeocode_handle(
         results: results
             .iter()
             .map(|v| GeocodeResponseItem {
-                address: v.0.clone(),
+                address_string: v.0.clone(),
                 lat: v.1,
                 lon: v.2,
                 score: v.3,
