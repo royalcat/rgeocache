@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let forward_geocoder_once_clone = forward_geocoder_once.clone();
     thread::spawn(move || {
-        let forward_geocoder = forward_geocoder::build_geocoder(cache.as_ref()).unwrap();
+        let forward_geocoder = forward_geocoder::build_geocoder(cache.clone()).unwrap();
         forward_geocoder_once_clone.set(forward_geocoder).unwrap();
     });
 

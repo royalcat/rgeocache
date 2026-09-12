@@ -1,7 +1,10 @@
 //! ntex HTTP server handlers and metrics.
 
+use crate::forward_geocoder::{ForwardGeocoder, GeocodeTypeFilter};
+use crate::geocoder::{Geocoder, Info};
 use async_stream::try_stream;
 use futures::Stream;
+use geo::MultiPolygon;
 use ntex::http::header;
 use ntex::util::Bytes;
 use ntex::web::{self, HttpResponse};
@@ -9,9 +12,6 @@ use prometheus::{Counter, Encoder, Histogram, HistogramOpts, Opts, Registry, Tex
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
-
-use crate::forward_geocoder::ForwardGeocoder;
-use crate::geocoder::{Geocoder, Info};
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -176,41 +176,51 @@ pub async fn metrics_handler(state: web::types::State<Arc<AppState>>) -> HttpRes
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct GeocodeQueryRequest {
     q: String,
+    types: Option<String>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct GeocodeResponse {
     results: Vec<GeocodeResponseItem>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct GeocodeResponseItem {
     address_string: String,
     score: f32,
-    lat: f64,
-    lon: f64,
+    point: [f64; 2],
+    geo_type: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    multipolygon: Option<MultiPolygon>,
 }
 
 pub async fn fgeocode_handle(
     state: web::types::State<Arc<AppState>>,
     web::types::Query(query_params): web::types::Query<GeocodeQueryRequest>,
 ) -> impl web::Responder {
-    let results = match state.forward_geocoder.wait().search(query_params.q) {
+    let type_filter = query_params.types.as_deref().map(GeocodeTypeFilter::from);
+
+    let results = match state
+        .forward_geocoder
+        .wait()
+        .search(query_params.q, type_filter)
+    {
         Ok(result) => result,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
+        Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
     };
 
     let resp = GeocodeResponse {
         results: results
             .iter()
             .map(|v| GeocodeResponseItem {
-                address_string: v.0.clone(),
-                lat: v.1,
-                lon: v.2,
-                score: v.3,
+                address_string: v.address_string.clone(),
+                score: v.score,
+                point: [v.point.0, v.point.1],
+                geo_type: v.geo_type.to_string(),
+                multipolygon: v.multipolygon.clone(),
             })
             .collect(),
     };

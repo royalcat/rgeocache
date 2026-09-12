@@ -30,7 +30,7 @@ prost = "0.14"
 # CLI
 clap = { version = "4", features = ["derive"] }
 # Geometry
-geo = "0.33"
+geo = { version = "0.33", features = ["serde"] }
 rstar = "0.13"
 # Multiprocessing for multiaddress handler
 rayon = "1.12.0"
@@ -53,6 +53,8 @@ buffa = "0.9.1"
 smallvec = "2.0.0-alpha.12"
 tantivy = "0.26.2"
 tempfile = "3.27.0"
+serde_default_utils = "0.3.1"
+strum = { version = "0.28", features = ["derive"] }
 
 
 [build-dependencies]

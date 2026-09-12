@@ -1,15 +1,22 @@
-use tantivy::collector::TopDocs;
+use std::collections::HashSet;
+use std::sync::Arc;
+
+use geo::Centroid;
+use strum::EnumString;
+use tantivy::collector::{FilterCollector, TopDocs};
 use tantivy::query::QueryParser;
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexWriter};
 
-use crate::cache::CacheFile;
+use crate::cache::{self, CacheFile};
 
 use tantivy::tokenizer::*;
 
 #[derive(Debug, Clone)]
 pub struct ForwardGeocoder {
+    cache: Arc<CacheFile>,
     index: Index,
+    geo_type_field: Field,
     region_field: Field,
     city_field: Field,
     street_field: Field,
@@ -17,6 +24,7 @@ pub struct ForwardGeocoder {
     name_field: Field,
     lat_field: Field,
     lon_field: Field,
+    i_field: Field,
 }
 
 /// Token filter that replaces hyphens with spaces.
@@ -80,8 +88,85 @@ pub struct ForwardGeocoder {
 //         self.tail.token_mut()
 //     }
 // }
+//
 
-pub fn build_geocoder(file: &CacheFile) -> tantivy::Result<ForwardGeocoder> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, strum::Display)]
+pub enum GeoObjectType {
+    #[strum(serialize = "zone", serialize = "z")]
+    Zone = 1,
+    #[strum(serialize = "building", serialize = "b")]
+    Building = 2,
+    #[strum(serialize = "road", serialize = "r")]
+    Road = 3,
+}
+
+impl Into<u64> for GeoObjectType {
+    fn into(self) -> u64 {
+        self as u64
+    }
+}
+
+impl TryFrom<u64> for GeoObjectType {
+    type Error = &'static str;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(GeoObjectType::Zone),
+            2 => Ok(GeoObjectType::Building),
+            3 => Ok(GeoObjectType::Road),
+            _ => Err("invalid geo object type"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GeocodeTypeFilter {
+    zones: bool,
+    buildings: bool,
+    roads: bool,
+}
+
+impl From<String> for GeocodeTypeFilter {
+    fn from(s: String) -> Self {
+        s.as_str().into()
+    }
+}
+
+impl From<&str> for GeocodeTypeFilter {
+    fn from(s: &str) -> Self {
+        let parts = s.split(',').collect::<Vec<&str>>();
+        GeocodeTypeFilter {
+            zones: parts.contains(&"zone"),
+            buildings: parts.contains(&"building"),
+            roads: parts.contains(&"road"),
+        }
+    }
+}
+
+impl Default for GeocodeTypeFilter {
+    fn default() -> Self {
+        GeocodeTypeFilter {
+            zones: true,
+            buildings: true,
+            roads: true,
+        }
+    }
+}
+
+impl GeocodeTypeFilter {
+    fn matches<T>(&self, obj_type: T) -> bool
+    where
+        T: Into<GeoObjectType>,
+    {
+        match obj_type.into() {
+            GeoObjectType::Zone => self.zones,
+            GeoObjectType::Building => self.buildings,
+            GeoObjectType::Road => self.roads,
+        }
+    }
+}
+
+pub fn build_geocoder(cache: Arc<CacheFile>) -> tantivy::Result<ForwardGeocoder> {
     let mut schema_builder = Schema::builder();
 
     // TODO custom tokinizer for geo nedded
@@ -105,8 +190,10 @@ pub fn build_geocoder(file: &CacheFile) -> tantivy::Result<ForwardGeocoder> {
     let house_number_field =
         schema_builder.add_text_field("house_number", address_part_option.clone());
     let name_field = schema_builder.add_text_field("name", address_part_option.clone());
+    let geo_type_field = schema_builder.add_u64_field("geo_type", FAST | STORED);
     let lat_field = schema_builder.add_f64_field("lat", STORED);
     let lon_field = schema_builder.add_f64_field("lon", STORED);
+    let i_field = schema_builder.add_u64_field("i", STORED);
     let schema = schema_builder.build();
 
     let index = Index::create_from_tempdir(schema)?;
@@ -115,17 +202,30 @@ pub fn build_geocoder(file: &CacheFile) -> tantivy::Result<ForwardGeocoder> {
         .tokenizers()
         .register(ru_geo_tokinizer_name, ru_geo_tokinizer);
 
-    let mut index_writer: IndexWriter = index.writer(100_000_000)?;
+    let mut index_writer: IndexWriter = index.writer(256 * 1024 * 1024)?;
 
-    for p in file.iter_points() {
+    for p in cache.iter_points() {
         index_writer.add_document(doc!(
-            region_field => file.read_string(p.data.region_id.get()),
-            city_field => file.read_string(p.data.city_id.get()),
-            street_field => file.read_string(p.data.street_id.get()),
-            house_number_field => file.read_string(p.data.house_number_id.get()),
-            name_field => file.read_string(p.data.name_id.get()),
+            region_field => cache.read_string(p.data.region_id.get()),
+            city_field => cache.read_string(p.data.city_id.get()),
+            street_field => cache.read_string(p.data.street_id.get()),
+            house_number_field => cache.read_string(p.data.house_number_id.get()),
+            name_field => cache.read_string(p.data.name_id.get()),
+            geo_type_field => GeoObjectType::Building as u64,
             lat_field => p.lat,
             lon_field => p.lon
+        ))?;
+    }
+
+    for (i, z) in cache.zones.iter().enumerate() {
+        let centroid = z.polygon.centroid().unwrap();
+
+        index_writer.add_document(doc!(
+            name_field => z.name.as_str(),
+            geo_type_field => GeoObjectType::Zone as u64,
+            lat_field => centroid.y(),
+            lon_field => centroid.x(),
+            i_field => i as u64,
         ))?;
     }
 
@@ -133,6 +233,8 @@ pub fn build_geocoder(file: &CacheFile) -> tantivy::Result<ForwardGeocoder> {
 
     Ok(ForwardGeocoder {
         index,
+        cache,
+        geo_type_field,
         region_field,
         city_field,
         street_field,
@@ -140,11 +242,24 @@ pub fn build_geocoder(file: &CacheFile) -> tantivy::Result<ForwardGeocoder> {
         name_field,
         lat_field,
         lon_field,
+        i_field,
     })
 }
 
+pub struct SearchResultItem {
+    pub address_string: String,
+    pub score: f32,
+    pub point: (f64, f64),
+    pub geo_type: GeoObjectType,
+    pub multipolygon: Option<geo::MultiPolygon>,
+}
+
 impl ForwardGeocoder {
-    pub fn search(&self, query_text: String) -> tantivy::Result<Vec<(String, f64, f64, f32)>> {
+    pub fn search(
+        &self,
+        query_text: String,
+        type_filter: Option<GeocodeTypeFilter>,
+    ) -> tantivy::Result<Vec<SearchResultItem>> {
         let searcher = self.index.reader()?.searcher();
 
         let query_parser = {
@@ -169,64 +284,84 @@ impl ForwardGeocoder {
             query_parser.set_field_boost(self.street_field, text_boost);
             // query_parser.set_field_fuzzy(self.house_number_field, true, 1, true);
             query_parser.set_field_fuzzy(self.name_field, true, 1, true);
-            query_parser.set_field_boost(self.name_field, 1.0);
+            query_parser.set_field_boost(self.name_field, text_boost);
 
             query_parser
         };
 
+        let type_filter = type_filter.unwrap_or_default();
+
         let query = query_parser.parse_query(&query_text)?;
-        let collector = TopDocs::with_limit(10).order_by_score();
+        let collector = FilterCollector::new(
+            "geo_type".to_string(),
+            move |t: u64| type_filter.matches(GeoObjectType::try_from(t).unwrap()),
+            TopDocs::with_limit(10).order_by_score(),
+        );
         let top_docs = searcher.search(&query, &collector)?;
 
-        let mut out: Vec<(String, f64, f64, f32)> = Vec::new();
+        let mut out: Vec<SearchResultItem> = Vec::new();
 
-        for (_score, doc_address) in top_docs {
+        for (score, doc_address) in top_docs {
             let retrieved_doc: TantivyDocument = searcher.doc(doc_address)?;
+            let geo_type = GeoObjectType::try_from(
+                retrieved_doc
+                    .get_first(self.geo_type_field)
+                    .unwrap()
+                    .as_u64()
+                    .unwrap(),
+            )
+            .unwrap();
             let address_string = vec![
                 retrieved_doc
                     .get_first(self.region_field)
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
+                    .map(|f| f.as_str())
+                    .unwrap_or_default(),
                 retrieved_doc
                     .get_first(self.city_field)
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
+                    .map(|f| f.as_str())
+                    .unwrap_or_default(),
                 retrieved_doc
                     .get_first(self.street_field)
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
+                    .map(|f| f.as_str())
+                    .unwrap_or_default(),
                 retrieved_doc
                     .get_first(self.house_number_field)
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
+                    .map(|f| f.as_str())
+                    .unwrap_or_default(),
                 retrieved_doc
                     .get_first(self.name_field)
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
+                    .map(|f| f.as_str())
+                    .unwrap_or_default(),
             ]
             .into_iter()
-            .filter(|a| !a.is_empty())
+            .filter_map(|v| v)
             .collect::<Vec<&str>>()
             .join(", ");
-            out.push((
+
+            let mp = retrieved_doc
+                .get_first(self.i_field)
+                .map(|i| i.as_u64())
+                .map(|i| i.map(|i| self.cache.zones[i as usize].polygon.clone()))
+                .flatten();
+
+            out.push(SearchResultItem {
                 address_string,
-                retrieved_doc
-                    .get_first(self.lat_field)
-                    .unwrap()
-                    .as_f64()
-                    .unwrap(),
-                retrieved_doc
-                    .get_first(self.lon_field)
-                    .unwrap()
-                    .as_f64()
-                    .unwrap(),
-                _score,
-            ));
+                score,
+                point: (
+                    retrieved_doc
+                        .get_first(self.lat_field)
+                        .unwrap()
+                        .as_f64()
+                        .unwrap(),
+                    retrieved_doc
+                        .get_first(self.lon_field)
+                        .unwrap()
+                        .as_f64()
+                        .unwrap(),
+                ),
+                geo_type,
+                multipolygon: mp,
+            });
         }
 
         Ok(out)

@@ -5,6 +5,8 @@ info:
 
 paths:
   /rgeocode/address/{lat}/{lon}:
+    tags:
+      - reverse geocoding
     parameters:
       - name: lat
         in: path
@@ -33,6 +35,8 @@ paths:
           description: Nothing found in location
 
   /rgeocode/multiaddress:
+    tags:
+      - reverse geocoding
     get:
       summary: Get multiple addresses with single request
       requestBody:
@@ -91,6 +95,60 @@ paths:
           description: Server error
         "400":
           description: Bad request
+
+  /fgeocode/search:
+    tags:
+      - forward geocoding
+    parameters:
+      - name: q
+        in: query
+        required: true
+        description: Query string to search for an address
+        schema:
+          type: string
+    get:
+      summary: Get coordinates of found address or zone for a query
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - address_string
+                        - point
+                        - score
+                      properties:
+                        address_string:
+                          type: string
+                        score:
+                          type: number
+                          description: Score of the match
+                          format: float64
+                        point:
+                          description: Points to the center of found object
+                          type: array
+                          items:
+                            type: number
+                            format: float
+                          minItems: 2
+                          maxItems: 2
+                          example: [1.5, 2.0]
+                        multipolygon:
+                          type: array
+                          description: GeoJSON Multipolygon
+        "500":
+          description: Server error
+        "400":
+          description: Bad request
+        "204":
+          description: Nothing found in location
 
 components:
   schemas:

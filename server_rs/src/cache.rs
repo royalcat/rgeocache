@@ -114,6 +114,7 @@ pub struct Point {
 ///
 /// The spatial index stays on disk; only the string offset index and zone data
 /// are loaded into memory.
+#[derive(Debug)]
 pub struct CacheFile {
     mmap: Mmap,
 
