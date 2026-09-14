@@ -29,6 +29,7 @@
 use buffa::{Message, MessageView};
 use memmap2::Mmap;
 use smallvec::SmallVec;
+use std::sync::Arc;
 use zerocopy::byteorder::little_endian::{F64 as F64LE, I64 as I64LE, U32 as U32LE};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -118,12 +119,16 @@ pub struct Point {
 pub struct CacheFile {
     mmap: Mmap,
 
+    /// Locale the cache strings were generated for (e.g. `"ru"`, `"en"`).
+    /// Empty when the cache was built with `--preferred-localization official`.
+    pub locale: String,
+
     // String resolution
     pub strings_index: Box<[U32LE]>, // id → byte offset into string data block
     pub strings_data_offset: usize,  // absolute position in the mmap'd file
 
     // Zone data
-    pub zones: Box<[IndexedZone]>,
+    pub zones: Arc<[IndexedZone]>,
 
     // KDBH spatial index layout
     pub num_points: usize,
@@ -198,6 +203,7 @@ impl CacheFile {
             metadata.date_created,
             metadata.locale
         );
+        let locale = metadata.locale.clone();
         offset += metadata_size;
 
         // --- Read string offset index into memory ---
@@ -249,9 +255,10 @@ impl CacheFile {
 
         Ok(Self {
             mmap,
+            locale,
             strings_index: strings_index.into_boxed_slice(),
             strings_data_offset,
-            zones: zones.into_boxed_slice(),
+            zones: zones.into(),
             num_points,
             node_size,
             idxs_offset,

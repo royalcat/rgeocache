@@ -69,8 +69,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let forward_geocoder_once_clone = forward_geocoder_once.clone();
     thread::spawn(move || {
-        let forward_geocoder = forward_geocoder::build_geocoder(cache.clone()).unwrap();
-        forward_geocoder_once_clone.set(forward_geocoder).unwrap();
+        // Store the failure rather than panicking: a panicking build thread would
+        // leave the OnceLock empty and block every /fgeocode/search request
+        // forever on `wait()`.
+        let result = forward_geocoder::build_geocoder(cache.clone()).map_err(|err| {
+            log::error!("failed to build forward geocoder index: {err}");
+            err.to_string()
+        });
+        let _ = forward_geocoder_once_clone.set(result);
     });
 
     let state = Arc::new(server::AppState {

@@ -1,6 +1,8 @@
 //! ntex HTTP server handlers and metrics.
 
-use crate::forward_geocoder::{ForwardGeocoder, GeocodeTypeFilter};
+use crate::forward_geocoder::{
+    ForwardGeocoder, GeocodeKindFilter, DEFAULT_LIMIT, MAX_LIMIT, MAX_QUERY_LEN,
+};
 use crate::geocoder::{Geocoder, Info};
 use async_stream::try_stream;
 use futures::Stream;
@@ -19,7 +21,9 @@ use std::sync::{Arc, OnceLock};
 
 pub struct AppState {
     pub geocoder: Arc<Geocoder>,
-    pub forward_geocoder: Arc<OnceLock<ForwardGeocoder>>,
+    /// `Err` carries the build failure so the handler can answer 503 instead of
+    /// blocking forever on a `OnceLock` that will never be filled.
+    pub forward_geocoder: Arc<OnceLock<Result<ForwardGeocoder, String>>>,
     pub metrics: Metrics,
 }
 
@@ -179,7 +183,11 @@ pub async fn metrics_handler(state: web::types::State<Arc<AppState>>) -> HttpRes
 #[derive(Debug, serde::Deserialize)]
 pub struct GeocodeQueryRequest {
     q: String,
-    types: Option<String>,
+    /// Comma-separated object kinds to include: `zone`, `building`, `road`
+    /// (aliases `z`, `b`, `r`). Absent means all kinds.
+    kind: Option<String>,
+    /// Maximum number of results, clamped to `1..=MAX_LIMIT`.
+    limit: Option<usize>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -201,13 +209,29 @@ pub async fn fgeocode_handle(
     state: web::types::State<Arc<AppState>>,
     web::types::Query(query_params): web::types::Query<GeocodeQueryRequest>,
 ) -> impl web::Responder {
-    let type_filter = query_params.types.as_deref().map(GeocodeTypeFilter::from);
+    if query_params.q.len() > MAX_QUERY_LEN {
+        return HttpResponse::BadRequest().body("query too long");
+    }
 
-    let results = match state
-        .forward_geocoder
-        .wait()
-        .search(query_params.q, type_filter)
-    {
+    let kind = query_params
+        .kind
+        .as_deref()
+        .map(GeocodeKindFilter::from)
+        .unwrap_or_default();
+    let limit = query_params
+        .limit
+        .unwrap_or(DEFAULT_LIMIT)
+        .clamp(1, MAX_LIMIT);
+
+    let forward_geocoder = match state.forward_geocoder.wait() {
+        Ok(geocoder) => geocoder,
+        Err(err) => {
+            return HttpResponse::ServiceUnavailable()
+                .body(format!("forward geocoder unavailable: {err}"));
+        }
+    };
+
+    let results = match forward_geocoder.search(&query_params.q, kind, limit) {
         Ok(result) => result,
         Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
     };

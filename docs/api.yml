@@ -103,9 +103,33 @@ paths:
       - name: q
         in: query
         required: true
-        description: Query string to search for an address
+        description: |
+          Query string to search for an address. Comma- or semicolon-separated
+          parts are all required to match ("Москва, Ленина 12"); tokens within a
+          part may match any address field. The last token is matched as a
+          prefix, so partial input works while typing. Maximum 256 characters.
         schema:
           type: string
+          maxLength: 256
+      - name: kind
+        in: query
+        required: false
+        description: |
+          Comma-separated object kinds to include. Accepts `zone`, `building`
+          and `road` (aliases `z`, `b`, `r`). Unknown values are ignored.
+          Defaults to all kinds.
+        schema:
+          type: string
+          example: zone,road
+      - name: limit
+        in: query
+        required: false
+        description: Maximum number of results. Clamped to 1-100.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
     get:
       summary: Get coordinates of found address or zone for a query
       responses:
@@ -124,31 +148,38 @@ paths:
                         - address_string
                         - point
                         - score
+                        - geo_type
                       properties:
                         address_string:
                           type: string
+                          description: Matched address, empty parts omitted
                         score:
                           type: number
                           description: Score of the match
-                          format: float64
+                          format: float32
                         point:
-                          description: Points to the center of found object
+                          description: |
+                            Center of the found object, as [latitude, longitude].
                           type: array
                           items:
                             type: number
                             format: float
                           minItems: 2
                           maxItems: 2
-                          example: [1.5, 2.0]
+                          example: [55.75, 37.61]
+                        geo_type:
+                          type: string
+                          description: Kind of the matched object
+                          enum: [zone, building, road]
                         multipolygon:
                           type: array
-                          description: GeoJSON Multipolygon
+                          description: GeoJSON Multipolygon, only for zones
+        "400":
+          description: Bad request (missing `q`, or `q` longer than 256 characters)
         "500":
           description: Server error
-        "400":
-          description: Bad request
-        "204":
-          description: Nothing found in location
+        "503":
+          description: Forward geocoder index is still building or failed to build
 
 components:
   schemas:
