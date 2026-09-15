@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Store the failure rather than panicking: a panicking build thread would
         // leave the OnceLock empty and block every /fgeocode/search request
         // forever on `wait()`.
-        let result = forward_geocoder::build_geocoder(cache.clone()).map_err(|err| {
+        let result = forward_geocoder::ForwardGeocoder::build(cache.clone()).map_err(|err| {
             log::error!("failed to build forward geocoder index: {err}");
             err.to_string()
         });
