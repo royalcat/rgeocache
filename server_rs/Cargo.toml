@@ -55,6 +55,7 @@ tantivy = "0.26.2"
 tempfile = "3.27.0"
 serde_default_utils = "0.3.1"
 strum = { version = "0.28", features = ["derive"] }
+frostem = "1.20260821.6"
 
 
 [build-dependencies]

@@ -286,8 +286,8 @@ fn build_index(
 
     let analyzers = build_analyzers(locale);
     log::info!(
-        "forward geocoder: locale={locale:?} stemmer={:?}",
-        analyzers.language
+        "forward geocoder: locale={locale:?} stemmer_language={:?}",
+        analyzers.stemmer_language()
     );
     index
         .tokenizers()
