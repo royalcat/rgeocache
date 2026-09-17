@@ -6,12 +6,13 @@ use geo::Centroid;
 use strum::EnumString;
 use tantivy::collector::{FilterCollector, TopDocs};
 use tantivy::query::{BooleanQuery, BoostQuery, FuzzyTermQuery, Occur, Query, TermQuery};
-use tantivy::schema::*;
-use tantivy::tokenizer::*;
+use tantivy::space_usage::PerFieldSpaceUsage;
 use tantivy::{
-    doc, DocAddress, Index, IndexReader, IndexWriter, Score, Searcher, TantivyDocument,
+    doc, positions, DocAddress, Index, IndexReader, IndexWriter, Score, Searcher, TantivyDocument,
     TantivyError, Term,
 };
+use tantivy::{schema::*, Directory};
+use tantivy::{tokenizer::*, ByteCount};
 
 use super::text_analyzer::{build_analyzers, Analyzers};
 use crate::cache::{CacheFile, IndexedZone};
@@ -316,11 +317,44 @@ fn build_index(
     }
 
     index_writer.commit()?;
-    drop(index_writer);
+    index_writer.wait_merging_threads()?;
 
     let reader = index.reader()?;
 
+    print_usage(&reader);
+
     Ok((reader, fields, analyzers))
+}
+
+fn print_usage(reader: &IndexReader) {
+    let mut fieldnorm_usage: HashMap<String, ByteCount> = HashMap::new();
+    let mut fast_field_usage: HashMap<String, ByteCount> = HashMap::new();
+    let mut positions_usage: HashMap<String, ByteCount> = HashMap::new();
+    let mut postings_usage: HashMap<String, ByteCount> = HashMap::new();
+    let mut termdict_usage: HashMap<String, ByteCount> = HashMap::new();
+    let mut store_usage = ByteCount::default();
+
+    fn add_map_usage(map: &mut HashMap<String, ByteCount>, usage: &PerFieldSpaceUsage) {
+        for field in usage.fields() {
+            *map.entry(field.field_name().to_string()).or_default() += field.total();
+        }
+    }
+
+    for seg in reader.searcher().space_usage().unwrap().segments() {
+        add_map_usage(&mut fieldnorm_usage, seg.fieldnorms());
+        add_map_usage(&mut fast_field_usage, seg.fast_fields());
+        add_map_usage(&mut positions_usage, seg.positions());
+        add_map_usage(&mut postings_usage, seg.postings());
+        add_map_usage(&mut termdict_usage, seg.termdict());
+        store_usage += seg.store().total();
+    }
+
+    log::info!("fieldnorm_usage: {:?}", fieldnorm_usage);
+    log::info!("fast_field_usage: {:?}", fast_field_usage);
+    log::info!("positions_usage: {:?}", positions_usage);
+    log::info!("postings_usage: {:?}", postings_usage);
+    log::info!("termdict_usage: {:?}", termdict_usage);
+    log::info!("store_usage: {:?}", store_usage);
 }
 
 // ---------------------------------------------------------------------------
