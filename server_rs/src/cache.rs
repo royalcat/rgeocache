@@ -100,10 +100,19 @@ pub enum ZoneType {
 ///
 /// Coordinates are `lon`/`lat` in degrees; `data` holds the string IDs + weight.
 /// Resolve strings via [`CacheFile::read_string`].
+/// Location is the point's sorted KD-tree position — the index
+/// [`CacheFile::read_coord`] and [`CacheFile::read_idx`] take.
 #[derive(Clone, Copy, Debug)]
 pub struct Point {
+    #[allow(dead_code)] // May be used in the future
     pub lon: f64,
+    #[allow(dead_code)] // May be used in the future
     pub lat: f64,
+    /// Sorted KD-tree position — the index [`CacheFile::read_coord`] and
+    /// [`CacheFile::read_idx`] take. Stored by the forward geocoder as a
+    /// document's `cache_location` so the coordinates need not be duplicated
+    /// into the index.
+    pub location: u64,
     pub data: V2PointData,
 }
 
@@ -346,8 +355,9 @@ impl CacheFile {
     }
 
     /// Lazily iterate over every point in the cache. Reads from the mmap on demand,
-    /// in KD-tree sorted order. Strings are not resolved here — use
-    /// [`Self::read_string`] on the returned [`V2PointData`] IDs when needed.
+    /// in KD-tree sorted order, yielding each point's [`Point::location`] and its
+    /// raw payload. Strings are not resolved here — use [`Self::read_string`] on
+    /// the returned [`V2PointData`] IDs.
     pub fn iter_points(&self) -> impl Iterator<Item = Point> + '_ {
         (0..self.num_points).map(|i| {
             let orig_idx = self.read_idx(i).get() as usize;
@@ -355,6 +365,7 @@ impl CacheFile {
             Point {
                 lon: x.get(),
                 lat: y.get(),
+                location: i as u64,
                 data: self.read_point_data(orig_idx),
             }
         })

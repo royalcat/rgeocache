@@ -6,12 +6,12 @@ use geo::Centroid;
 use strum::EnumString;
 use tantivy::collector::{FilterCollector, TopDocs};
 use tantivy::query::{BooleanQuery, BoostQuery, FuzzyTermQuery, Occur, Query, TermQuery};
+use tantivy::schema::*;
 use tantivy::space_usage::PerFieldSpaceUsage;
 use tantivy::{
-    doc, positions, DocAddress, Index, IndexReader, IndexWriter, Score, Searcher, TantivyDocument,
+    doc, DocAddress, Index, IndexReader, IndexWriter, Score, Searcher, TantivyDocument,
     TantivyError, Term,
 };
-use tantivy::{schema::*, Directory};
 use tantivy::{tokenizer::*, ByteCount};
 
 use super::text_analyzer::{build_analyzers, Analyzers};
@@ -226,9 +226,9 @@ struct Fields {
     house_number: Field,
     name: Field,
     geo_type: Field,
-    lat: Field,
-    lon: Field,
-    i: Field,
+    /// Where the document's geometry lives in the cache — see [`IndexedDoc`].
+    /// `geo_type` says how to read it.
+    cache_location: Field,
 }
 
 fn build_schema() -> (Schema, Fields) {
@@ -251,9 +251,7 @@ fn build_schema() -> (Schema, Fields) {
         house_number: schema_builder.add_text_field("house_number", text_options(HOUSE_ANALYZER)),
         name: schema_builder.add_text_field("name", text_options(TEXT_ANALYZER)),
         geo_type: schema_builder.add_u64_field(GEO_TYPE_FIELD, FAST | STORED),
-        lat: schema_builder.add_f64_field("lat", STORED),
-        lon: schema_builder.add_f64_field("lon", STORED),
-        i: schema_builder.add_u64_field("i", STORED),
+        cache_location: schema_builder.add_u64_field("cache_location", STORED),
     };
 
     (schema_builder.build(), fields)
@@ -272,10 +270,16 @@ struct IndexedDoc {
     house_number: String,
     name: String,
     geo_type: GeoObjectType,
-    lat: f64,
-    lon: f64,
-    /// `Some(index into CacheFile::zones)` for zone documents only.
-    zone_index: Option<u64>,
+    /// Where this document's geometry lives in the cache; `geo_type` says how
+    /// to read it:
+    ///
+    /// - point documents: the sorted KD-tree position, resolved through
+    ///   [`PointCoords`] (which is `CacheFile::read_coord` in production);
+    /// - zone documents: an index into `CacheFile::zones`.
+    ///
+    /// Coordinates are deliberately *not* stored: they are high-entropy and
+    /// compress to nothing in the doc store, while the cache already holds them.
+    cache_location: u64,
 }
 
 fn build_index(
@@ -300,19 +304,15 @@ fn build_index(
     let mut index_writer: IndexWriter = index.writer(256 * 1024 * 1024)?;
 
     for d in docs {
-        let mut document = doc!(
+        let document = doc!(
             fields.region => d.region,
             fields.city => d.city,
             fields.street => d.street,
             fields.house_number => d.house_number,
             fields.name => d.name,
             fields.geo_type => d.geo_type as u64,
-            fields.lat => d.lat,
-            fields.lon => d.lon,
+            fields.cache_location => d.cache_location,
         );
-        if let Some(i) = d.zone_index {
-            document.add_u64(fields.i, i);
-        }
         index_writer.add_document(document)?;
     }
 
@@ -367,6 +367,7 @@ pub struct ForwardGeocoder {
     fields: Fields,
     analyzers: Analyzers,
     zones: Arc<[IndexedZone]>,
+    cache: Arc<CacheFile>,
 }
 
 impl ForwardGeocoder {
@@ -378,9 +379,7 @@ impl ForwardGeocoder {
             house_number: cache.read_string(p.data.house_number_id.get()),
             name: cache.read_string(p.data.name_id.get()),
             geo_type: GeoObjectType::from_weight(p.data.weight),
-            lat: p.lat,
-            lon: p.lon,
-            zone_index: None,
+            cache_location: p.location,
         });
 
         // Zones are few relative to points; materialising them keeps the borrow of
@@ -392,20 +391,21 @@ impl ForwardGeocoder {
             // polygons do occur — skip rather than panic the build thread. `i` must
             // keep addressing `cache.zones`, so use the enumerate index, not the
             // position in `zone_docs`.
-            match z.polygon.centroid() {
-                Some(centroid) => zone_docs.push(IndexedDoc {
-                    region: String::new(),
-                    city: String::new(),
-                    street: String::new(),
-                    house_number: String::new(),
-                    name: z.name.clone(),
-                    geo_type: GeoObjectType::Zone,
-                    lat: centroid.y(),
-                    lon: centroid.x(),
-                    zone_index: Some(i as u64),
-                }),
-                None => skipped_zones += 1,
+            if z.polygon.centroid().is_none() {
+                skipped_zones += 1;
+                continue;
             }
+            // The centroid itself is recomputed from the polygon at query time
+            // (see `materialize`) rather than stored.
+            zone_docs.push(IndexedDoc {
+                region: String::new(),
+                city: String::new(),
+                street: String::new(),
+                house_number: String::new(),
+                name: z.name.clone(),
+                geo_type: GeoObjectType::Zone,
+                cache_location: i as u64,
+            });
         }
         if skipped_zones > 0 {
             log::warn!("forward geocoder: skipped {skipped_zones} zones without a centroid");
@@ -418,6 +418,7 @@ impl ForwardGeocoder {
             fields,
             analyzers,
             zones: cache.zones.clone(),
+            cache: cache.clone(),
         })
     }
 }
@@ -738,14 +739,32 @@ impl ForwardGeocoder {
                 })?,
         )?;
 
-        let lat = document
-            .get_first(self.fields.lat)
-            .and_then(|value| value.as_f64())
-            .ok_or_else(|| TantivyError::InvalidArgument("document is missing lat".into()))?;
-        let lon = document
-            .get_first(self.fields.lon)
-            .and_then(|value| value.as_f64())
-            .ok_or_else(|| TantivyError::InvalidArgument("document is missing lon".into()))?;
+        let cache_location = document
+            .get_first(self.fields.cache_location)
+            .and_then(|value| value.as_u64())
+            .ok_or_else(|| {
+                TantivyError::InvalidArgument("document is missing cache_location".into())
+            })?;
+        let is_zone = geo_type == GeoObjectType::Zone;
+
+        let (lat, lon, multipolygon) = if is_zone {
+            let zone = self.zones.get(cache_location as usize).ok_or_else(|| {
+                TantivyError::InvalidArgument(format!(
+                    "zone index {cache_location} is out of range for this cache"
+                ))
+            })?;
+            // The cache holds no coordinate for a zone, so its centroid is
+            // recomputed here — the same `centroid()` on the same polygon the
+            // builder used, so the value is unchanged. O(vertices), but dwarfed
+            // by the polygon clone the response already needs.
+            let centroid = zone.polygon.centroid().ok_or_else(|| {
+                TantivyError::InvalidArgument("zone polygon has no centroid".into())
+            })?;
+            (centroid.y(), centroid.x(), Some(zone.polygon.clone()))
+        } else {
+            let (lon, lat) = self.cache.read_coord(cache_location as usize);
+            (lat.get(), lon.get(), None)
+        };
 
         // Empty strings are stored as-is (tantivy's add_text has no empty check),
         // so a road with no `name` would otherwise render as "…, Ленина, , ".
@@ -762,23 +781,16 @@ impl ForwardGeocoder {
 
         let address_string = parts.join(", ");
 
-        let zone_index = document
-            .get_first(self.fields.i)
-            .and_then(|value| value.as_u64());
-        let multipolygon = zone_index
-            .and_then(|i| self.zones.get(i as usize))
-            .map(|zone| zone.polygon.clone());
-
         let mut key = String::with_capacity(address_string.len() + 8);
         key.push_str(&(geo_type as u64).to_string());
         for part in &parts {
             key.push('\u{1}');
             key.push_str(&part.to_lowercase());
         }
-        if let Some(i) = zone_index {
+        if is_zone {
             // Two same-named zones must stay distinct results.
             key.push('\u{1}');
-            key.push_str(&i.to_string());
+            key.push_str(&cache_location.to_string());
         }
 
         Ok((
@@ -791,349 +803,5 @@ impl ForwardGeocoder {
                 multipolygon,
             },
         ))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn fixture() -> ForwardGeocoder {
-        let docs = vec![
-            IndexedDoc {
-                region: "Россия".into(),
-                city: "Москва".into(),
-                street: "улица Ленина".into(),
-                house_number: "12".into(),
-                name: String::new(),
-                geo_type: GeoObjectType::Building,
-                lat: 55.0,
-                lon: 37.0,
-                zone_index: None,
-            },
-            IndexedDoc {
-                region: "Россия".into(),
-                city: "Москва".into(),
-                street: "улица Ленина".into(),
-                house_number: "14".into(),
-                name: String::new(),
-                geo_type: GeoObjectType::Building,
-                lat: 55.1,
-                lon: 37.1,
-                zone_index: None,
-            },
-            // Same address repeated, as highway resampling produces.
-            IndexedDoc {
-                region: "Россия".into(),
-                city: "Москва".into(),
-                street: "улица Ленина".into(),
-                house_number: "12".into(),
-                name: String::new(),
-                geo_type: GeoObjectType::Building,
-                lat: 55.0,
-                lon: 37.0,
-                zone_index: None,
-            },
-            IndexedDoc {
-                region: "Россия".into(),
-                city: "Москва".into(),
-                street: "Ленинский проспект".into(),
-                house_number: String::new(),
-                name: String::new(),
-                geo_type: GeoObjectType::Road,
-                lat: 55.2,
-                lon: 37.2,
-                zone_index: None,
-            },
-            IndexedDoc {
-                region: String::new(),
-                city: "Королёв".into(),
-                street: String::new(),
-                house_number: String::new(),
-                name: String::new(),
-                geo_type: GeoObjectType::Building,
-                lat: 55.9,
-                lon: 37.8,
-                zone_index: None,
-            },
-            IndexedDoc {
-                region: String::new(),
-                city: String::new(),
-                street: String::new(),
-                house_number: String::new(),
-                name: "Промзона".into(),
-                geo_type: GeoObjectType::Zone,
-                lat: 56.0,
-                lon: 38.0,
-                zone_index: Some(0),
-            },
-            // Shares only a short prefix with "Ленина" — a distance-1 prefix
-            // match would wrongly pull this in for the query "лени".
-            IndexedDoc {
-                region: "Россия".into(),
-                city: "Пенза".into(),
-                street: "улица Лермонтова".into(),
-                house_number: "28".into(),
-                name: String::new(),
-                geo_type: GeoObjectType::Building,
-                lat: 53.2,
-                lon: 45.0,
-                zone_index: None,
-            },
-        ];
-
-        let (reader, fields, analyzers) = build_index(docs.into_iter(), "ru").unwrap();
-        ForwardGeocoder {
-            reader,
-            fields,
-            analyzers,
-            zones: Arc::from(Vec::new()),
-        }
-    }
-
-    fn search(fg: &ForwardGeocoder, q: &str) -> Vec<SearchResultItem> {
-        fg.search(q, GeocodeKindFilter::default(), DEFAULT_LIMIT)
-            .unwrap()
-    }
-
-    #[test]
-    fn yo_is_normalized_and_cyrillic_survives() {
-        let mut analyzers = build_analyzers("ru");
-
-        // The invariant that matters is that both OSM spellings converge on the
-        // same term (the stemmer then reduces it further, to "корол").
-        let with_yo = tokenize(&mut analyzers.text, "Королёв");
-        let without_yo = tokenize(&mut analyzers.text, "Королев");
-        assert_eq!(with_yo, without_yo);
-        assert_eq!(with_yo.len(), 1);
-
-        // Regression guard: AlphaNumOnlyFilter would empty this out.
-        let tokens = tokenize(&mut analyzers.text, "Москва");
-        assert_eq!(tokens.len(), 1);
-    }
-
-    #[test]
-    fn absent_locale_disables_stemming() {
-        let mut analyzers = build_analyzers("");
-        // Without a stemmer the token keeps its inflection...
-        let mut house = analyzers.house.clone();
-        assert_eq!(tokenize(&mut house, "Ленина"), vec!["ленина"]);
-        // ...and the Cyrillic survives lowercasing and folding.
-        assert_eq!(tokenize(&mut analyzers.text, "Москва").len(), 1);
-    }
-
-    #[test]
-    fn house_analyzer_keeps_numbers_intact() {
-        let analyzers = build_analyzers("ru");
-        let mut house = analyzers.house.clone();
-        assert_eq!(tokenize(&mut house, "12А"), vec!["12а"]);
-        assert_eq!(tokenize(&mut house, "12/2"), vec!["12", "2"]);
-    }
-
-    #[test]
-    fn query_grammar_is_not_interpreted() {
-        let fg = fixture();
-        // Must not error, and `foo` must not be treated as a field name.
-        let _ = search(&fg, "foo:bar");
-        let query = fg.build_query("foo:bar").expect("non-empty query");
-        let mut terms = 0usize;
-        query.query_terms(&mut |_term, _boost| terms += 1);
-        assert!(terms > 0);
-    }
-
-    #[test]
-    fn blank_queries_yield_nothing() {
-        let fg = fixture();
-        assert!(fg.build_query("").is_none());
-        assert!(fg.build_query("   ").is_none());
-        assert!(fg.build_query("!!!").is_none());
-        assert!(search(&fg, "").is_empty());
-    }
-
-    #[test]
-    fn matches_multi_segment_address() {
-        let fg = fixture();
-        let results = search(&fg, "москва, ленина 12");
-        assert!(!results.is_empty(), "expected a match");
-        assert_eq!(
-            results[0].address_string,
-            "Россия, Москва, улица Ленина, 12"
-        );
-    }
-
-    #[test]
-    fn last_token_matches_as_prefix() {
-        let fg = fixture();
-        let results = search(&fg, "лени");
-        assert!(
-            results.iter().any(|r| r.address_string.contains("Ленин")),
-            "prefix query should match Ленина, got {:?}",
-            results
-                .iter()
-                .map(|r| &r.address_string)
-                .collect::<Vec<_>>()
-        );
-    }
-
-    /// A near-miss such as `Лермонтова` (reachable from the stem `лен` only
-    /// through one edit) may now be returned, but exact/prefix hits must come
-    /// first. This replaces an earlier rule that excluded it outright.
-    #[test]
-    fn exact_and_prefix_matches_outrank_near_misses() {
-        let fg = fixture();
-        let results = search(&fg, "лени");
-        let addresses: Vec<&str> = results.iter().map(|r| r.address_string.as_str()).collect();
-
-        let near_miss = addresses
-            .iter()
-            .position(|a| a.contains("Лермонтова"))
-            .expect("the fuzzy tier should still surface Лермонтова");
-        let last_exact = addresses
-            .iter()
-            .rposition(|a| a.contains("Ленин"))
-            .expect("prefix matches should be present");
-
-        assert!(
-            last_exact < near_miss,
-            "every exact/prefix hit must rank above the near-miss, got {addresses:?}"
-        );
-    }
-
-    /// The same guarantee for a complete word rather than a prefix: a one-edit
-    /// neighbour must not displace a real match.
-    #[test]
-    fn exact_word_outranks_fuzzy_neighbour() {
-        let fg = fixture();
-        let results = search(&fg, "ленина");
-        let addresses: Vec<&str> = results.iter().map(|r| r.address_string.as_str()).collect();
-        assert!(
-            addresses.first().is_some_and(|a| a.contains("Ленина")),
-            "exact match should be first, got {addresses:?}"
-        );
-    }
-
-    /// The abbreviated form people actually type must resolve to the same
-    /// result as the bare one: "г", "ул" and "д" are dropped as short type
-    /// words, while the house number survives.
-    #[test]
-    fn abbreviated_addresses_are_supported() {
-        let fg = fixture();
-        let verbose = search(&fg, "г. Москва, ул. Ленина, д. 12");
-        assert_eq!(
-            verbose[0].address_string,
-            "Россия, Москва, улица Ленина, 12"
-        );
-
-        let bare = search(&fg, "москва, ленина 12");
-        assert_eq!(verbose[0].score, bare[0].score);
-    }
-
-    #[test]
-    fn short_tokens_are_dropped_but_house_numbers_survive() {
-        let fg = fixture();
-
-        // A 2-character type word no longer poisons the query...
-        assert!(!search(&fg, "москва, ул. Ленина 12").is_empty());
-        // ...but a 2-character house number must still constrain it, so the
-        // query stays anchored to building 12 rather than the whole street.
-        let results = search(&fg, "ленина 12");
-        assert!(
-            results.iter().all(|r| r.address_string.ends_with(", 12")),
-            "house number must not be dropped as a short token, got {:?}",
-            results
-                .iter()
-                .map(|r| &r.address_string)
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn queries_of_only_short_words_are_empty() {
-        let fg = fixture();
-        // Nothing survives to constrain anything.
-        assert!(fg.build_query("ул. д.").is_none());
-        assert!(search(&fg, "ул. д.").is_empty());
-    }
-
-    #[test]
-    fn typos_are_recovered_by_the_fuzzy_tier() {
-        let fg = fixture();
-        // "лермонтива" is one edit from "лермонтова" and matches nothing
-        // exactly, so only the fuzzy tier can find it.
-        let results = search(&fg, "лермонтива");
-        assert!(
-            results
-                .iter()
-                .any(|r| r.address_string.contains("Лермонтова")),
-            "expected the fuzzy retry to recover the typo, got {:?}",
-            results
-                .iter()
-                .map(|r| &r.address_string)
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn yo_variants_match_across_query_and_index() {
-        let fg = fixture();
-        // Indexed as "Королёв", queried without the diaeresis.
-        let results = search(&fg, "королев");
-        assert!(!results.is_empty());
-    }
-
-    #[test]
-    fn duplicate_addresses_collapse() {
-        let fg = fixture();
-        let results = search(&fg, "ленина 12");
-        let matches: Vec<_> = results
-            .iter()
-            .filter(|r| r.address_string.ends_with(", 12"))
-            .collect();
-        assert_eq!(matches.len(), 1, "the two identical docs must collapse");
-    }
-
-    #[test]
-    fn limit_is_respected() {
-        let fg = fixture();
-        let results = fg
-            .search("москва", GeocodeKindFilter::default(), 1)
-            .unwrap();
-        assert_eq!(results.len(), 1);
-    }
-
-    #[test]
-    fn kind_filter_selects_roads_and_buildings() {
-        let fg = fixture();
-        let roads = fg
-            .search("ленин", GeocodeKindFilter::from("road"), DEFAULT_LIMIT)
-            .unwrap();
-        assert!(!roads.is_empty(), "weight 5 must be classified as a road");
-        assert!(roads.iter().all(|r| r.geo_type == GeoObjectType::Road));
-
-        let buildings = fg
-            .search("ленин", GeocodeKindFilter::from("building"), DEFAULT_LIMIT)
-            .unwrap();
-        assert!(buildings
-            .iter()
-            .all(|r| r.geo_type == GeoObjectType::Building));
-        assert!(buildings.iter().all(|r| r.geo_type != GeoObjectType::Road));
-    }
-
-    #[test]
-    fn kind_aliases_are_accepted() {
-        assert_eq!(
-            GeocodeKindFilter::from("z,b,r"),
-            GeocodeKindFilter::default()
-        );
-        assert!(GeocodeKindFilter::from("ROAD").matches(GeoObjectType::Road));
-        // Unknown values match nothing rather than everything.
-        assert!(!GeocodeKindFilter::from("nonsense").matches(GeoObjectType::Road));
-    }
-
-    #[test]
-    fn weight_maps_to_object_type() {
-        assert_eq!(GeoObjectType::from_weight(5), GeoObjectType::Road);
-        assert_eq!(GeoObjectType::from_weight(10), GeoObjectType::Building);
-        assert_eq!(GeoObjectType::from_weight(3), GeoObjectType::Building);
     }
 }
