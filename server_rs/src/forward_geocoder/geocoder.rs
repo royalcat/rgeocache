@@ -101,11 +101,11 @@ const MAX_FETCH: usize = 500;
 /// within them would otherwise be arbitrary. A specific address is a more
 /// useful hit than the road that contains it, which in turn beats the
 /// region/country polygon. Also makes the response deterministic.
-fn kind_rank(obj_type: GeoObjectType) -> u8 {
+fn kind_rank(obj_type: GeoObjectKind) -> u8 {
     match obj_type {
-        GeoObjectType::Building => 2,
-        GeoObjectType::Road => 1,
-        GeoObjectType::Zone => 0,
+        GeoObjectKind::Building => 2,
+        GeoObjectKind::Road => 1,
+        GeoObjectKind::Zone => 0,
     }
 }
 
@@ -124,7 +124,7 @@ fn tokenize(analyzer: &mut TextAnalyzer, text: &str) -> Vec<String> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, strum::Display)]
 #[strum(ascii_case_insensitive)]
-pub enum GeoObjectType {
+pub enum GeoObjectKind {
     #[strum(serialize = "zone", serialize = "z")]
     Zone = 1,
     #[strum(serialize = "building", serialize = "b")]
@@ -133,29 +133,29 @@ pub enum GeoObjectType {
     Road = 3,
 }
 
-impl GeoObjectType {
+impl GeoObjectKind {
     /// Derive the object kind from the cache `weight` byte.
     ///
     /// TODO: replace with an explicit object-type field once the cache format
     /// carries one. `weight` is a lossy proxy — it also encodes the area
     /// sub-kind (3 = industrial, 2 = protected), and those surface as
     /// `Building` for now.
-    pub fn from_weight(weight: u8) -> GeoObjectType {
+    pub fn from_weight(weight: u8) -> GeoObjectKind {
         match weight {
-            5 => GeoObjectType::Road,
-            _ => GeoObjectType::Building,
+            5 => GeoObjectKind::Road,
+            _ => GeoObjectKind::Building,
         }
     }
 }
 
-impl TryFrom<u64> for GeoObjectType {
+impl TryFrom<u64> for GeoObjectKind {
     type Error = TantivyError;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         match value {
-            1 => Ok(GeoObjectType::Zone),
-            2 => Ok(GeoObjectType::Building),
-            3 => Ok(GeoObjectType::Road),
+            1 => Ok(GeoObjectKind::Zone),
+            2 => Ok(GeoObjectKind::Building),
+            3 => Ok(GeoObjectKind::Road),
             other => Err(TantivyError::InvalidArgument(format!(
                 "unknown geo_type value: {other}"
             ))),
@@ -193,10 +193,10 @@ impl From<&str> for GeocodeKindFilter {
             if part.is_empty() {
                 continue;
             }
-            match GeoObjectType::from_str(part) {
-                Ok(GeoObjectType::Zone) => filter.zones = true,
-                Ok(GeoObjectType::Building) => filter.buildings = true,
-                Ok(GeoObjectType::Road) => filter.roads = true,
+            match GeoObjectKind::from_str(part) {
+                Ok(GeoObjectKind::Zone) => filter.zones = true,
+                Ok(GeoObjectKind::Building) => filter.buildings = true,
+                Ok(GeoObjectKind::Road) => filter.roads = true,
                 Err(_) => log::warn!("ignoring unknown kind filter value: {part:?}"),
             }
         }
@@ -205,11 +205,11 @@ impl From<&str> for GeocodeKindFilter {
 }
 
 impl GeocodeKindFilter {
-    fn matches(&self, obj_type: GeoObjectType) -> bool {
+    fn matches(&self, obj_type: GeoObjectKind) -> bool {
         match obj_type {
-            GeoObjectType::Zone => self.zones,
-            GeoObjectType::Building => self.buildings,
-            GeoObjectType::Road => self.roads,
+            GeoObjectKind::Zone => self.zones,
+            GeoObjectKind::Building => self.buildings,
+            GeoObjectKind::Road => self.roads,
         }
     }
 }
@@ -269,7 +269,7 @@ struct IndexedDoc {
     street: String,
     house_number: String,
     name: String,
-    geo_type: GeoObjectType,
+    geo_kind: GeoObjectKind,
     /// Where this document's geometry lives in the cache; `geo_type` says how
     /// to read it:
     ///
@@ -285,9 +285,13 @@ struct IndexedDoc {
 fn build_index(
     docs: impl Iterator<Item = IndexedDoc>,
     locale: &str,
-) -> tantivy::Result<(IndexReader, Fields, Analyzers)> {
+) -> tantivy::Result<(Index, Fields, Analyzers)> {
     let (schema, fields) = build_schema();
-    let index = Index::create_from_tempdir(schema)?;
+    let index = {
+        let mut index = Index::create_from_tempdir(schema)?;
+        index.set_default_multithread_executor()?;
+        index
+    };
 
     let analyzers = build_analyzers(locale);
     log::info!(
@@ -310,20 +314,19 @@ fn build_index(
             fields.street => d.street,
             fields.house_number => d.house_number,
             fields.name => d.name,
-            fields.geo_type => d.geo_type as u64,
+            fields.geo_type => d.geo_kind as u64,
             fields.cache_location => d.cache_location,
         );
         index_writer.add_document(document)?;
     }
 
     index_writer.commit()?;
+    index_writer.garbage_collect_files().wait()?;
     index_writer.wait_merging_threads()?;
 
-    let reader = index.reader()?;
+    print_usage(&index.reader()?);
 
-    print_usage(&reader);
-
-    Ok((reader, fields, analyzers))
+    Ok((index, fields, analyzers))
 }
 
 fn print_usage(reader: &IndexReader) {
@@ -363,61 +366,41 @@ fn print_usage(reader: &IndexReader) {
 
 #[derive(Clone)]
 pub struct ForwardGeocoder {
-    reader: IndexReader,
+    index_reader: IndexReader,
     fields: Fields,
     analyzers: Analyzers,
-    zones: Arc<[IndexedZone]>,
     cache: Arc<CacheFile>,
 }
 
 impl ForwardGeocoder {
     pub fn build(cache: Arc<CacheFile>) -> tantivy::Result<ForwardGeocoder> {
-        let points = cache.iter_points().map(|p| IndexedDoc {
-            region: cache.read_string(p.data.region_id.get()),
-            city: cache.read_string(p.data.city_id.get()),
-            street: cache.read_string(p.data.street_id.get()),
-            house_number: cache.read_string(p.data.house_number_id.get()),
-            name: cache.read_string(p.data.name_id.get()),
-            geo_type: GeoObjectType::from_weight(p.data.weight),
-            cache_location: p.location,
-        });
-
-        // Zones are few relative to points; materialising them keeps the borrow of
-        // `skipped` simple and lets us chain two different iterator types.
-        let mut skipped_zones = 0usize;
-        let mut zone_docs = Vec::with_capacity(cache.zones.len());
-        for (i, z) in cache.zones.iter().enumerate() {
-            // A zone with no centroid cannot be a search result, and degenerate
-            // polygons do occur — skip rather than panic the build thread. `i` must
-            // keep addressing `cache.zones`, so use the enumerate index, not the
-            // position in `zone_docs`.
-            if z.polygon.centroid().is_none() {
-                skipped_zones += 1;
-                continue;
-            }
-            // The centroid itself is recomputed from the polygon at query time
-            // (see `materialize`) rather than stored.
-            zone_docs.push(IndexedDoc {
+        let docs = cache
+            .iter_points()
+            .map(|p| IndexedDoc {
+                region: cache.read_string(p.data.region_id.get()),
+                city: cache.read_string(p.data.city_id.get()),
+                street: cache.read_string(p.data.street_id.get()),
+                house_number: cache.read_string(p.data.house_number_id.get()),
+                name: cache.read_string(p.data.name_id.get()),
+                geo_kind: GeoObjectKind::from_weight(p.data.weight),
+                cache_location: p.location,
+            })
+            .chain(cache.zones.iter().enumerate().map(|(i, z)| IndexedDoc {
                 region: String::new(),
                 city: String::new(),
                 street: String::new(),
                 house_number: String::new(),
                 name: z.name.clone(),
-                geo_type: GeoObjectType::Zone,
+                geo_kind: GeoObjectKind::Zone,
                 cache_location: i as u64,
-            });
-        }
-        if skipped_zones > 0 {
-            log::warn!("forward geocoder: skipped {skipped_zones} zones without a centroid");
-        }
+            }));
 
-        let (reader, fields, analyzers) = build_index(points.chain(zone_docs), &cache.locale)?;
+        let (index, fields, analyzers) = build_index(docs, &cache.locale)?;
 
         Ok(ForwardGeocoder {
-            reader,
+            index_reader: index.reader()?,
             fields,
             analyzers,
-            zones: cache.zones.clone(),
             cache: cache.clone(),
         })
     }
@@ -427,7 +410,7 @@ pub struct SearchResultItem {
     pub address_string: String,
     pub score: Score,
     pub point: (f64, f64),
-    pub geo_type: GeoObjectType,
+    pub geo_type: GeoObjectKind,
     pub multipolygon: Option<geo::MultiPolygon>,
 }
 
@@ -476,7 +459,7 @@ impl ForwardGeocoder {
             return Ok(Vec::new());
         };
 
-        let searcher = self.reader.searcher();
+        let searcher = self.index_reader.searcher();
         let fetch = limit.saturating_mul(OVERFETCH).clamp(MIN_FETCH, MAX_FETCH);
 
         // One query carries both tiers: exact/prefix clauses are boosted well
@@ -499,7 +482,7 @@ impl ForwardGeocoder {
         let collector = FilterCollector::new(
             GEO_TYPE_FIELD.to_string(),
             move |value: u64| {
-                GeoObjectType::try_from(value)
+                GeoObjectKind::try_from(value)
                     .map(|obj_type| kind.matches(obj_type))
                     .unwrap_or(false)
             },
@@ -730,7 +713,7 @@ impl ForwardGeocoder {
                 .trim()
         };
 
-        let geo_type = GeoObjectType::try_from(
+        let geo_type = GeoObjectKind::try_from(
             document
                 .get_first(self.fields.geo_type)
                 .and_then(|value| value.as_u64())
@@ -745,14 +728,18 @@ impl ForwardGeocoder {
             .ok_or_else(|| {
                 TantivyError::InvalidArgument("document is missing cache_location".into())
             })?;
-        let is_zone = geo_type == GeoObjectType::Zone;
+        let is_zone = geo_type == GeoObjectKind::Zone;
 
         let (lat, lon, multipolygon) = if is_zone {
-            let zone = self.zones.get(cache_location as usize).ok_or_else(|| {
-                TantivyError::InvalidArgument(format!(
-                    "zone index {cache_location} is out of range for this cache"
-                ))
-            })?;
+            let zone = self
+                .cache
+                .zones
+                .get(cache_location as usize)
+                .ok_or_else(|| {
+                    TantivyError::InvalidArgument(format!(
+                        "zone index {cache_location} is out of range for this cache"
+                    ))
+                })?;
             // The cache holds no coordinate for a zone, so its centroid is
             // recomputed here — the same `centroid()` on the same polygon the
             // builder used, so the value is unchanged. O(vertices), but dwarfed
