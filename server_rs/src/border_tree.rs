@@ -3,7 +3,7 @@
 //! Uses an rstar R-tree for bounding-box filtering, then exact point-in-polygon
 //! containment via the `geo` crate. Read-only after construction.
 
-use geo::{Contains, SimplifyVwPreserve};
+use geo::Contains;
 use multiversion::multiversion;
 use rstar::{PointDistance, RStarInsertionStrategy, RTree, RTreeObject, RTreeParams, AABB};
 
@@ -58,7 +58,7 @@ pub struct BorderTree {
     tree: BorderRTree,
 }
 
-const OVERSIMPLIFIED_BORDER_EPSILON: f64 = 1_000_000.0;
+// const OVERSIMPLIFIED_BORDER_EPSILON: f64 = 1_000_000.0;
 
 impl BorderTree {
     /// Build a border tree from a set of zones of the given type.

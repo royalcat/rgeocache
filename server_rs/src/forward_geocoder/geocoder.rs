@@ -15,7 +15,7 @@ use tantivy::{
 use tantivy::{tokenizer::*, ByteCount};
 
 use super::text_analyzer::{build_analyzers, Analyzers};
-use crate::cache::{CacheFile, IndexedZone};
+use crate::cache::CacheFile;
 
 // ---------------------------------------------------------------------------
 // Tunables

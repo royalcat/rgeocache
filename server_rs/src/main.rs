@@ -2,8 +2,10 @@ mod border_tree;
 mod cache;
 mod forward_geocoder;
 mod geocoder;
-mod proto;
 mod server;
+
+#[allow(unused_imports, dead_code)]
+mod proto;
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
