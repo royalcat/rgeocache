@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use geo::Centroid;
+use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tantivy::collector::{FilterCollector, TopDocs};
 use tantivy::query::{BooleanQuery, BoostQuery, FuzzyTermQuery, Occur, Query, TermQuery};
@@ -282,28 +284,182 @@ struct IndexedDoc {
     cache_location: u64,
 }
 
-fn build_index(
-    docs: impl Iterator<Item = IndexedDoc>,
-    locale: &str,
-) -> tantivy::Result<(Index, Fields, Analyzers)> {
-    let (schema, fields) = build_schema();
-    let index = {
-        let mut index = Index::create_from_tempdir(schema)?;
-        index.set_default_multithread_executor()?;
-        index
-    };
+/// Name of the tantivy meta file, the marker of an index directory.
+const META_FILE: &str = "meta.json";
 
-    let analyzers = build_analyzers(locale);
-    log::info!(
-        "forward geocoder: locale={locale:?} stemmer_language={:?}",
-        analyzers.stemmer_language()
-    );
+/// Sidecar file recording which cache a persisted index was built from.
+const SIDECAR_FILE: &str = "rgeocache-fgeocode.json";
+
+/// Bump to invalidate every persisted index.
+const SIDECAR_FORMAT: u32 = 1;
+
+/// Identity of the cache an index was built from.
+///
+/// A document stores a `cache_location` — a KD-tree position or a zone index —
+/// that is only meaningful for the exact cache it was built from, so an index
+/// reused with a different cache would silently return wrong coordinates. The
+/// sidecar records this fingerprint next to the index; any mismatch forces a
+/// rebuild.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct CacheFingerprint {
+    format: u32,
+    date_created: String,
+    locale: String,
+    num_points: usize,
+    zones: usize,
+    cache_size: usize,
+}
+
+impl CacheFingerprint {
+    fn of(cache: &CacheFile) -> Self {
+        Self {
+            format: SIDECAR_FORMAT,
+            date_created: cache.date_created.clone(),
+            locale: cache.locale.clone(),
+            num_points: cache.num_points,
+            zones: cache.zones.len(),
+            cache_size: cache.cache_size(),
+        }
+    }
+}
+
+/// Checks a user-supplied index directory before a build is started.
+///
+/// A non-empty directory without an index was not created by us, so it is
+/// rejected rather than wiped: the operator must point `--index-dir` at an
+/// empty directory or remove the files first.
+pub fn validate_index_dir(dir: &Path) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    if !dir.is_dir() {
+        return Err(format!("{} is not a directory", dir.display()));
+    }
+    let mut entries =
+        std::fs::read_dir(dir).map_err(|err| format!("cannot read {}: {err}", dir.display()))?;
+    if entries.next().is_some() && !dir.join(META_FILE).exists() {
+        return Err(format!(
+            "{} is not empty and does not contain a forward geocoder index; \
+             refusing to touch it (use an empty directory)",
+            dir.display()
+        ));
+    }
+    Ok(())
+}
+
+/// Creates a fresh index in `dir`, removing a previous index if present.
+fn create_index_in_dir(dir: &Path, schema: Schema) -> tantivy::Result<Index> {
+    std::fs::create_dir_all(dir)?;
+    // `Index::create_in_dir` refuses to overwrite an existing index, and the
+    // directory was validated to be either empty or an index.
+    if dir.join(META_FILE).exists() {
+        std::fs::remove_dir_all(dir)?;
+        std::fs::create_dir_all(dir)?;
+    }
+    Index::create_in_dir(dir, schema)
+}
+
+/// Opens the index in `dir` when it was built from the current cache,
+/// returning `None` when there is nothing to reuse and a rebuild is needed.
+fn open_reusable_index(
+    dir: &Path,
+    schema: &Schema,
+    fingerprint: &CacheFingerprint,
+) -> Option<Index> {
+    if !dir.join(META_FILE).exists() {
+        return None;
+    }
+
+    let stored: Option<CacheFingerprint> = std::fs::read(dir.join(SIDECAR_FILE))
+        .ok()
+        .and_then(|data| serde_json::from_slice(&data).ok());
+    match stored {
+        Some(stored) if stored == *fingerprint => {}
+        Some(stored) => {
+            log::info!(
+                "forward geocoder: index in {} was built from a different cache \
+                 (created {}, {} points; current cache created {}, {} points); rebuilding",
+                dir.display(),
+                stored.date_created,
+                stored.num_points,
+                fingerprint.date_created,
+                fingerprint.num_points,
+            );
+            return None;
+        }
+        None => {
+            log::info!(
+                "forward geocoder: no usable fingerprint in {}; rebuilding",
+                dir.display()
+            );
+            return None;
+        }
+    }
+
+    let index = match Index::open_in_dir(dir) {
+        Ok(index) => index,
+        Err(err) => {
+            log::warn!(
+                "forward geocoder: cannot open the index in {} ({err}); rebuilding",
+                dir.display()
+            );
+            return None;
+        }
+    };
+    if index.schema() != *schema {
+        log::info!(
+            "forward geocoder: schema of the index in {} is outdated; rebuilding",
+            dir.display()
+        );
+        return None;
+    }
+    Some(index)
+}
+
+fn register_analyzers(index: &Index, analyzers: &Analyzers) {
     index
         .tokenizers()
         .register(TEXT_ANALYZER, analyzers.text.clone());
     index
         .tokenizers()
         .register(HOUSE_ANALYZER, analyzers.house.clone());
+}
+
+fn build_index(
+    docs: impl Iterator<Item = IndexedDoc>,
+    locale: &str,
+    index_dir: Option<&Path>,
+    fingerprint: &CacheFingerprint,
+) -> tantivy::Result<(Index, Fields, Analyzers)> {
+    let (schema, fields) = build_schema();
+
+    let analyzers = build_analyzers(locale);
+    log::info!(
+        "forward geocoder: locale={locale:?} stemmer_language={:?}",
+        analyzers.stemmer_language()
+    );
+
+    // A persisted index matching the current cache is reused as-is; anything
+    // else means a fresh build.
+    if let Some(dir) = index_dir {
+        if let Some(mut index) = open_reusable_index(dir, &schema, fingerprint) {
+            log::info!("forward geocoder: reusing index from {}", dir.display());
+            index.set_default_multithread_executor()?;
+            register_analyzers(&index, &analyzers);
+            print_usage(&index.reader()?);
+            return Ok((index, fields, analyzers));
+        }
+    }
+
+    let mut index = match index_dir {
+        None => Index::create_from_tempdir(schema)?,
+        Some(dir) => {
+            log::info!("forward geocoder: building index in {}", dir.display());
+            create_index_in_dir(dir, schema)?
+        }
+    };
+    index.set_default_multithread_executor()?;
+    register_analyzers(&index, &analyzers);
 
     let mut index_writer: IndexWriter = index.writer(256 * 1024 * 1024)?;
 
@@ -323,6 +479,15 @@ fn build_index(
     index_writer.commit()?;
     index_writer.garbage_collect_files().wait()?;
     index_writer.wait_merging_threads()?;
+
+    // Written last: a crash mid-build must not leave a fingerprint that makes
+    // the next start reuse a partial index.
+    if let Some(dir) = index_dir {
+        let data = serde_json::to_vec_pretty(fingerprint).map_err(|err| {
+            TantivyError::InvalidArgument(format!("fingerprint serialization failed: {err}"))
+        })?;
+        std::fs::write(dir.join(SIDECAR_FILE), data)?;
+    }
 
     print_usage(&index.reader()?);
 
@@ -373,7 +538,15 @@ pub struct ForwardGeocoder {
 }
 
 impl ForwardGeocoder {
-    pub fn build(cache: Arc<CacheFile>) -> tantivy::Result<ForwardGeocoder> {
+    pub fn build(
+        cache: Arc<CacheFile>,
+        index_dir: Option<&Path>,
+    ) -> tantivy::Result<ForwardGeocoder> {
+        if let Some(dir) = index_dir {
+            validate_index_dir(dir).map_err(TantivyError::InvalidArgument)?;
+        }
+
+        let fingerprint = CacheFingerprint::of(&cache);
         let docs = cache
             .iter_points()
             .map(|p| IndexedDoc {
@@ -395,7 +568,7 @@ impl ForwardGeocoder {
                 cache_location: i as u64,
             }));
 
-        let (index, fields, analyzers) = build_index(docs, &cache.locale)?;
+        let (index, fields, analyzers) = build_index(docs, &cache.locale, index_dir, &fingerprint)?;
 
         Ok(ForwardGeocoder {
             index_reader: index.reader()?,

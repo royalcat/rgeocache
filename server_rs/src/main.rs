@@ -41,6 +41,15 @@ struct Args {
     /// Maximum request body size in bytes (default: 32 MiB)
     #[arg(long, default_value_t = 64 * 1024 * 1024)]
     max_request_size: usize,
+
+    /// Directory for the forward geocoder index
+    ///
+    /// The index is reused on restart when it was built from the same cache
+    /// (a fingerprint is stored alongside it) and rebuilt otherwise. Without
+    /// this flag the index is built in a temporary directory and deleted on
+    /// exit.
+    #[arg(long)]
+    index_dir: Option<PathBuf>,
 }
 
 #[ntex::main]
@@ -67,17 +76,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let metrics = server::Metrics::new()?;
 
+    if let Some(dir) = &args.index_dir {
+        forward_geocoder::validate_index_dir(dir)
+            .map_err(|err| format!("invalid --index-dir {}: {err}", dir.display()))?;
+    }
+
     let forward_geocoder_once = Arc::new(OnceLock::new());
 
+    let index_dir = args.index_dir.clone();
     let forward_geocoder_once_clone = forward_geocoder_once.clone();
     thread::spawn(move || {
         // Store the failure rather than panicking: a panicking build thread would
         // leave the OnceLock empty and block every /fgeocode/search request
         // forever on `wait()`.
-        let result = forward_geocoder::ForwardGeocoder::build(cache.clone()).map_err(|err| {
-            log::error!("failed to build forward geocoder index: {err}");
-            err.to_string()
-        });
+        let result = forward_geocoder::ForwardGeocoder::build(cache.clone(), index_dir.as_deref())
+            .map_err(|err| {
+                log::error!("failed to build forward geocoder index: {err}");
+                err.to_string()
+            });
         let _ = forward_geocoder_once_clone.set(result);
     });
 

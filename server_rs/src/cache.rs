@@ -132,6 +132,10 @@ pub struct CacheFile {
     /// Empty when the cache was built with `--preferred-localization official`.
     pub locale: String,
 
+    /// RFC3339 timestamp of when the cache was generated. Identifies the cache
+    /// a persisted forward geocoder index was built from.
+    pub date_created: String,
+
     // String resolution
     pub strings_index: Box<[U32LE]>, // id → byte offset into string data block
     pub strings_data_offset: usize,  // absolute position in the mmap'd file
@@ -213,6 +217,7 @@ impl CacheFile {
             metadata.locale
         );
         let locale = metadata.locale.clone();
+        let date_created = metadata.date_created.clone();
         offset += metadata_size;
 
         // --- Read string offset index into memory ---
@@ -265,6 +270,7 @@ impl CacheFile {
         Ok(Self {
             mmap,
             locale,
+            date_created,
             strings_index: strings_index.into_boxed_slice(),
             strings_data_offset,
             zones: zones.into(),
@@ -278,6 +284,11 @@ impl CacheFile {
     }
 
     // --- Low-level mmap reads (used by the KD-tree traversal) ---
+
+    /// Size of the underlying cache file in bytes.
+    pub fn cache_size(&self) -> usize {
+        self.mmap.len()
+    }
 
     /// Read a single original-index value at sorted position `i`.
     #[inline]
