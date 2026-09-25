@@ -60,6 +60,14 @@ impl Geocoder {
         self.find_in_radius(lat, lon, self.search_radius)
     }
 
+    /// Country name containing the given point (x=lon, y=lat), if any.
+    ///
+    /// Used by the forward geocoder to attach a country to every indexed point;
+    /// the reverse path performs the same lookup inside [`Self::find_in_radius`].
+    pub fn country_at(&self, lon: f64, lat: f64) -> Option<&str> {
+        self.countries.query_point(lon, lat)
+    }
+
     /// Find the closest address within the given radius (degrees).
     pub fn find_in_radius(&self, lat: f64, lon: f64, radius: f64) -> Option<Info> {
         if self.cache.num_points == 0 {

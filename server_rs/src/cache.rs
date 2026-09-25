@@ -104,9 +104,9 @@ pub enum ZoneType {
 /// [`CacheFile::read_coord`] and [`CacheFile::read_idx`] take.
 #[derive(Clone, Copy, Debug)]
 pub struct Point {
-    #[allow(dead_code)] // May be used in the future
+    /// Longitude in degrees (x axis).
     pub lon: f64,
-    #[allow(dead_code)] // May be used in the future
+    /// Latitude in degrees (y axis).
     pub lat: f64,
     /// Sorted KD-tree position — the index [`CacheFile::read_coord`] and
     /// [`CacheFile::read_idx`] take. Stored by the forward geocoder as a
@@ -365,21 +365,22 @@ impl CacheFile {
         String::from_utf8_lossy(&self.mmap[pos..pos + end]).into_owned()
     }
 
-    /// Lazily iterate over every point in the cache. Reads from the mmap on demand,
-    /// in KD-tree sorted order, yielding each point's [`Point::location`] and its
-    /// raw payload. Strings are not resolved here — use [`Self::read_string`] on
-    /// the returned [`V2PointData`] IDs.
-    pub fn iter_points(&self) -> impl Iterator<Item = Point> + '_ {
-        (0..self.num_points).map(|i| {
-            let orig_idx = self.read_idx(i).get() as usize;
-            let (x, y) = self.read_coord(i);
-            Point {
-                lon: x.get(),
-                lat: y.get(),
-                location: i as u64,
-                data: self.read_point_data(orig_idx),
-            }
-        })
+    /// Read the point at sorted KD-tree position `i`, without resolving any
+    /// strings. Reads from the mmap on demand; use [`Self::read_string`] on the
+    /// returned [`V2PointData`] IDs.
+    ///
+    /// This is the unit of work the forward geocoder parallelizes its document
+    /// building over.
+    #[inline]
+    pub fn point_at(&self, i: usize) -> Point {
+        let orig_idx = self.read_idx(i).get() as usize;
+        let (x, y) = self.read_coord(i);
+        Point {
+            lon: x.get(),
+            lat: y.get(),
+            location: i as u64,
+            data: self.read_point_data(orig_idx),
+        }
     }
 }
 

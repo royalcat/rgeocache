@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.points.to_str().ok_or("invalid path")?,
     )?);
 
-    let geocoder = geocoder::Geocoder::load(cache.clone(), args.search_radius)?;
+    let geocoder = Arc::new(geocoder::Geocoder::load(cache.clone(), args.search_radius)?);
 
     let metrics = server::Metrics::new()?;
 
@@ -85,20 +85,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let index_dir = args.index_dir.clone();
     let forward_geocoder_once_clone = forward_geocoder_once.clone();
+    // The forward geocoder resolves each point's country through the same border
+    // trees the reverse geocoder uses, so it borrows the already-built geocoder
+    // instead of loading them twice.
+    let geocoder_for_index = geocoder.clone();
     thread::spawn(move || {
         // Store the failure rather than panicking: a panicking build thread would
         // leave the OnceLock empty and block every /fgeocode/search request
         // forever on `wait()`.
-        let result = forward_geocoder::ForwardGeocoder::build(cache.clone(), index_dir.as_deref())
-            .map_err(|err| {
-                log::error!("failed to build forward geocoder index: {err}");
-                err.to_string()
-            });
+        let result =
+            forward_geocoder::ForwardGeocoder::build(geocoder_for_index, index_dir.as_deref())
+                .map_err(|err| {
+                    log::error!("failed to build forward geocoder index: {err}");
+                    err.to_string()
+                });
         let _ = forward_geocoder_once_clone.set(result);
     });
 
     let state = Arc::new(server::AppState {
-        geocoder: Arc::new(geocoder),
+        geocoder,
         forward_geocoder: forward_geocoder_once,
         metrics,
     });
