@@ -23,7 +23,8 @@
 //!
 //! Data section:
 //!   [D      .. D+(N+1)*8)   offsets  (N+1) × i64 LE  (cumulative byte offsets)
-//!   [B      .. EOF)         blobs    concatenated 21-byte V2PointData records
+//!   [B      .. EOF)         blobs    concatenated V2PointData records
+//!                                    (22 bytes; legacy caches store 21)
 //! ```
 
 use buffa::{Message, MessageView};
@@ -44,19 +45,25 @@ pub const COMPAT_LEVEL_V2: u32 = 2;
 const KDBH_MAGIC: &[u8; 4] = b"KDBH";
 const KDBH_VERSION: u32 = 1;
 const KDBH_HEADER_SIZE: usize = 32;
-pub const V2_POINT_DATA_SIZE: usize = 21;
+pub const V2_POINT_DATA_SIZE: usize = 22;
+/// Size of a legacy point record written before the geo type byte was appended.
+pub const V2_LEGACY_POINT_DATA_SIZE: usize = 21;
 const NODE_SIZE: usize = 64;
 
 // ---------------------------------------------------------------------------
-// V2PointData — on-disk point payload (21 bytes, little-endian)
+// V2PointData — on-disk point payload (22 bytes, little-endian)
 // ---------------------------------------------------------------------------
 
-/// On-disk point data: 5× u32 string IDs (LE) + weight.
+/// On-disk point data: 5× u32 string IDs (LE) + weight + explicit geo type.
 /// ID 0 means empty string.
 ///
 /// Derives `FromBytes` + `IntoBytes` for zero-cost transmutation from/to
-/// the mmap'd byte region.  `#[repr(C)]` guarantees the exact 21-byte
+/// the mmap'd byte region.  `#[repr(C)]` guarantees the exact 22-byte
 /// layout with no padding.
+///
+/// `geo_type` was appended to the original 21-byte record without bumping the
+/// compat level; a 21-byte blob is parsed as [`V2PointDataV1`] with
+/// `geo_type == 0` (unknown, fall back to `weight`).
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct V2PointData {
@@ -66,12 +73,42 @@ pub struct V2PointData {
     pub city_id: U32LE,
     pub region_id: U32LE,
     pub weight: u8,
+    pub geo_type: u8,
 }
 
 impl V2PointData {
     /// Create an empty (all-zeros) point data.
     pub fn empty() -> Self {
         Self::default()
+    }
+}
+
+/// A legacy 21-byte point record, written before `geo_type` was appended.
+///
+/// Parsed only to read older caches; [`From`] widens it to [`V2PointData`] with
+/// an unknown (zero) geo type.
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct V2PointDataV1 {
+    pub name_id: U32LE,
+    pub street_id: U32LE,
+    pub house_number_id: U32LE,
+    pub city_id: U32LE,
+    pub region_id: U32LE,
+    pub weight: u8,
+}
+
+impl From<V2PointDataV1> for V2PointData {
+    fn from(v1: V2PointDataV1) -> Self {
+        V2PointData {
+            name_id: v1.name_id,
+            street_id: v1.street_id,
+            house_number_id: v1.house_number_id,
+            city_id: v1.city_id,
+            region_id: v1.region_id,
+            weight: v1.weight,
+            geo_type: 0,
+        }
     }
 }
 
@@ -346,8 +383,24 @@ impl CacheFile {
         }
 
         let blob_pos = self.data_blobs_offset + blob_start;
-        V2PointData::read_from_bytes(&self.mmap[blob_pos..blob_pos + V2_POINT_DATA_SIZE])
-            .unwrap_or(V2PointData::default())
+        // Clamp to the mapped region so a corrupt/oversized offset cannot read
+        // past the end of the file.
+        let blob_end = (blob_pos + blob_len).min(self.mmap.len());
+        let blob = &self.mmap[blob_pos..blob_end];
+        let blob_len = blob.len();
+
+        // Current records carry the geo type byte; legacy 21-byte records do not,
+        // and widen to an unknown (zero) type so callers fall back to `weight`.
+        if blob_len >= V2_POINT_DATA_SIZE {
+            V2PointData::read_from_bytes(&blob[..V2_POINT_DATA_SIZE])
+                .unwrap_or(V2PointData::default())
+        } else if blob_len >= V2_LEGACY_POINT_DATA_SIZE {
+            V2PointDataV1::read_from_bytes(&blob[..V2_LEGACY_POINT_DATA_SIZE])
+                .map(V2PointData::from)
+                .unwrap_or(V2PointData::default())
+        } else {
+            V2PointData::default()
+        }
     }
 
     /// Read a null-terminated string from the string data block by its ID.

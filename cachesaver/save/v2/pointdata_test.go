@@ -1,6 +1,7 @@
 package savev2
 
 import (
+	"encoding/binary"
 	"testing"
 )
 
@@ -12,6 +13,7 @@ func TestV2PointDataRoundTrip(t *testing.T) {
 		CityID:        4,
 		RegionID:      5,
 		Weight:        10,
+		GeoType:       1,
 	}
 
 	data, err := orig.MarshalBinary()
@@ -58,6 +60,28 @@ func TestV2PointDataUnmarshalShort(t *testing.T) {
 	err := d.UnmarshalBinary(make([]byte, 10))
 	if err == nil {
 		t.Fatal("expected error for short data, got nil")
+	}
+}
+
+// TestV2PointDataUnmarshalLegacy verifies that a 21-byte record (written before
+// the geo type byte existed) still decodes, with GeoType left unknown.
+func TestV2PointDataUnmarshalLegacy(t *testing.T) {
+	var legacy [v2PointDataLegacySize]byte
+	binary.LittleEndian.PutUint32(legacy[0:4], 1)
+	binary.LittleEndian.PutUint32(legacy[4:8], 2)
+	binary.LittleEndian.PutUint32(legacy[8:12], 3)
+	binary.LittleEndian.PutUint32(legacy[12:16], 4)
+	binary.LittleEndian.PutUint32(legacy[16:20], 5)
+	legacy[20] = 5
+
+	var d V2PointData
+	if err := d.UnmarshalBinary(legacy[:]); err != nil {
+		t.Fatalf("UnmarshalBinary legacy failed: %v", err)
+	}
+
+	want := V2PointData{NameID: 1, StreetID: 2, HouseNumberID: 3, CityID: 4, RegionID: 5, Weight: 5, GeoType: 0}
+	if d != want {
+		t.Fatalf("legacy decode mismatch: %+v != %+v", d, want)
 	}
 }
 

@@ -27,6 +27,7 @@ func (f *GeoGen) saveWorker(outputs []ParseOutput) error {
 					City:        point.City,
 					Region:      point.Region,
 					Weight:      point.Weight,
+					Type:        point.Type,
 				},
 			}) {
 				return

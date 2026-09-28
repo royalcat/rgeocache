@@ -37,6 +37,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 		x, y                                    float64
 		name, street, houseNumber, city, region string
 		weight                                  uint8
+		geoType                                 uint8
 	}
 	var rawPoints []rawPoint
 	for p := range points {
@@ -48,6 +49,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 			city:        p.Data.City.Value(),
 			region:      p.Data.Region.Value(),
 			weight:      p.Data.Weight,
+			geoType:     uint8(p.Data.Type),
 		})
 		// Register strings to reserve IDs
 		dedup.names.Add(p.Data.Name.Value())
@@ -72,6 +74,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 				CityID:        dedup.cities.Add(rp.city),
 				RegionID:      dedup.regions.Add(rp.region),
 				Weight:        rp.weight,
+				GeoType:       rp.geoType,
 			},
 		}
 	}

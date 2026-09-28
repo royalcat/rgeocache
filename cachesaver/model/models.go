@@ -23,7 +23,21 @@ type Info struct {
 	City        unique.Handle[string]
 	Region      unique.Handle[string]
 	Weight      uint8
+	Type        GeoObjectType
 }
+
+// GeoObjectType is the explicit kind of a cached point. GeoObjectUnknown is the
+// zero value, meaning the type was not recorded (legacy cache) and consumers
+// should fall back to deriving the kind from Info.Weight.
+type GeoObjectType uint8
+
+const (
+	GeoObjectUnknown  GeoObjectType = 0
+	GeoObjectBuilding GeoObjectType = 1
+	GeoObjectRoad     GeoObjectType = 2
+	// GeoObjectArea covers industrial and protected areas alike.
+	GeoObjectArea GeoObjectType = 3
+)
 
 type ZoneType uint8
 

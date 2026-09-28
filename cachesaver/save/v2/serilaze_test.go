@@ -27,6 +27,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 			City:        unique.Make("London"),
 			Region:      unique.Make("Greater London"),
 			Weight:      10,
+			Type:        cachemodel.GeoObjectBuilding,
 		}},
 		{X: 48.8566, Y: 2.3522, Data: cachemodel.Info{
 			Name:        unique.Make("Eiffel Tower"),
@@ -35,6 +36,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 			City:        unique.Make("Paris"),
 			Region:      unique.Make("Île-de-France"),
 			Weight:      10,
+			Type:        cachemodel.GeoObjectRoad,
 		}},
 		{X: 40.6892, Y: -74.0445, Data: cachemodel.Info{
 			Name:        unique.Make("Statue of Liberty"),
@@ -43,6 +45,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 			City:        unique.Make("New York"),
 			Region:      unique.Make("New York"),
 			Weight:      10,
+			Type:        cachemodel.GeoObjectArea,
 		}},
 	}
 
@@ -132,6 +135,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		}
 		if lp.Data.Weight != p.Data.Weight {
 			t.Errorf("Point[%d] Weight mismatch: %d != %d", i, lp.Data.Weight, p.Data.Weight)
+		}
+		if lp.Data.Type != p.Data.Type {
+			t.Errorf("Point[%d] Type mismatch: %d != %d", i, lp.Data.Type, p.Data.Type)
 		}
 	}
 

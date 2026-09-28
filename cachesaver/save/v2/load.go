@@ -266,6 +266,7 @@ func resolvePointFromIndex(index []uint32, dataBlock []byte, data V2PointData) c
 			City:        unique.Make(readStrByID(index, dataBlock, data.CityID)),
 			Region:      unique.Make(readStrByID(index, dataBlock, data.RegionID)),
 			Weight:      data.Weight,
+			Type:        cachemodel.GeoObjectType(data.GeoType),
 		},
 	}
 }

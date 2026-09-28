@@ -7,6 +7,7 @@ import (
 	"unique"
 
 	"github.com/fogleman/poissondisc"
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	"github.com/royalcat/rgeocache/geomodel"
 
 	"github.com/paulmach/orb"
@@ -44,7 +45,8 @@ type geoPoint struct {
 	Region      unique.Handle[string] `json:"region"`
 	Country     unique.Handle[string] `json:"country"`
 
-	Weight uint8 `json:"weight"`
+	Weight uint8                    `json:"weight"`
+	Type   cachemodel.GeoObjectType `json:"type"`
 }
 
 const (
@@ -65,6 +67,7 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 		return geoPoint{
 			Point:       point,
 			Weight:      weightBuilding,
+			Type:        cachemodel.GeoObjectBuilding,
 			Name:        f.localizedName(node.Tags),
 			Street:      f.localizedStreetName(node.Tags),
 			HouseNumber: unique.Make(node.Tags.Find("addr:housenumber")),
@@ -104,6 +107,7 @@ func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
 	return []geoPoint{{
 		Point:       point,
 		Weight:      weightBuilding,
+		Type:        cachemodel.GeoObjectBuilding,
 		Name:        f.localizedName(way.Tags),
 		Street:      f.localizedStreetName(way.Tags),
 		HouseNumber: unique.Make(way.Tags.Find("addr:housenumber")),
@@ -132,6 +136,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 		out = append(out, geoPoint{
 			Point:       point,
 			Weight:      weightRoad,
+			Type:        cachemodel.GeoObjectRoad,
 			Name:        name,
 			Street:      street,
 			HouseNumber: unique.Make(""),
@@ -200,6 +205,7 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 			points = append(points, geoPoint{
 				Point:       p,
 				Weight:      weightBuilding,
+				Type:        cachemodel.GeoObjectBuilding,
 				Name:        f.localizedName(rel.Tags),
 				Street:      f.localizedStreetName(rel.Tags),
 				HouseNumber: unique.Make(rel.Tags.Find("addr:housenumber")),
@@ -253,6 +259,7 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 			Point: p,
 
 			Weight:      weight,
+			Type:        cachemodel.GeoObjectArea,
 			Name:        name,
 			Street:      unique.Make(""),
 			HouseNumber: unique.Make(""),

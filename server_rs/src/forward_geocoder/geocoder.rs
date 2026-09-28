@@ -167,12 +167,29 @@ pub enum GeoObjectKind {
 }
 
 impl GeoObjectKind {
-    /// Derive the object kind from the cache `weight` byte.
+    /// Derive the object kind from a point's cache record.
     ///
-    /// TODO: replace with an explicit object-type field once the cache format
-    /// carries one. `weight` is a lossy proxy — it also encodes the area
-    /// sub-kind (3 = industrial, 2 = protected), and those surface as
-    /// `Building` for now.
+    /// `geo_type` is the explicit kind written by the generator; when it is
+    /// absent (legacy 21-byte records widen to 0) or unrecognised, fall back to
+    /// the weight-derived kind. Areas (industrial/protected) have no API kind of
+    /// their own yet, so they map to `Building`.
+    pub fn from_cache(geo_type: u8, weight: u8) -> GeoObjectKind {
+        // Values match cachesaver/model.GeoObjectType on the Go side.
+        const CACHE_BUILDING: u8 = 1;
+        const CACHE_ROAD: u8 = 2;
+        const CACHE_AREA: u8 = 3;
+        match geo_type {
+            CACHE_BUILDING => GeoObjectKind::Building,
+            CACHE_ROAD => GeoObjectKind::Road,
+            // TODO: surface areas as their own kind once the API has one.
+            CACHE_AREA => GeoObjectKind::Building,
+            _ => GeoObjectKind::from_weight(weight),
+        }
+    }
+
+    /// Fallback used when the cache carries no explicit geo type (legacy
+    /// records). `weight` is a lossy proxy — it also encodes the area sub-kind
+    /// (3 = industrial, 2 = protected), and those surface as `Building`.
     pub fn from_weight(weight: u8) -> GeoObjectKind {
         match weight {
             5 => GeoObjectKind::Road,
@@ -642,7 +659,7 @@ fn point_docs<'a>(
                         street: cache.read_string(point.data.street_id.get()),
                         house_number: cache.read_string(point.data.house_number_id.get()),
                         name: cache.read_string(point.data.name_id.get()),
-                        geo_kind: GeoObjectKind::from_weight(point.data.weight),
+                        geo_kind: GeoObjectKind::from_cache(point.data.geo_type, point.data.weight),
                         cache_location: point.location,
                     }
                 })
@@ -1345,5 +1362,24 @@ mod tests {
         let results = search(&index, &fields, &analyzers, "russia");
 
         assert_eq!(results, vec!["Russia, Moscow, Tverskaya, 12".to_string()]);
+    }
+
+    #[test]
+    fn geo_kind_comes_from_the_cache_geo_type() {
+        // Explicit cache types win over what the weight alone would imply.
+        assert_eq!(GeoObjectKind::from_cache(1, 5), GeoObjectKind::Building);
+        assert_eq!(GeoObjectKind::from_cache(2, 10), GeoObjectKind::Road);
+        // Areas surface as building until the API grows an area kind.
+        assert_eq!(GeoObjectKind::from_cache(3, 3), GeoObjectKind::Building);
+    }
+
+    #[test]
+    fn geo_kind_falls_back_to_weight_for_legacy_records() {
+        // geo_type == 0 (legacy 21-byte record) falls back to the weight proxy.
+        assert_eq!(GeoObjectKind::from_cache(0, 5), GeoObjectKind::Road);
+        assert_eq!(GeoObjectKind::from_cache(0, 10), GeoObjectKind::Building);
+        assert_eq!(GeoObjectKind::from_cache(0, 3), GeoObjectKind::Building);
+        // Unrecognised future values also fall back rather than fail.
+        assert_eq!(GeoObjectKind::from_cache(99, 5), GeoObjectKind::Road);
     }
 }
