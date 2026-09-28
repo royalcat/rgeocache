@@ -2,6 +2,7 @@
   "releases",
   "cache-v3",
   "countries",
+  "forward-geocoding",
   "low-memory-cache",
   "master",
   "rust-server",
