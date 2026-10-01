@@ -26,10 +26,10 @@ jobs:
             locale: "ru"
           - name: "russia"
             maps: "russia"
-            locale: "offical"
+            locale: "official"
           - name: "post-cis"
             maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia,asia/armenia"
-            locale: "offical"
+            locale: "official"
     env:
       MAPS: ${{ matrix.maps }}
     runs-on: ubuntu-24.04-arm
