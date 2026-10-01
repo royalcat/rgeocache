@@ -1,0 +1,33 @@
+name: rust-server
+
+on:
+  push:
+    paths:
+      - ".github/workflows/rust-server.yaml"
+      - "server_rs/**"
+  pull_request:
+    paths:
+      - ".github/workflows/rust-server.yaml"
+      - "server_rs/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install protoc
+        # build.rs compiles the proto definitions with buffa-build/prost-build.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends protobuf-compiler
+          rm -rf /var/lib/apt/lists/*
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "server_rs -> target"
+      - name: cargo test
+        run: cargo test --manifest-path server_rs/Cargo.toml
+      - name: cargo clippy
+        run: cargo clippy --manifest-path server_rs/Cargo.toml --all-targets

@@ -80,7 +80,7 @@ impl Geocoder {
 
         // --- Resolve the best match ---
         if let Some(data) = best_point {
-            let mut info = resolve(&cache, data);
+            let mut info = resolve(cache, data);
 
             // Fallback region/country if point didn't have them
             let pt_x = lon;

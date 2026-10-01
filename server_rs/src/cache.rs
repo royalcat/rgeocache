@@ -28,6 +28,7 @@
 //! ```
 
 use buffa::{Message, MessageView};
+use geo::Centroid;
 use memmap2::Mmap;
 use smallvec::SmallVec;
 use std::sync::Arc;
@@ -121,6 +122,10 @@ pub struct IndexedZone {
     pub name: String,
     pub zone_type: ZoneType,
     pub polygon: geo::MultiPolygon<f64>,
+    /// Centroid of the polygon, precomputed at load. The forward geocoder
+    /// returns it as the point for a zone hit; recomputing it per request would
+    /// be O(vertices).
+    pub centroid: geo::Point<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -450,10 +455,16 @@ fn parse_zones(section: &proto::cache_v2::V2ZonesSectionView) -> Vec<IndexedZone
 
         for zone in &blob.zones {
             let polygon = convert_multi_polygon(Some(&zone.multi_polygon));
+            // A degenerate polygon has no centroid; fall back to the origin so
+            // the zone can still be returned (its name carries the meaning).
+            let centroid = polygon
+                .centroid()
+                .unwrap_or_else(|| geo::Point::new(0.0, 0.0));
             zones.push(IndexedZone {
                 name: zone.name.into(),
                 zone_type,
                 polygon,
+                centroid,
             });
         }
     }

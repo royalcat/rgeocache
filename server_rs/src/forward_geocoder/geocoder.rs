@@ -3,7 +3,6 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use geo::Centroid;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
@@ -15,7 +14,7 @@ use tantivy::query::{
 use tantivy::schema::*;
 use tantivy::space_usage::PerFieldSpaceUsage;
 use tantivy::{
-    doc, DocAddress, Index, IndexReader, IndexWriter, Score, Searcher, TantivyDocument,
+    doc, DocAddress, DocId, Index, IndexReader, IndexWriter, Score, Searcher, SegmentReader,
     TantivyError, Term,
 };
 use tantivy::{tokenizer::*, ByteCount};
@@ -94,7 +93,7 @@ const MIN_PREFIX_LEN: usize = 3;
 const MAX_SEGMENTS: usize = 8;
 
 /// Tokens shorter than this are dropped from the query before matching, unless
-/// they carry a digit.
+/// they carry a digit or prefix another token.
 ///
 /// This is what makes abbreviated addresses work: the type words people type
 /// ("г", "ул", "д", "кв") are short and appear in no document, and under the AND
@@ -103,17 +102,11 @@ const MAX_SEGMENTS: usize = 8;
 ///
 /// The digit exemption is load-bearing — house numbers are short, and a plain
 /// length cut would discard `12` and `5` along with the type words.
+///
+/// Longer tokens that exist in no document are dropped too (see
+/// [`token_exists`]), which covers `город Москва` and `дом 12`; unlike the
+/// length rule that needs the term dictionary at query-build time.
 const MIN_TOKEN_LEN: usize = 3;
-
-// TODO: the length rule above only covers *short* type words. A longer one that
-// is absent from the index ("дом", "корпус", "квартира", or "город" in
-// "город Москва") still makes the whole AND query unsatisfiable.
-//
-// The general fix is to drop any token that cannot constrain the query — one
-// whose term does not exist in the index — which needs no vocabulary and works
-// for every language. It requires the term dictionary at query-build time
-// (`IndexReader` / `Searcher::doc_freq`), which today is only available after
-// `build_query` has already run.
 
 /// Longest accepted query string. Longer is rejected by the HTTP handler.
 pub const MAX_QUERY_LEN: usize = 256;
@@ -127,6 +120,10 @@ const OVERFETCH: usize = 10;
 const MIN_FETCH: usize = 50;
 const MAX_FETCH: usize = 500;
 
+/// Cap on distinct terms collected while scanning term dictionaries for
+/// suggestions; bounds the work for a very short prefix.
+const SUGGESTION_SCAN_CAP: usize = 10_000;
+
 /// Tie-break for equal BM25 scores.
 ///
 /// A single-term query scores every document matching the same term in the same
@@ -136,10 +133,18 @@ const MAX_FETCH: usize = 500;
 /// region/country polygon. Also makes the response deterministic.
 fn kind_rank(obj_type: GeoObjectKind) -> u8 {
     match obj_type {
-        GeoObjectKind::Building => 2,
-        GeoObjectKind::Road => 1,
+        GeoObjectKind::Building => 3,
+        GeoObjectKind::Road => 2,
+        GeoObjectKind::Area => 1,
         GeoObjectKind::Zone => 0,
     }
+}
+
+/// A distinct term suggestion and its approximate document frequency.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Suggestion {
+    pub text: String,
+    pub doc_freq: u64,
 }
 
 fn tokenize(analyzer: &mut TextAnalyzer, text: &str) -> Vec<String> {
@@ -149,6 +154,76 @@ fn tokenize(analyzer: &mut TextAnalyzer, text: &str) -> Vec<String> {
         out.push(stream.token().text.clone());
     }
     out
+}
+
+/// Smallest string greater than every string starting with `prefix`.
+///
+/// Used as the exclusive upper bound of the term-dictionary range scan. Falls
+/// back to `prefix` itself for an all-max-codepoint prefix (an empty range).
+fn prefix_upper_bound(prefix: &str) -> String {
+    let mut chars: Vec<char> = prefix.chars().collect();
+    while let Some(last) = chars.pop() {
+        if let Some(next) = char::from_u32(last as u32 + 1) {
+            chars.push(next);
+            return chars.into_iter().collect();
+        }
+    }
+    prefix.to_string()
+}
+
+/// Core of [`ForwardGeocoder::suggest`], split out so it can be tested against
+/// a synthetic index.
+fn suggest_terms(
+    searcher: &Searcher,
+    fields: &Fields,
+    analyzers: &Analyzers,
+    input: &str,
+    limit: usize,
+) -> tantivy::Result<Vec<Suggestion>> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // The suggest field is analyzed without a stemmer, so the query side must
+    // not stem either: the user is typing a prefix of the word they will see.
+    let mut analyzer = analyzers.house.clone();
+    let forms = tokenize(&mut analyzer, input);
+    let Some(prefix) = forms.last() else {
+        return Ok(Vec::new());
+    };
+
+    let upper = prefix_upper_bound(prefix);
+    let mut counts: HashMap<String, u64> = HashMap::new();
+
+    'segments: for segment_reader in searcher.segment_readers() {
+        let inverted = segment_reader.inverted_index(fields.suggest)?;
+        let mut stream = inverted
+            .terms()
+            .range()
+            .ge(prefix.as_str())
+            .lt(upper.as_str())
+            .into_stream()?;
+        while let Some((key, info)) = stream.next() {
+            let text = String::from_utf8_lossy(key).into_owned();
+            *counts.entry(text).or_default() += info.doc_freq as u64;
+            if counts.len() >= SUGGESTION_SCAN_CAP {
+                break 'segments;
+            }
+        }
+    }
+
+    let mut suggestions: Vec<Suggestion> = counts
+        .into_iter()
+        .map(|(text, doc_freq)| Suggestion { text, doc_freq })
+        .collect();
+    suggestions.sort_by(|a, b| {
+        b.doc_freq
+            .cmp(&a.doc_freq)
+            .then_with(|| a.text.cmp(&b.text))
+    });
+    suggestions.truncate(limit.clamp(1, MAX_LIMIT));
+    Ok(suggestions)
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +239,8 @@ pub enum GeoObjectKind {
     Building = 2,
     #[strum(serialize = "road", serialize = "r")]
     Road = 3,
+    #[strum(serialize = "area", serialize = "a")]
+    Area = 4,
 }
 
 impl GeoObjectKind {
@@ -171,8 +248,7 @@ impl GeoObjectKind {
     ///
     /// `geo_type` is the explicit kind written by the generator; when it is
     /// absent (legacy 21-byte records widen to 0) or unrecognised, fall back to
-    /// the weight-derived kind. Areas (industrial/protected) have no API kind of
-    /// their own yet, so they map to `Building`.
+    /// the weight-derived kind.
     pub fn from_cache(geo_type: u8, weight: u8) -> GeoObjectKind {
         // Values match cachesaver/model.GeoObjectType on the Go side.
         const CACHE_BUILDING: u8 = 1;
@@ -181,18 +257,19 @@ impl GeoObjectKind {
         match geo_type {
             CACHE_BUILDING => GeoObjectKind::Building,
             CACHE_ROAD => GeoObjectKind::Road,
-            // TODO: surface areas as their own kind once the API has one.
-            CACHE_AREA => GeoObjectKind::Building,
+            CACHE_AREA => GeoObjectKind::Area,
             _ => GeoObjectKind::from_weight(weight),
         }
     }
 
     /// Fallback used when the cache carries no explicit geo type (legacy
-    /// records). `weight` is a lossy proxy — it also encodes the area sub-kind
-    /// (3 = industrial, 2 = protected), and those surface as `Building`.
+    /// records). `weight` is a lossy proxy: 5 is a road (highways are
+    /// resampled), 3/2 are the industrial/protected area sub-kinds, everything
+    /// else is a building.
     pub fn from_weight(weight: u8) -> GeoObjectKind {
         match weight {
             5 => GeoObjectKind::Road,
+            3 | 2 => GeoObjectKind::Area,
             _ => GeoObjectKind::Building,
         }
     }
@@ -206,6 +283,7 @@ impl TryFrom<u64> for GeoObjectKind {
             1 => Ok(GeoObjectKind::Zone),
             2 => Ok(GeoObjectKind::Building),
             3 => Ok(GeoObjectKind::Road),
+            4 => Ok(GeoObjectKind::Area),
             other => Err(TantivyError::InvalidArgument(format!(
                 "unknown geo_type value: {other}"
             ))),
@@ -219,6 +297,7 @@ pub struct GeocodeKindFilter {
     zones: bool,
     buildings: bool,
     roads: bool,
+    areas: bool,
 }
 
 impl Default for GeocodeKindFilter {
@@ -227,6 +306,7 @@ impl Default for GeocodeKindFilter {
             zones: true,
             buildings: true,
             roads: true,
+            areas: true,
         }
     }
 }
@@ -237,6 +317,7 @@ impl From<&str> for GeocodeKindFilter {
             zones: false,
             buildings: false,
             roads: false,
+            areas: false,
         };
         for part in s.split(',') {
             let part = part.trim();
@@ -247,6 +328,7 @@ impl From<&str> for GeocodeKindFilter {
                 Ok(GeoObjectKind::Zone) => filter.zones = true,
                 Ok(GeoObjectKind::Building) => filter.buildings = true,
                 Ok(GeoObjectKind::Road) => filter.roads = true,
+                Ok(GeoObjectKind::Area) => filter.areas = true,
                 Err(_) => log::warn!("ignoring unknown kind filter value: {part:?}"),
             }
         }
@@ -260,6 +342,7 @@ impl GeocodeKindFilter {
             GeoObjectKind::Zone => self.zones,
             GeoObjectKind::Building => self.buildings,
             GeoObjectKind::Road => self.roads,
+            GeoObjectKind::Area => self.areas,
         }
     }
 }
@@ -276,28 +359,42 @@ struct Fields {
     region: Field,
     city: Field,
     street: Field,
+    /// Raw house number, indexed and queryable in the form the cache stores it.
     house_number: Field,
+    /// Canonicalized house number (aliases expanded, separators removed — see
+    /// [`canonical_house`]), so `12 к 1` and `12к1` index to the same term.
+    house_normalized: Field,
     name: Field,
     /// Every address part joined in the order the phrase query expects. Not
     /// stored — it exists only to be matched.
     merged: Field,
+    /// Surface (unstemmed, lowercased) address tokens, indexed with the house
+    /// analyzer and read only by the autocomplete term scan. Without it the
+    /// term dictionary of the text fields yields stems (`твер`, `тверск`)
+    /// instead of the words a user recognizes.
+    suggest: Field,
     geo_type: Field,
     /// Where the document's geometry lives in the cache — see [`IndexedDoc`].
-    /// `geo_type` says how to read it.
+    /// `geo_type` says how to read it. Text fields are never stored: the
+    /// rendered address is resolved from the mmap'd cache through this value.
     cache_location: Field,
+    /// Weighted point count of the document's street/name, an index-time
+    /// popularity signal — see [`Popularity`].
+    popularity: Field,
 }
 
 fn build_schema() -> (Schema, Fields) {
     let mut schema_builder = Schema::builder();
 
+    // Text fields are indexed, never stored: the address a hit renders is
+    // resolved from the cache at query time, so storing a second copy of every
+    // string in the doc store only costs space and decompression.
     let text_options = |analyzer: &str| {
-        TextOptions::default()
-            .set_indexing_options(
-                TextFieldIndexing::default()
-                    .set_tokenizer(analyzer)
-                    .set_index_option(IndexRecordOption::WithFreqs),
-            )
-            .set_stored()
+        TextOptions::default().set_indexing_options(
+            TextFieldIndexing::default()
+                .set_tokenizer(analyzer)
+                .set_index_option(IndexRecordOption::WithFreqs),
+        )
     };
 
     // The merged address is only ever matched as a phrase, which needs
@@ -315,10 +412,23 @@ fn build_schema() -> (Schema, Fields) {
         city: schema_builder.add_text_field("city", text_options(TEXT_ANALYZER)),
         street: schema_builder.add_text_field("street", text_options(TEXT_ANALYZER)),
         house_number: schema_builder.add_text_field("house_number", text_options(HOUSE_ANALYZER)),
+        house_normalized: schema_builder
+            .add_text_field("house_normalized", text_options(HOUSE_ANALYZER)),
         name: schema_builder.add_text_field("name", text_options(TEXT_ANALYZER)),
         merged: schema_builder.add_text_field("merged", merged_options),
-        geo_type: schema_builder.add_u64_field(GEO_TYPE_FIELD, FAST | STORED),
-        cache_location: schema_builder.add_u64_field("cache_location", STORED),
+        // Suggestions only need document frequency, not term frequencies or
+        // positions.
+        suggest: schema_builder.add_text_field(
+            "suggest",
+            TextOptions::default().set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_tokenizer(HOUSE_ANALYZER)
+                    .set_index_option(IndexRecordOption::Basic),
+            ),
+        ),
+        geo_type: schema_builder.add_u64_field(GEO_TYPE_FIELD, FAST),
+        cache_location: schema_builder.add_u64_field("cache_location", FAST),
+        popularity: schema_builder.add_u64_field("popularity", FAST),
     };
 
     (schema_builder.build(), fields)
@@ -330,23 +440,30 @@ fn build_schema() -> (Schema, Fields) {
 
 /// One document's worth of indexed data, decoupled from [`CacheFile`] so the
 /// indexer can be exercised against synthetic fixtures in tests.
+#[derive(Clone, Debug)]
 struct IndexedDoc {
     country: String,
     region: String,
     city: String,
     street: String,
     house_number: String,
+    /// Canonicalized house number indexed beside the raw one — see
+    /// [`canonical_house`].
+    house_normalized: String,
     name: String,
     geo_kind: GeoObjectKind,
+    /// Index-time popularity used to break BM25 ties — see [`Popularity`].
+    popularity: u64,
     /// Where this document's geometry lives in the cache; `geo_type` says how
     /// to read it:
     ///
     /// - point documents: the sorted KD-tree position, resolved through
-    ///   `CacheFile::read_coord`;
+    ///   `CacheFile::read_coord` and the point's string IDs;
     /// - zone documents: an index into `CacheFile::zones`.
     ///
-    /// Coordinates are deliberately *not* stored: they are high-entropy and
-    /// compress to nothing in the doc store, while the cache already holds them.
+    /// Coordinates and address strings are deliberately *not* stored: they are
+    /// high-entropy and compress to nothing in the doc store, while the cache
+    /// already holds them.
     cache_location: u64,
 }
 
@@ -370,6 +487,138 @@ impl IndexedDoc {
         .collect::<Vec<_>>()
         .join(", ")
     }
+
+    /// The string indexed into `suggest`: every address part, in render order,
+    /// so the autocomplete term scan sees real words rather than stems.
+    fn suggest_text(&self) -> String {
+        [
+            self.country.as_str(),
+            self.region.as_str(),
+            self.city.as_str(),
+            self.street.as_str(),
+            self.name.as_str(),
+        ]
+        .into_iter()
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ")
+    }
+}
+
+/// House-number type words that mean the same thing in Russian addresses.
+///
+/// Both sides of the index — the stored value and the query — are canonicalized
+/// through this table, so `12 корпус 1`, `12 к 1` and `12к1` all meet at
+/// `12к1`.
+const HOUSE_ALIASES: &[(&str, &str)] = &[
+    ("к", "к"),
+    ("корп", "к"),
+    ("корпус", "к"),
+    ("с", "с"),
+    ("стр", "с"),
+    ("строение", "с"),
+    ("л", "л"),
+    ("лит", "л"),
+    ("литер", "л"),
+    ("литера", "л"),
+];
+
+/// Canonical form of a house number: lowercased, alias words shortened, and
+/// whitespace removed — `12 корпус 1` → `12к1`.
+///
+/// Only whitespace is removed. Other separators are preserved (`12-1` stays
+/// `12-1`) because the tokenizer already splits on them, and collapsing them
+/// would make `12-1` collide with `121`.
+fn canonical_house(raw: &str) -> String {
+    raw.to_lowercase()
+        .split_whitespace()
+        .map(|word| {
+            HOUSE_ALIASES
+                .iter()
+                .find(|(alias, _)| *alias == word)
+                .map(|(_, canonical)| *canonical)
+                .unwrap_or(word)
+        })
+        .collect()
+}
+
+/// Weighted point counts backing the popularity fast field.
+///
+/// BM25 scores every document matching the same term identically, and idf is
+/// anti-popularity, so without an external signal autocomplete ranks a small
+/// town's street above a capital's. Summing each point's generator weight per
+/// street and per name gives a cheap "how big is this street/place" proxy.
+struct Popularity {
+    street: Vec<u64>,
+    name: Vec<u64>,
+}
+
+impl Popularity {
+    fn of(&self, street_id: u32, name_id: u32) -> u64 {
+        self.street.get(street_id as usize).copied().unwrap_or(0)
+            + self.name.get(name_id as usize).copied().unwrap_or(0)
+    }
+}
+
+/// Chunk size for the popularity pass, bounding the per-thread accumulator
+/// memory against the string table size.
+const POPULARITY_CHUNK: usize = 1 << 20;
+
+/// Sum point weights per street and name in one parallel pass.
+///
+/// The accumulators are dense vectors indexed by string id (the string table of
+/// the full-country cache holds ~600k entries, so a pair of vectors is a few
+/// MB), which makes the pass allocation-free apart from the chunk merges.
+fn compute_popularity(cache: &CacheFile) -> Popularity {
+    let num_strings = cache.strings_index.len();
+
+    // A chunk accumulator is merged into the running total as soon as it is
+    // built, so only a few are alive at a time instead of one per chunk.
+    let chunk_popularity = |start: usize| -> Popularity {
+        let end = (start + POPULARITY_CHUNK).min(cache.num_points);
+        let mut chunk = Popularity {
+            street: vec![0u64; num_strings],
+            name: vec![0u64; num_strings],
+        };
+        for i in start..end {
+            let point = cache.point_at(i);
+            let weight = point.data.weight as u64;
+            // String id 0 means "empty": its bucket must stay zero, otherwise
+            // every document with an empty street or name inherits the weight
+            // of the whole country's empty-<field> points.
+            let street_id = point.data.street_id.get() as usize;
+            if street_id != 0 {
+                chunk.street[street_id] += weight;
+            }
+            let name_id = point.data.name_id.get() as usize;
+            if name_id != 0 {
+                chunk.name[name_id] += weight;
+            }
+        }
+        chunk
+    };
+
+    let merge = |mut total: Popularity, chunk: Popularity| -> Popularity {
+        for (total, part) in total.street.iter_mut().zip(chunk.street) {
+            *total += part;
+        }
+        for (total, part) in total.name.iter_mut().zip(chunk.name) {
+            *total += part;
+        }
+        total
+    };
+
+    let zero = || Popularity {
+        street: vec![0u64; num_strings],
+        name: vec![0u64; num_strings],
+    };
+
+    (0..cache.num_points)
+        .into_par_iter()
+        .step_by(POPULARITY_CHUNK)
+        .map(chunk_popularity)
+        .reduce(zero, merge)
 }
 
 /// Name of the tantivy meta file, the marker of an index directory.
@@ -379,7 +628,7 @@ const META_FILE: &str = "meta.json";
 const SIDECAR_FILE: &str = "rgeocache-fgeocode.json";
 
 /// Bump to invalidate every persisted index.
-const SIDECAR_FORMAT: u32 = 1;
+const SIDECAR_FORMAT: u32 = 2;
 
 /// Identity of the cache an index was built from.
 ///
@@ -518,7 +767,7 @@ fn build_index(
     locale: &str,
     index_dir: Option<&Path>,
     fingerprint: &CacheFingerprint,
-) -> tantivy::Result<(Index, Fields, Analyzers)> {
+) -> tantivy::Result<(Index, Fields, Analyzers, IndexMode)> {
     let (schema, fields) = build_schema();
 
     let analyzers = build_analyzers(locale);
@@ -535,7 +784,7 @@ fn build_index(
             index.set_default_multithread_executor()?;
             register_analyzers(&index, &analyzers);
             print_usage(&index.reader()?);
-            return Ok((index, fields, analyzers));
+            return Ok((index, fields, analyzers, IndexMode::Reused));
         }
     }
 
@@ -551,6 +800,7 @@ fn build_index(
 
     let mut index_writer: IndexWriter = index.writer(256 * 1024 * 1024)?;
 
+    let mut indexed = 0usize;
     for d in docs {
         let document = doc!(
             fields.country => d.country,
@@ -558,13 +808,22 @@ fn build_index(
             fields.city => d.city,
             fields.street => d.street,
             fields.house_number => d.house_number,
+            fields.house_normalized => d.house_normalized,
             fields.name => d.name,
             fields.merged => d.merged_address(),
+            fields.suggest => d.suggest_text(),
             fields.geo_type => d.geo_kind as u64,
             fields.cache_location => d.cache_location,
+            fields.popularity => d.popularity,
         );
         index_writer.add_document(document)?;
+
+        indexed += 1;
+        if indexed.is_multiple_of(1_000_000) {
+            log::info!("forward geocoder: indexed {indexed} documents");
+        }
     }
+    log::info!("forward geocoder: indexed {indexed} documents total");
 
     index_writer.commit()?;
     index_writer.garbage_collect_files().wait()?;
@@ -581,7 +840,7 @@ fn build_index(
 
     print_usage(&index.reader()?);
 
-    Ok((index, fields, analyzers))
+    Ok((index, fields, analyzers, IndexMode::Built))
 }
 
 fn print_usage(reader: &IndexReader) {
@@ -624,7 +883,9 @@ pub struct ForwardGeocoder {
     index_reader: IndexReader,
     fields: Fields,
     analyzers: Analyzers,
-    cache: Arc<CacheFile>,
+    /// The reverse geocoder, kept for the mmap'd cache (address strings,
+    /// coordinates, zones) and for country resolution at materialization time.
+    geocoder: Arc<Geocoder>,
 }
 
 /// Documents materialized (and country-resolved) per parallel batch while the
@@ -640,6 +901,7 @@ const BUILD_CHUNK: usize = 8_192;
 fn point_docs<'a>(
     cache: &'a CacheFile,
     geocoder: &'a Geocoder,
+    popularity: &'a Popularity,
 ) -> impl Iterator<Item = IndexedDoc> + 'a {
     (0..cache.num_points)
         .step_by(BUILD_CHUNK)
@@ -649,6 +911,7 @@ fn point_docs<'a>(
                 .into_par_iter()
                 .map(|i| {
                     let point = cache.point_at(i);
+                    let house_number = cache.read_string(point.data.house_number_id.get());
                     IndexedDoc {
                         country: geocoder
                             .country_at(point.lon, point.lat)
@@ -657,9 +920,12 @@ fn point_docs<'a>(
                         region: cache.read_string(point.data.region_id.get()),
                         city: cache.read_string(point.data.city_id.get()),
                         street: cache.read_string(point.data.street_id.get()),
-                        house_number: cache.read_string(point.data.house_number_id.get()),
+                        house_normalized: canonical_house(&house_number),
+                        house_number,
                         name: cache.read_string(point.data.name_id.get()),
                         geo_kind: GeoObjectKind::from_cache(point.data.geo_type, point.data.weight),
+                        popularity: popularity
+                            .of(point.data.street_id.get(), point.data.name_id.get()),
                         cache_location: point.location,
                     }
                 })
@@ -669,7 +935,7 @@ fn point_docs<'a>(
 
 /// Zone documents (regions and countries). A zone has no street address — its
 /// name is the whole address — so it is indexed under `name` and `merged`
-/// alike, with no country.
+/// alike, with no country and no popularity.
 fn zone_docs(cache: &CacheFile) -> impl Iterator<Item = IndexedDoc> + '_ {
     cache.zones.iter().enumerate().map(|(i, zone)| IndexedDoc {
         country: String::new(),
@@ -677,33 +943,47 @@ fn zone_docs(cache: &CacheFile) -> impl Iterator<Item = IndexedDoc> + '_ {
         city: String::new(),
         street: String::new(),
         house_number: String::new(),
+        house_normalized: String::new(),
         name: zone.name.clone(),
         geo_kind: GeoObjectKind::Zone,
+        popularity: 0,
         cache_location: i as u64,
     })
+}
+
+/// Whether a persisted index was reused or freshly built; surfaced as a metric.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexMode {
+    Built,
+    Reused,
 }
 
 impl ForwardGeocoder {
     pub fn build(
         geocoder: Arc<Geocoder>,
         index_dir: Option<&Path>,
-    ) -> tantivy::Result<ForwardGeocoder> {
+    ) -> tantivy::Result<(ForwardGeocoder, IndexMode)> {
         if let Some(dir) = index_dir {
             validate_index_dir(dir).map_err(TantivyError::InvalidArgument)?;
         }
 
         let cache = &geocoder.cache;
         let fingerprint = CacheFingerprint::of(cache);
-        let docs = point_docs(cache, &geocoder).chain(zone_docs(cache));
+        let popularity = compute_popularity(cache);
+        let docs = point_docs(cache, &geocoder, &popularity).chain(zone_docs(cache));
 
-        let (index, fields, analyzers) = build_index(docs, &cache.locale, index_dir, &fingerprint)?;
+        let (index, fields, analyzers, mode) =
+            build_index(docs, &cache.locale, index_dir, &fingerprint)?;
 
-        Ok(ForwardGeocoder {
-            index_reader: index.reader()?,
-            fields,
-            analyzers,
-            cache: geocoder.cache.clone(),
-        })
+        Ok((
+            ForwardGeocoder {
+                index_reader: index.reader()?,
+                fields,
+                analyzers,
+                geocoder,
+            },
+            mode,
+        ))
     }
 }
 
@@ -712,6 +992,8 @@ pub struct SearchResultItem {
     pub score: Score,
     pub point: (f64, f64),
     pub geo_type: GeoObjectKind,
+    /// Resolved from the country border tree (empty for zones).
+    pub country: String,
     pub multipolygon: Option<geo::MultiPolygon>,
 }
 
@@ -747,13 +1029,94 @@ fn fuzzy_query(field: Field, text: &str, prefix: bool) -> Option<Box<dyn Query>>
     })
 }
 
+/// One analyzed query token, plus the segment-level canonical house form.
+struct QueryToken {
+    /// The token in its house-analyzer form (lowercased, unstemmed).
+    text: String,
+    /// The token re-analyzed with the text analyzer — the forms actually
+    /// present in the index.
+    text_forms: Vec<String>,
+    /// Whether the raw token carries a digit (a house number, or a street name
+    /// like "1905 года" — the caller offers both interpretations).
+    is_house: bool,
+}
+
+/// One comma/semicolon separated address part.
+struct Segment {
+    tokens: Vec<QueryToken>,
+    /// Canonical house form when the segment mixes a digit with a house type
+    /// word (`12 к 1` → `12к1`); matched against `house_normalized` so the
+    /// alias spelling and the compact spelling meet.
+    canonical_house: Option<String>,
+}
+
+fn token_has_digit(token: &str) -> bool {
+    token.chars().any(|c| c.is_ascii_digit())
+}
+
+fn is_house_alias(token: &str) -> bool {
+    HOUSE_ALIASES.iter().any(|(alias, _)| *alias == token)
+}
+
+/// Canonical form of one token: alias words map to their short form, anything
+/// else passes through unchanged.
+fn canonical_token(token: &str) -> &str {
+    HOUSE_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == token)
+        .map(|(_, canonical)| *canonical)
+        .unwrap_or(token)
+}
+
+/// Whether any field of the index contains any analyzed form of this token.
+///
+/// A token that matches nothing can only make the whole AND query
+/// unsatisfiable — that is what makes `город Москва` or `дом 12` work without a
+/// stopword list. The check is language-independent: it asks the term
+/// dictionary, not a vocabulary.
+fn token_exists(searcher: &Searcher, fields: &Fields, token: &QueryToken) -> bool {
+    for form in &token.text_forms {
+        for field in [
+            fields.country,
+            fields.region,
+            fields.city,
+            fields.street,
+            fields.name,
+        ] {
+            let term = Term::from_field_text(field, form);
+            if searcher.doc_freq(&term).unwrap_or(0) > 0 {
+                return true;
+            }
+        }
+    }
+    if token.is_house {
+        for field in [fields.house_number, fields.house_normalized] {
+            let term = Term::from_field_text(field, &token.text);
+            if searcher.doc_freq(&term).unwrap_or(0) > 0 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Build a query for raw user input.
 ///
 /// The input is tokenized with the same analyzers used at index time and turned
 /// into `TermQuery`s programmatically. Nothing from the request ever reaches
 /// tantivy's query grammar, so `foo:bar`, `[a TO b]`, `-term` and friends are
 /// literal text rather than syntax — and can never fail to parse.
-fn build_query(fields: &Fields, analyzers: &Analyzers, raw: &str) -> Option<Box<dyn Query>> {
+///
+/// Tokens whose analyzed forms exist in no field are dropped unless they are
+/// the token the user is still typing (the last one), which may still complete
+/// as a prefix. This is the general form of the short-type-word rule: it needs
+/// no vocabulary and works for every language.
+fn build_query(
+    fields: &Fields,
+    analyzers: &Analyzers,
+    searcher: &Searcher,
+    raw: &str,
+) -> Option<Box<dyn Query>> {
     let raw = raw.trim();
     if raw.is_empty() || raw.len() > MAX_QUERY_LEN {
         return None;
@@ -770,32 +1133,93 @@ fn build_query(fields: &Fields, analyzers: &Analyzers, raw: &str) -> Option<Box<
     }
 
     let mut house_analyzer = analyzers.house.clone();
+    let mut text_analyzer = analyzers.text.clone();
 
-    let mut segment_tokens: Vec<Vec<(bool, String)>> = Vec::with_capacity(segments.len());
+    // First pass: tokenize and classify, keeping short tokens for now so a
+    // segment's canonical house form is built from the full token list.
+    let mut raw_segments: Vec<(Vec<String>, Option<String>)> = Vec::with_capacity(segments.len());
     for segment in &segments {
-        let tokens: Vec<(bool, String)> = tokenize(&mut house_analyzer, segment)
-            .into_iter()
-            .map(|token| {
-                let is_house = token.chars().any(|c| c.is_ascii_digit());
-                (is_house, token)
-            })
+        let tokens = tokenize(&mut house_analyzer, segment);
+        let has_digit = tokens.iter().any(|token| token_has_digit(token));
+        let has_alias = tokens.iter().any(|token| is_house_alias(token));
+        let canonical_house = (has_digit && has_alias).then(|| {
+            tokens
+                .iter()
+                .filter(|token| token_has_digit(token) || is_house_alias(token))
+                .map(|token| canonical_token(token))
+                .collect::<String>()
+        });
+        raw_segments.push((tokens, canonical_house));
+    }
+
+    // Second pass: drop the type words that carry no signal, then the tokens
+    // that exist nowhere in the index. The last token is always kept: it is the
+    // one still being typed and may match as a prefix.
+    let total_segments = raw_segments.len();
+    let mut segments_out: Vec<Segment> = Vec::with_capacity(total_segments);
+    for (si, (tokens, canonical_house)) in raw_segments.into_iter().enumerate() {
+        let mut kept: Vec<QueryToken> = Vec::with_capacity(tokens.len());
+        for token in tokens {
+            let is_house = token_has_digit(&token);
             // Short type words carry no signal and are in no document, so they
             // can only make the query unsatisfiable. Anything with a digit
             // survives regardless of length (house numbers).
-            .filter(|(is_house, token)| *is_house || token.chars().count() >= MIN_TOKEN_LEN)
-            .collect();
-        // A segment that contributes no tokens (punctuation only) carries no
-        // constraint; dropping it is friendlier than making the whole query
-        // unsatisfiable.
-        if !tokens.is_empty() {
-            segment_tokens.push(tokens);
+            if !is_house && token.chars().count() < MIN_TOKEN_LEN {
+                continue;
+            }
+            let text_forms = tokenize(&mut text_analyzer, &token);
+            kept.push(QueryToken {
+                text: token,
+                text_forms,
+                is_house,
+            });
+        }
+
+        let is_last_segment = si == total_segments - 1;
+        let kept_len = kept.len();
+        let mut tokens_out: Vec<QueryToken> = Vec::with_capacity(kept_len);
+        for (index, token) in kept.into_iter().enumerate() {
+            // Only the very last token of the whole query is exempt from the
+            // existence check; everything else must be able to constrain.
+            let is_typing_token = is_last_segment && index + 1 == kept_len;
+            if is_typing_token || token_exists(searcher, fields, &token) {
+                tokens_out.push(token);
+            }
+        }
+
+        if !tokens_out.is_empty() {
+            segments_out.push(Segment {
+                tokens: tokens_out,
+                canonical_house,
+            });
         }
     }
-    if segment_tokens.is_empty() {
+    if segments_out.is_empty() {
         return None;
     }
 
-    assemble(fields, analyzers, &segment_tokens)
+    assemble(fields, &segments_out)
+}
+
+/// Index of the token that gets prefix (autocomplete) matching.
+///
+/// Normally that is the very last token. When the last token is a house number
+/// the user has already typed in full — `тверск 12` — the prefix moves to the
+/// preceding text token, which is the one still being completed.
+fn prefix_target(segments: &[Segment]) -> Option<(usize, usize)> {
+    let last_segment = segments.len() - 1;
+    let last_token = segments[last_segment].tokens.len() - 1;
+    if !segments[last_segment].tokens[last_token].is_house {
+        return Some((last_segment, last_token));
+    }
+    for (si, segment) in segments.iter().enumerate().rev() {
+        for (ti, token) in segment.tokens.iter().enumerate().rev() {
+            if !token.is_house {
+                return Some((si, ti));
+            }
+        }
+    }
+    None
 }
 
 /// AND the segments, and AND the tokens within each. A token is free to match
@@ -805,35 +1229,26 @@ fn build_query(fields: &Fields, analyzers: &Analyzers, raw: &str) -> Option<Box<
 /// order, as a phrase against `merged` (see [`phrase_query`]). It never
 /// filters — a document that matches every token but not the phrase is still a
 /// hit — it only lifts documents that read as the address the user typed.
-fn assemble(
-    fields: &Fields,
-    analyzers: &Analyzers,
-    segment_tokens: &[Vec<(bool, String)>],
-) -> Option<Box<dyn Query>> {
-    let last_segment = segment_tokens.len() - 1;
-    let last_token = segment_tokens[last_segment].len() - 1;
+fn assemble(fields: &Fields, segments: &[Segment]) -> Option<Box<dyn Query>> {
+    let target = prefix_target(segments);
+    let (last_segment, last_token) = target.unwrap_or((segments.len() - 1, 0));
 
-    let mut text_analyzer = analyzers.text.clone();
-    let mut segment_queries: Vec<Box<dyn Query>> = Vec::with_capacity(segment_tokens.len());
+    let mut segment_queries: Vec<Box<dyn Query>> = Vec::with_capacity(segments.len());
     // One analyzed form per query token, in query order, whenever every token
     // has exactly one — the terms the merged phrase is built from.
     let mut phrase_terms: Vec<String> = Vec::new();
     let mut phrase_possible = true;
 
-    for (si, tokens) in segment_tokens.iter().enumerate() {
-        let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(tokens.len());
-        for (ti, (is_house, token)) in tokens.iter().enumerate() {
-            // The house analyzer gives us the canonical (lowercased, unstemmed)
-            // form; re-analyzing that single token with the text analyzer yields
-            // the term actually present in the index.
-            let text_forms = tokenize(&mut text_analyzer, token);
-            // Only the very last token of the query completes as a prefix —
-            // that is the one the user is still typing.
-            let prefix = si == last_segment && ti == last_token && !*is_house;
-            if let Some(clause) = token_clause(fields, token, &text_forms, *is_house, prefix) {
+    for (si, segment) in segments.iter().enumerate() {
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(segment.tokens.len());
+        for (ti, token) in segment.tokens.iter().enumerate() {
+            let prefix = target == Some((si, ti));
+            if let Some(clause) =
+                token_clause(fields, token, segment.canonical_house.as_deref(), prefix)
+            {
                 clauses.push((Occur::Must, clause));
             }
-            match text_forms.as_slice() {
+            match token.text_forms.as_slice() {
                 [only] => phrase_terms.push(only.clone()),
                 // A token that stems or splits into several terms (or none)
                 // has no single position in the merged string, so no phrase is
@@ -857,7 +1272,7 @@ fn assemble(
         )),
     };
 
-    let (last_is_house, _) = &segment_tokens[last_segment][last_token];
+    let last_is_house = segments[last_segment].tokens[last_token].is_house;
     let phrase_clauses = if phrase_possible {
         phrase_clauses(fields, &phrase_terms, !last_is_house)
     } else {
@@ -939,21 +1354,24 @@ fn phrase_clauses(
 }
 
 /// One query token: it may match any of the text fields, and — when it looks
-/// like a house number — the house-number field as well.
+/// like a house number — the house-number fields as well.
+///
+/// `canonical_house` is the segment-level canonical form (`12 к 1` → `12к1`),
+/// offered as one more disjunct so both house-number spellings meet.
 ///
 /// Returns `None` when the token analyzed away to nothing (e.g. it exceeded the
 /// length cap), so the caller can drop it instead of adding an empty clause
 /// that would match nothing.
 fn token_clause(
     fields: &Fields,
-    raw_token: &str,
-    text_forms: &[String],
-    is_house: bool,
+    token: &QueryToken,
+    canonical_house: Option<&str>,
     prefix: bool,
 ) -> Option<Box<dyn Query>> {
-    let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(text_forms.len() * 8 + 2);
+    let mut clauses: Vec<(Occur, Box<dyn Query>)> =
+        Vec::with_capacity(token.text_forms.len() * 8 + 4);
 
-    for form in text_forms {
+    for form in &token.text_forms {
         for (field, field_boost) in [
             (fields.street, BOOST_STREET),
             (fields.name, BOOST_NAME),
@@ -982,26 +1400,334 @@ fn token_clause(
         }
     }
 
-    if is_house {
+    if token.is_house {
         // Streets carry digits too ("улица 1905 года"), so this is an
         // additional disjunct rather than a replacement. House numbers are
         // never prefix-matched: people type them in full.
-        let term = Term::from_field_text(fields.house_number, raw_token);
-        clauses.push((
+        for field in [fields.house_number, fields.house_normalized] {
+            let term = Term::from_field_text(field, &token.text);
+            clauses.push((
+                Occur::Should,
+                Box::new(BoostQuery::new(
+                    Box::new(TermQuery::new(term.clone(), IndexRecordOption::WithFreqs)),
+                    BOOST_HOUSE * EXACT_BOOST,
+                )),
+            ));
+            if token.text.chars().count() >= MIN_PREFIX_LEN {
+                clauses.push((
+                    Occur::Should,
+                    Box::new(BoostQuery::new(
+                        Box::new(FuzzyTermQuery::new(term, 1, true)),
+                        BOOST_HOUSE * FUZZY_BOOST,
+                    )),
+                ));
+            }
+        }
+        if let Some(canonical) = canonical_house {
+            let term = Term::from_field_text(fields.house_normalized, canonical);
+            clauses.push((
+                Occur::Should,
+                Box::new(BoostQuery::new(
+                    Box::new(TermQuery::new(term.clone(), IndexRecordOption::WithFreqs)),
+                    BOOST_HOUSE * EXACT_BOOST,
+                )),
+            ));
+            if canonical.chars().count() >= MIN_PREFIX_LEN {
+                clauses.push((
+                    Occur::Should,
+                    Box::new(BoostQuery::new(
+                        Box::new(FuzzyTermQuery::new(term, 1, true)),
+                        BOOST_HOUSE * FUZZY_BOOST,
+                    )),
+                ));
+            }
+        }
+    }
+
+    match clauses.len() {
+        0 => None,
+        1 => clauses.pop().map(|(_, q)| q),
+        _ => Some(Box::new(BooleanQuery::new(clauses))),
+    }
+}
+
+/// Ordering key of a collected hit: phrase tier, BM25 score, popularity.
+///
+/// The tier is a function of the score because the phrase tiers are additive
+/// constants ([`EXACT_PHRASE_SCORE`], [`PHRASE_SCORE`]) whose magnitude dwarfs
+/// any per-token BM25 sum. Encoding the tier first keeps the "phrase always
+/// wins" guarantee; the ordinary score then keeps street/name/region field
+/// boosts meaningful; popularity only breaks the ties BM25 leaves behind.
+///
+/// Popularity is deliberately *not* ahead of the score: it is a document-level
+/// signal, so ranking it first would let a document that matched a cheap field
+/// (say a region whose name happens to collide) overtake a real street match
+/// just because the document's name is a nationwide chain store.
+type RankKey = (u8, Score, u64);
+
+fn rank_tier(score: Score) -> u8 {
+    if score >= EXACT_PHRASE_SCORE {
+        2
+    } else if score >= PHRASE_SCORE {
+        1
+    } else {
+        0
+    }
+}
+
+/// Structured address parameters, each matched only against its own index
+/// field. Beside the free-text `q` these remove the cross-field noise of a
+/// token that matches any field — `city=Moscow` cannot match a street named
+/// Moscow.
+#[derive(Debug, Clone, Default)]
+pub struct StructuredQuery {
+    pub city: Option<String>,
+    pub region: Option<String>,
+    pub street: Option<String>,
+    pub house: Option<String>,
+    pub name: Option<String>,
+}
+
+impl StructuredQuery {
+    /// Whether any structured field carries a non-empty value.
+    pub fn has_values(&self) -> bool {
+        self.provided().next().is_some() || self.house().is_some()
+    }
+
+    fn provided(&self) -> impl Iterator<Item = (&str, &str, Score)> {
+        [
+            (self.region.as_deref(), "region", BOOST_REGION),
+            (self.city.as_deref(), "city", BOOST_CITY),
+            (self.street.as_deref(), "street", BOOST_STREET),
+            (self.name.as_deref(), "name", BOOST_NAME),
+        ]
+        .into_iter()
+        .filter_map(|(value, label, boost)| {
+            let value = value.map(str::trim).filter(|v| !v.is_empty())?;
+            Some((label, value, boost))
+        })
+    }
+
+    fn house(&self) -> Option<&str> {
+        self.house
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+    }
+}
+
+/// Everything a forward geocode request can ask for.
+#[derive(Debug, Clone)]
+pub struct SearchRequest {
+    /// Free-text query (`q`), matched across all fields.
+    pub query: Option<String>,
+    pub structured: StructuredQuery,
+    pub kind: GeocodeKindFilter,
+    pub limit: usize,
+    pub offset: usize,
+    /// Include the full multipolygon for zone hits. Polygon clones are large
+    /// for countries, so clients that only need a point can skip them.
+    pub include_polygon: bool,
+}
+
+impl Default for SearchRequest {
+    fn default() -> Self {
+        SearchRequest {
+            query: None,
+            structured: StructuredQuery::default(),
+            kind: GeocodeKindFilter::default(),
+            limit: DEFAULT_LIMIT,
+            offset: 0,
+            include_polygon: true,
+        }
+    }
+}
+
+/// AND the free-text query and the structured fields into one query.
+///
+/// Either side may be absent; `None` means the request carries no constraint at
+/// all (an empty `q` and no structured values).
+fn build_request_query(
+    fields: &Fields,
+    analyzers: &Analyzers,
+    searcher: &Searcher,
+    request: &SearchRequest,
+) -> Option<Box<dyn Query>> {
+    let free = request
+        .query
+        .as_deref()
+        .filter(|q| !q.trim().is_empty())
+        .and_then(|q| build_query(fields, analyzers, searcher, q));
+    let structured = structured_query(fields, analyzers, searcher, &request.structured);
+
+    match (free, structured) {
+        (Some(free), Some(structured)) => Some(Box::new(BooleanQuery::new(vec![
+            (Occur::Must, free),
+            (Occur::Must, structured),
+        ]))),
+        (Some(query), None) | (None, Some(query)) => Some(query),
+        (None, None) => None,
+    }
+}
+
+/// One structured field: its tokens are AND-ed, each free to match exactly or
+/// (for the last one) as a prefix, with the usual exact/fuzzy pair.
+fn field_text_query(
+    analyzers: &Analyzers,
+    searcher: &Searcher,
+    field: Field,
+    boost: Score,
+    text: &str,
+) -> Option<Box<dyn Query>> {
+    let mut analyzer = analyzers.text.clone();
+    let forms = tokenize(&mut analyzer, text);
+    let mut token_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(forms.len());
+    let last = forms.len().saturating_sub(1);
+
+    for (i, form) in forms.iter().enumerate() {
+        let prefix = i == last;
+        // Like the free-text query: an absent token cannot constrain, except
+        // the last one, which may still complete as a prefix.
+        if !prefix
+            && searcher
+                .doc_freq(&Term::from_field_text(field, form))
+                .unwrap_or(0)
+                == 0
+        {
+            continue;
+        }
+        let mut alternatives: Vec<(Occur, Box<dyn Query>)> = vec![(
+            Occur::Should,
+            Box::new(BoostQuery::new(
+                exact_query(field, form, prefix),
+                boost * EXACT_BOOST,
+            )),
+        )];
+        if let Some(fuzzy) = fuzzy_query(field, form, prefix) {
+            alternatives.push((
+                Occur::Should,
+                Box::new(BoostQuery::new(fuzzy, boost * FUZZY_BOOST)),
+            ));
+        }
+        token_clauses.push((Occur::Must, Box::new(BooleanQuery::new(alternatives))));
+    }
+
+    match token_clauses.len() {
+        0 => None,
+        1 => token_clauses.pop().map(|(_, q)| q),
+        _ => Some(Box::new(BooleanQuery::new(token_clauses))),
+    }
+}
+
+/// Structured house number, matched against the raw and normalized house
+/// fields only.
+fn field_house_query(fields: &Fields, analyzers: &Analyzers, text: &str) -> Option<Box<dyn Query>> {
+    let mut analyzer = analyzers.house.clone();
+    let tokens = tokenize(&mut analyzer, text);
+    let has_digit = tokens.iter().any(|token| token_has_digit(token));
+    let has_alias = tokens.iter().any(|token| is_house_alias(token));
+    let canonical = (has_digit && has_alias).then(|| {
+        tokens
+            .iter()
+            .filter(|token| token_has_digit(token) || is_house_alias(token))
+            .map(|token| canonical_token(token))
+            .collect::<String>()
+    });
+
+    let mut token_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+    for token in tokens {
+        let is_house = token_has_digit(&token);
+        if !is_house {
+            continue;
+        }
+        let mut alternatives: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+        for field in [fields.house_number, fields.house_normalized] {
+            let term = Term::from_field_text(field, &token);
+            alternatives.push((
+                Occur::Should,
+                Box::new(BoostQuery::new(
+                    Box::new(TermQuery::new(term.clone(), IndexRecordOption::WithFreqs)),
+                    BOOST_HOUSE * EXACT_BOOST,
+                )),
+            ));
+            if token.chars().count() >= MIN_PREFIX_LEN {
+                alternatives.push((
+                    Occur::Should,
+                    Box::new(BoostQuery::new(
+                        Box::new(FuzzyTermQuery::new(term, 1, true)),
+                        BOOST_HOUSE * FUZZY_BOOST,
+                    )),
+                ));
+            }
+        }
+        token_clauses.push((Occur::Must, Box::new(BooleanQuery::new(alternatives))));
+    }
+
+    // The canonical form is an *alternative* to the per-token conjunction, not
+    // another required clause: `12 к 1` must match a stored `12к1`, which has
+    // no separate `12` or `1` tokens.
+    let token_conjunction: Option<Box<dyn Query>> = match token_clauses.len() {
+        0 => None,
+        1 => token_clauses.pop().map(|(_, q)| q),
+        _ => Some(Box::new(BooleanQuery::new(token_clauses))),
+    };
+
+    let canonical_clause: Option<Box<dyn Query>> = canonical.map(|canonical| {
+        let term = Term::from_field_text(fields.house_normalized, &canonical);
+        let mut alternatives: Vec<(Occur, Box<dyn Query>)> = vec![(
             Occur::Should,
             Box::new(BoostQuery::new(
                 Box::new(TermQuery::new(term.clone(), IndexRecordOption::WithFreqs)),
                 BOOST_HOUSE * EXACT_BOOST,
             )),
-        ));
-        if raw_token.chars().count() >= MIN_PREFIX_LEN {
-            clauses.push((
+        )];
+        if canonical.chars().count() >= MIN_PREFIX_LEN {
+            alternatives.push((
                 Occur::Should,
                 Box::new(BoostQuery::new(
                     Box::new(FuzzyTermQuery::new(term, 1, true)),
                     BOOST_HOUSE * FUZZY_BOOST,
                 )),
             ));
+        }
+        Box::new(BooleanQuery::new(alternatives)) as Box<dyn Query>
+    });
+
+    match (token_conjunction, canonical_clause) {
+        (Some(tokens), Some(canonical)) => Some(Box::new(BooleanQuery::new(vec![
+            (Occur::Should, tokens),
+            (Occur::Should, canonical),
+        ]))),
+        (Some(query), None) | (None, Some(query)) => Some(query),
+        (None, None) => None,
+    }
+}
+
+/// Build the structured half of a request; `None` when nothing was provided.
+fn structured_query(
+    fields: &Fields,
+    analyzers: &Analyzers,
+    searcher: &Searcher,
+    structured: &StructuredQuery,
+) -> Option<Box<dyn Query>> {
+    let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+
+    for (label, value, boost) in structured.provided() {
+        let field = match label {
+            "region" => fields.region,
+            "city" => fields.city,
+            "street" => fields.street,
+            "name" => fields.name,
+            _ => continue,
+        };
+        if let Some(query) = field_text_query(analyzers, searcher, field, boost, value) {
+            clauses.push((Occur::Must, query));
+        }
+    }
+
+    if let Some(house) = structured.house() {
+        if let Some(query) = field_house_query(fields, analyzers, house) {
+            clauses.push((Occur::Must, query));
         }
     }
 
@@ -1013,27 +1739,44 @@ fn token_clause(
 }
 
 impl ForwardGeocoder {
-    pub fn search(
-        &self,
-        query_text: &str,
-        kind: GeocodeKindFilter,
-        limit: usize,
-    ) -> tantivy::Result<Vec<SearchResultItem>> {
-        let limit = limit.clamp(1, MAX_LIMIT);
+    pub fn search(&self, request: &SearchRequest) -> tantivy::Result<Vec<SearchResultItem>> {
+        let limit = request.limit.clamp(1, MAX_LIMIT);
+        // Pagination is shallow by design: the collector over-fetches a bounded
+        // number of documents, so an offset beyond that yields nothing.
+        let offset = request.offset.min(MAX_FETCH);
 
-        let Some(query) = build_query(&self.fields, &self.analyzers, query_text) else {
+        let searcher = self.index_reader.searcher();
+        let Some(query) = build_request_query(&self.fields, &self.analyzers, &searcher, request)
+        else {
             return Ok(Vec::new());
         };
 
-        let searcher = self.index_reader.searcher();
-        let fetch = limit.saturating_mul(OVERFETCH).clamp(MIN_FETCH, MAX_FETCH);
+        let fetch = (limit + offset)
+            .saturating_mul(OVERFETCH)
+            .clamp(MIN_FETCH, MAX_FETCH);
 
         // One query carries both tiers: exact/prefix clauses are boosted well
         // above the fuzzy ones, so an exact hit always outranks a near-miss
         // while near-misses still surface when nothing better exists.
-        let hits = self.collect(&searcher, query.as_ref(), kind, fetch)?;
+        let hits = self.collect(&searcher, query.as_ref(), request.kind, fetch)?;
 
-        self.collapse(&searcher, hits, limit)
+        let mut results =
+            self.collapse(&searcher, hits, limit + offset, request.include_polygon)?;
+        if offset > 0 {
+            results.drain(..offset.min(results.len()));
+        }
+        Ok(results)
+    }
+
+    /// Distinct term suggestions for the prefix being typed, ranked by
+    /// approximate document frequency.
+    ///
+    /// This reads the term dictionaries directly instead of running a search:
+    /// suggestions are distinct strings with counts, not documents, and the
+    /// term dictionary is already sorted, so a prefix is a range scan.
+    pub fn suggest(&self, input: &str, limit: usize) -> tantivy::Result<Vec<Suggestion>> {
+        let searcher = self.index_reader.searcher();
+        suggest_terms(&searcher, &self.fields, &self.analyzers, input, limit)
     }
 
     fn collect(
@@ -1042,9 +1785,14 @@ impl ForwardGeocoder {
         query: &dyn Query,
         kind: GeocodeKindFilter,
         fetch: usize,
-    ) -> tantivy::Result<Vec<(Score, DocAddress)>> {
+    ) -> tantivy::Result<Vec<(RankKey, DocAddress)>> {
         // `FilterCollector` runs the predicate on the fast-field value, so the
         // kind filter is applied during collection rather than after it.
+        //
+        // `tweak_score` replaces the raw BM25 score with `(tier, popularity,
+        // score)`: the collector sorts by that key in descending order, so the
+        // over-fetch keeps the most popular members of a score tie instead of
+        // an arbitrary subset.
         let collector = FilterCollector::new(
             GEO_TYPE_FIELD.to_string(),
             move |value: u64| {
@@ -1052,7 +1800,14 @@ impl ForwardGeocoder {
                     .map(|obj_type| kind.matches(obj_type))
                     .unwrap_or(false)
             },
-            TopDocs::with_limit(fetch).order_by_score(),
+            TopDocs::with_limit(fetch).tweak_score(move |segment_reader: &SegmentReader| {
+                let popularity = segment_reader
+                    .fast_fields()
+                    .u64("popularity")
+                    .expect("popularity is a fast field in the schema")
+                    .first_or_default_col(0u64);
+                move |doc: DocId, score: Score| (rank_tier(score), score, popularity.get_val(doc))
+            }),
         );
         searcher.search(query, &collector)
     }
@@ -1065,110 +1820,121 @@ impl ForwardGeocoder {
     fn collapse(
         &self,
         searcher: &Searcher,
-        hits: Vec<(Score, DocAddress)>,
-        limit: usize,
+        hits: Vec<(RankKey, DocAddress)>,
+        keep: usize,
+        include_polygon: bool,
     ) -> tantivy::Result<Vec<SearchResultItem>> {
         let mut seen: HashMap<String, usize> = HashMap::new();
-        let mut kept: Vec<(Score, SearchResultItem)> = Vec::new();
+        let mut kept: Vec<(RankKey, SearchResultItem)> = Vec::new();
 
-        for (score, address) in hits {
-            let document: TantivyDocument = searcher.doc(address)?;
-            let (key, item) = self.materialize(&document, score)?;
+        for (rank, address) in hits {
+            let (key, item) = self.materialize(searcher, address, rank.1, include_polygon)?;
             match seen.get(&key) {
                 Some(&index) => {
-                    if score > kept[index].0 {
-                        kept[index] = (score, item);
+                    if rank > kept[index].0 {
+                        kept[index] = (rank, item);
                     }
                 }
                 None => {
                     seen.insert(key, kept.len());
-                    kept.push((score, item));
+                    kept.push((rank, item));
                 }
             }
         }
 
         kept.sort_by(|a, b| {
-            b.0.total_cmp(&a.0)
+            b.0 .0
+                .cmp(&a.0 .0)
+                .then_with(|| b.0 .1.total_cmp(&a.0 .1))
+                .then_with(|| b.0 .2.cmp(&a.0 .2))
                 .then_with(|| kind_rank(b.1.geo_type).cmp(&kind_rank(a.1.geo_type)))
                 .then_with(|| a.1.address_string.cmp(&b.1.address_string))
         });
-        kept.truncate(limit);
+        kept.truncate(keep);
 
         Ok(kept.into_iter().map(|(_, item)| item).collect())
     }
 
-    /// Turn a stored document into a result, plus the key it collapses under.
-    fn materialize(
+    /// Read the two fast fields that say what a document points at.
+    fn document_location(
         &self,
-        document: &TantivyDocument,
-        score: Score,
-    ) -> tantivy::Result<(String, SearchResultItem)> {
-        let text = |field: Field| -> &str {
-            document
-                .get_first(field)
-                .and_then(|value| value.as_str())
-                .unwrap_or("")
-                .trim()
-        };
+        searcher: &Searcher,
+        address: DocAddress,
+    ) -> tantivy::Result<(GeoObjectKind, u64)> {
+        let segment_reader = searcher.segment_reader(address.segment_ord);
+        let fast_fields = segment_reader.fast_fields();
 
-        let geo_type = GeoObjectKind::try_from(
-            document
-                .get_first(self.fields.geo_type)
-                .and_then(|value| value.as_u64())
-                .ok_or_else(|| {
-                    TantivyError::InvalidArgument("document is missing geo_type".into())
-                })?,
-        )?;
-
-        let cache_location = document
-            .get_first(self.fields.cache_location)
-            .and_then(|value| value.as_u64())
+        let geo_type = fast_fields
+            .u64(GEO_TYPE_FIELD)?
+            .first(address.doc_id)
+            .ok_or_else(|| TantivyError::InvalidArgument("document is missing geo_type".into()))?;
+        let cache_location = fast_fields
+            .u64("cache_location")?
+            .first(address.doc_id)
             .ok_or_else(|| {
                 TantivyError::InvalidArgument("document is missing cache_location".into())
             })?;
+
+        Ok((GeoObjectKind::try_from(geo_type)?, cache_location))
+    }
+
+    /// Turn a hit into a result, plus the key it collapses under.
+    ///
+    /// The address parts are resolved from the mmap'd cache rather than from a
+    /// stored document: the cache is the single source of truth, and keeping a
+    /// second copy of every string in the index only costs space and decode
+    /// time.
+    fn materialize(
+        &self,
+        searcher: &Searcher,
+        address: DocAddress,
+        score: Score,
+        include_polygon: bool,
+    ) -> tantivy::Result<(String, SearchResultItem)> {
+        let (geo_type, cache_location) = self.document_location(searcher, address)?;
+        let cache = &self.geocoder.cache;
         let is_zone = geo_type == GeoObjectKind::Zone;
 
-        let (lat, lon, multipolygon) = if is_zone {
-            let zone = self
-                .cache
-                .zones
-                .get(cache_location as usize)
-                .ok_or_else(|| {
-                    TantivyError::InvalidArgument(format!(
-                        "zone index {cache_location} is out of range for this cache"
-                    ))
-                })?;
-            // The cache holds no coordinate for a zone, so its centroid is
-            // recomputed here — the same `centroid()` on the same polygon the
-            // builder used, so the value is unchanged. O(vertices), but dwarfed
-            // by the polygon clone the response already needs.
-            let centroid = zone.polygon.centroid().ok_or_else(|| {
-                TantivyError::InvalidArgument("zone polygon has no centroid".into())
+        let (lat, lon, country, parts, multipolygon) = if is_zone {
+            let zone = cache.zones.get(cache_location as usize).ok_or_else(|| {
+                TantivyError::InvalidArgument(format!(
+                    "zone index {cache_location} is out of range for this cache"
+                ))
             })?;
-            (centroid.y(), centroid.x(), Some(zone.polygon.clone()))
+            // The centroid is precomputed when the cache is parsed; deriving it
+            // here would be O(vertices) on every request.
+            (
+                zone.centroid.y(),
+                zone.centroid.x(),
+                String::new(),
+                vec![zone.name.clone()],
+                include_polygon.then(|| zone.polygon.clone()),
+            )
         } else {
-            let (lon, lat) = self.cache.read_coord(cache_location as usize);
-            (lat.get(), lon.get(), None)
+            let point = cache.point_at(cache_location as usize);
+            let parts = [
+                cache.read_string(point.data.region_id.get()),
+                cache.read_string(point.data.city_id.get()),
+                cache.read_string(point.data.street_id.get()),
+                cache.read_string(point.data.house_number_id.get()),
+                cache.read_string(point.data.name_id.get()),
+            ]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect();
+            let country = self
+                .geocoder
+                .country_at(point.lon, point.lat)
+                .unwrap_or_default()
+                .to_string();
+            (point.lat, point.lon, country, parts, None)
         };
-
-        // Empty strings are stored as-is (tantivy's add_text has no empty check),
-        // so a road with no `name` would otherwise render as "…, Ленина, , ".
-        let parts: Vec<&str> = [
-            text(self.fields.region),
-            text(self.fields.city),
-            text(self.fields.street),
-            text(self.fields.house_number),
-            text(self.fields.name),
-        ]
-        .into_iter()
-        .filter(|part| !part.is_empty())
-        .collect();
 
         let address_string = parts.join(", ");
 
-        let mut key = String::with_capacity(address_string.len() + 8);
+        let mut key = String::with_capacity(address_string.len() + country.len() + 8);
         key.push_str(&(geo_type as u64).to_string());
-        for part in &parts {
+        for part in std::iter::once(&country).chain(parts.iter()) {
             key.push('\u{1}');
             key.push_str(&part.to_lowercase());
         }
@@ -1185,6 +1951,7 @@ impl ForwardGeocoder {
                 score,
                 point: (lat, lon),
                 geo_type,
+                country,
                 multipolygon,
             },
         ))
@@ -1209,13 +1976,23 @@ mod tests {
             city: city.to_string(),
             street: street.to_string(),
             house_number: house_number.to_string(),
+            house_normalized: canonical_house(house_number),
             name: name.to_string(),
             geo_kind: GeoObjectKind::Building,
+            popularity: 0,
             cache_location: location,
         }
     }
 
-    fn build_test_index(docs: Vec<IndexedDoc>) -> (Index, Fields, Analyzers) {
+    impl IndexedDoc {
+        fn popular(mut self, popularity: u64) -> Self {
+            self.popularity = popularity;
+            self
+        }
+    }
+
+    fn build_test_index(docs: Vec<IndexedDoc>) -> (Index, Fields, Analyzers, Vec<IndexedDoc>) {
+        let fixtures = docs.clone();
         let fingerprint = CacheFingerprint {
             format: SIDECAR_FORMAT,
             date_created: "test".to_string(),
@@ -1224,17 +2001,112 @@ mod tests {
             zones: 0,
             cache_size: 0,
         };
-        build_index(docs.into_iter(), "", None, &fingerprint).unwrap()
+        let (index, fields, analyzers, _mode) =
+            build_index(docs.into_iter(), "", None, &fingerprint).unwrap();
+        (index, fields, analyzers, fixtures)
     }
 
-    /// Search and render the stored address fields, in ranked order.
+    /// Read a u64 fast field for a doc address the way production does.
+    fn fast_u64(searcher: &Searcher, field: &str, address: DocAddress) -> u64 {
+        searcher
+            .segment_reader(address.segment_ord)
+            .fast_fields()
+            .u64(field)
+            .unwrap()
+            .first(address.doc_id)
+            .unwrap()
+    }
+
+    /// Render a fixture the way `materialize` renders the same address parts
+    /// (country first, so the fixtures stay distinguishable).
+    fn render_fixture(doc: &IndexedDoc) -> String {
+        [
+            doc.country.as_str(),
+            doc.city.as_str(),
+            doc.street.as_str(),
+            doc.house_number.as_str(),
+            doc.name.as_str(),
+        ]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ")
+    }
+
+    /// Run a built query with the production rank key and render the fixtures.
+    fn run_query_with(
+        searcher: &Searcher,
+        fixtures: &[IndexedDoc],
+        query: &dyn Query,
+    ) -> Vec<(RankKey, String)> {
+        let collector =
+            TopDocs::with_limit(10).tweak_score(move |segment_reader: &SegmentReader| {
+                let popularity = segment_reader
+                    .fast_fields()
+                    .u64("popularity")
+                    .unwrap()
+                    .first_or_default_col(0u64);
+                move |doc: DocId, score: Score| (rank_tier(score), score, popularity.get_val(doc))
+            });
+        searcher
+            .search(query, &collector)
+            .unwrap()
+            .into_iter()
+            .map(|(rank, address)| {
+                let location = fast_u64(searcher, "cache_location", address) as usize;
+                (rank, render_fixture(&fixtures[location]))
+            })
+            .collect()
+    }
+
+    /// Run a built query with a fresh searcher.
+    fn run_query(
+        index: &Index,
+        fixtures: &[IndexedDoc],
+        query: Box<dyn Query>,
+    ) -> Vec<(RankKey, String)> {
+        let searcher = index.reader().unwrap().searcher();
+        run_query_with(&searcher, fixtures, query.as_ref())
+    }
+
+    /// Search and return `(rank key, rendered address)` pairs, in ranked order,
+    /// using the same rank key production uses.
+    fn search_ranked(
+        index: &Index,
+        fields: &Fields,
+        analyzers: &Analyzers,
+        fixtures: &[IndexedDoc],
+        query_text: &str,
+    ) -> Vec<(RankKey, String)> {
+        let searcher = index.reader().unwrap().searcher();
+        let query =
+            build_query(fields, analyzers, &searcher, query_text).expect("query must build");
+        run_query(index, fixtures, query)
+    }
+
+    /// Search with a full request (structured fields, offset, …).
+    fn search_request(
+        index: &Index,
+        fields: &Fields,
+        analyzers: &Analyzers,
+        fixtures: &[IndexedDoc],
+        request: &SearchRequest,
+    ) -> Vec<(RankKey, String)> {
+        let searcher = index.reader().unwrap().searcher();
+        let query = build_request_query(fields, analyzers, &searcher, request)
+            .expect("request must build a query");
+        run_query(index, fixtures, query)
+    }
+
+    /// Search and render the fixture addresses, in ranked order.
     fn search(
         index: &Index,
         fields: &Fields,
         analyzers: &Analyzers,
+        fixtures: &[IndexedDoc],
         query_text: &str,
     ) -> Vec<String> {
-        search_scored(index, fields, analyzers, query_text)
+        search_ranked(index, fields, analyzers, fixtures, query_text)
             .into_iter()
             .map(|(_, address)| address)
             .collect()
@@ -1245,41 +2117,13 @@ mod tests {
         index: &Index,
         fields: &Fields,
         analyzers: &Analyzers,
+        fixtures: &[IndexedDoc],
         query_text: &str,
     ) -> Vec<(Score, String)> {
-        let query = build_query(fields, analyzers, query_text).expect("query must build");
-        let searcher = index.reader().unwrap().searcher();
-        searcher
-            .search(query.as_ref(), &TopDocs::with_limit(10).order_by_score())
-            .unwrap()
+        search_ranked(index, fields, analyzers, fixtures, query_text)
             .into_iter()
-            .map(|(score, address)| {
-                let document: TantivyDocument = searcher.doc(address).unwrap();
-                (score, render_address(&document, *fields))
-            })
+            .map(|(rank, address)| (rank.1, address))
             .collect()
-    }
-
-    /// Render the stored address fields the same way `materialize` does.
-    fn render_address(document: &TantivyDocument, fields: Fields) -> String {
-        let text = |field: Field| {
-            document
-                .get_first(field)
-                .and_then(|value| value.as_str())
-                .unwrap_or("")
-                .to_string()
-        };
-        [
-            text(fields.country),
-            text(fields.city),
-            text(fields.street),
-            text(fields.house_number),
-            text(fields.name),
-        ]
-        .into_iter()
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join(", ")
     }
 
     #[test]
@@ -1290,14 +2134,17 @@ mod tests {
 
     #[test]
     fn phrase_outranks_the_same_tokens_in_another_order() {
-        let in_order = indexed_doc("Russia", "London", "High Street", "12", "", 0);
-        let reordered = indexed_doc("Russia", "London", "", "12", "High Street", 1);
-        let (index, fields, analyzers) = build_test_index(vec![in_order, reordered]);
+        let fixtures = vec![
+            indexed_doc("Russia", "London", "High Street", "12", "", 0),
+            indexed_doc("Russia", "London", "", "12", "High Street", 1),
+        ];
+        let (index, fields, analyzers, fixtures) = build_test_index(fixtures);
 
         let results = search(
             &index,
             &fields,
             &analyzers,
+            &fixtures,
             "russia, london, high street, 12",
         );
 
@@ -1319,9 +2166,15 @@ mod tests {
         let one_gap = indexed_doc("Russia", "London", "High Street", "12", "", 0);
         // Nothing intervenes here, so the same query is a contiguous match.
         let contiguous = indexed_doc("Russia", "London", "High", "12", "Street", 1);
-        let (index, fields, analyzers) = build_test_index(vec![one_gap, contiguous]);
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![one_gap, contiguous]);
 
-        let results = search_scored(&index, &fields, &analyzers, "russia london high 12");
+        let results = search_scored(
+            &index,
+            &fields,
+            &analyzers,
+            &fixtures,
+            "russia london high 12",
+        );
 
         let (contiguous_score, contiguous_address) = &results[0];
         assert_eq!(contiguous_address, "Russia, London, High, 12, Street");
@@ -1345,23 +2198,254 @@ mod tests {
 
     #[test]
     fn phrase_matches_a_prefix_on_the_last_token() {
-        let doc = indexed_doc("Russia", "London", "High Street", "", "", 0);
-        let (index, fields, analyzers) = build_test_index(vec![doc]);
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![indexed_doc(
+            "Russia",
+            "London",
+            "High Street",
+            "",
+            "",
+            0,
+        )]);
 
-        let results = search(&index, &fields, &analyzers, "russia london high stre");
+        let results = search(
+            &index,
+            &fields,
+            &analyzers,
+            &fixtures,
+            "russia london high stre",
+        );
 
         assert_eq!(results, vec!["Russia, London, High Street".to_string()]);
     }
 
     #[test]
     fn country_field_is_searchable() {
-        let with_country = indexed_doc("Russia", "Moscow", "Tverskaya", "12", "", 0);
-        let without_country = indexed_doc("", "Moscow", "Tverskaya", "12", "", 1);
-        let (index, fields, analyzers) = build_test_index(vec![with_country, without_country]);
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![
+            indexed_doc("Russia", "Moscow", "Tverskaya", "12", "", 0),
+            indexed_doc("", "Moscow", "Tverskaya", "12", "", 1),
+        ]);
 
-        let results = search(&index, &fields, &analyzers, "russia");
+        let results = search(&index, &fields, &analyzers, &fixtures, "russia");
 
         assert_eq!(results, vec!["Russia, Moscow, Tverskaya, 12".to_string()]);
+    }
+
+    #[test]
+    fn popularity_breaks_score_ties() {
+        // Both streets match "high" identically (same term, same field, same
+        // length), so only the popularity signal can order them.
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![
+            indexed_doc("", "London", "High Street", "", "", 0).popular(100),
+            indexed_doc("", "London", "High Road", "", "", 1).popular(1),
+        ]);
+
+        let results = search(&index, &fields, &analyzers, &fixtures, "high");
+
+        assert_eq!(
+            results,
+            vec![
+                "London, High Street".to_string(),
+                "London, High Road".to_string()
+            ],
+            "the more popular street must come first"
+        );
+    }
+
+    #[test]
+    fn phrase_tier_outranks_popularity() {
+        // The contiguous phrase sits below the exact-phrase constants and must
+        // win despite the other document's popularity.
+        let contiguous = indexed_doc("", "London", "High", "12", "Street", 0).popular(0);
+        let popular_gap = indexed_doc("", "London", "High Street", "12", "", 1).popular(1_000_000);
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![contiguous, popular_gap]);
+
+        let results = search(&index, &fields, &analyzers, &fixtures, "london high 12");
+
+        assert_eq!(
+            results.first().map(String::as_str),
+            Some("London, High, 12, Street"),
+            "the phrase tier must outrank popularity"
+        );
+    }
+
+    #[test]
+    fn absent_non_final_token_is_dropped() {
+        let (index, fields, analyzers, fixtures) =
+            build_test_index(vec![indexed_doc("", "London", "High Street", "12", "", 0)]);
+
+        // "city" exists in no document and is not the token being typed, so it
+        // must not make the query unsatisfiable.
+        let results = search(&index, &fields, &analyzers, &fixtures, "city london");
+
+        assert_eq!(results, vec!["London, High Street, 12".to_string()]);
+    }
+
+    #[test]
+    fn house_aliases_and_compact_forms_meet() {
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![
+            indexed_doc("", "Moscow", "Tverskaya", "12 к 1", "", 0),
+            indexed_doc("", "Moscow", "Tverskaya", "12к1", "", 1),
+        ]);
+
+        // The alias spelling finds the compact one through house_normalized…
+        let spacy = search(&index, &fields, &analyzers, &fixtures, "12 к 1");
+        assert_eq!(spacy.len(), 2, "the alias spelling must find both forms");
+
+        // …and the compact spelling finds the alias one.
+        let compact = search(&index, &fields, &analyzers, &fixtures, "12к1");
+        assert_eq!(
+            compact.len(),
+            2,
+            "the compact spelling must find both forms"
+        );
+    }
+
+    #[test]
+    fn structured_city_does_not_match_a_street() {
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![
+            indexed_doc("", "Moscow", "Tverskaya", "", "", 0),
+            indexed_doc("", "London", "Moscow Street", "", "", 1),
+        ]);
+        let request = SearchRequest {
+            structured: StructuredQuery {
+                city: Some("Moscow".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let results = search_request(&index, &fields, &analyzers, &fixtures, &request);
+
+        let addresses: Vec<String> = results.into_iter().map(|(_, address)| address).collect();
+        assert_eq!(
+            addresses,
+            vec!["Moscow, Tverskaya".to_string()],
+            "a city parameter must not match a street of the same name"
+        );
+    }
+
+    #[test]
+    fn structured_fields_are_anded_with_free_text() {
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![
+            indexed_doc("", "Moscow", "Tverskaya", "", "", 0),
+            indexed_doc("", "Moscow", "Arbat", "", "", 1),
+            indexed_doc("", "London", "Tverskaya", "", "", 2),
+        ]);
+        let request = SearchRequest {
+            query: Some("moscow".to_string()),
+            structured: StructuredQuery {
+                street: Some("Tverskaya".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let results = search_request(&index, &fields, &analyzers, &fixtures, &request);
+
+        let addresses: Vec<String> = results.into_iter().map(|(_, address)| address).collect();
+        assert_eq!(addresses, vec!["Moscow, Tverskaya".to_string()]);
+    }
+
+    #[test]
+    fn structured_house_matches_both_spellings() {
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![
+            indexed_doc("", "Moscow", "Tverskaya", "12 к 1", "", 0),
+            indexed_doc("", "Moscow", "Tverskaya", "12к1", "", 1),
+        ]);
+        let request = SearchRequest {
+            structured: StructuredQuery {
+                house: Some("12 к 1".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let results = search_request(&index, &fields, &analyzers, &fixtures, &request);
+
+        assert_eq!(results.len(), 2, "both house spellings must match");
+    }
+
+    #[test]
+    fn suggestions_come_from_the_term_dictionary() {
+        let (index, fields, analyzers, _fixtures) = build_test_index(vec![
+            indexed_doc("", "Moscow", "", "", "", 0),
+            indexed_doc("", "Moscow", "", "", "", 1),
+            indexed_doc("", "Moscow", "", "", "", 2),
+            indexed_doc("", "Mombasa", "", "", "", 3),
+        ]);
+        let searcher = index.reader().unwrap().searcher();
+
+        let suggestions = suggest_terms(&searcher, &fields, &analyzers, "mo", 10).unwrap();
+
+        let moscow = suggestions
+            .iter()
+            .find(|s| s.text == "moscow")
+            .expect("moscow must be suggested");
+        assert_eq!(moscow.doc_freq, 3);
+        let mombasa = suggestions
+            .iter()
+            .find(|s| s.text == "mombasa")
+            .expect("mombasa must be suggested");
+        assert_eq!(mombasa.doc_freq, 1);
+        assert_eq!(
+            suggestions[0].text, "moscow",
+            "the more frequent term must rank first"
+        );
+    }
+
+    #[test]
+    fn prefix_upper_bound_increments_the_last_character() {
+        assert_eq!(prefix_upper_bound("mo"), "mp");
+        assert_eq!(prefix_upper_bound("m"), "n");
+        assert_eq!(prefix_upper_bound(""), "");
+    }
+
+    /// Benchmark-style harness for tuning the query constants; not run by
+    /// default.
+    ///
+    /// `cargo test --release --manifest-path server_rs/Cargo.toml -- --ignored
+    /// --nocapture bench_forward`
+    #[test]
+    #[ignore = "manual benchmark"]
+    fn bench_forward() {
+        let mut docs = Vec::with_capacity(50_000);
+        let cities = ["Moscow", "London", "Paris", "Berlin", "Madrid"];
+        let streets = [
+            "High Street",
+            "Main Road",
+            "Station Road",
+            "Church Lane",
+            "Park Avenue",
+        ];
+        for i in 0..50_000u64 {
+            let city = cities[(i as usize) % cities.len()];
+            let street = streets[((i / cities.len() as u64) as usize) % streets.len()];
+            docs.push(
+                indexed_doc("Testland", city, street, &(i % 200).to_string(), "", i).popular(i),
+            );
+        }
+        let (index, fields, analyzers, fixtures) = build_test_index(docs);
+        let searcher = index.reader().unwrap().searcher();
+
+        let iterations = 200;
+        for query in ["high", "high st", "moscow high", "station roa", "12"] {
+            let Some(warmup) = build_query(&fields, &analyzers, &searcher, query) else {
+                continue;
+            };
+            let _ = run_query_with(&searcher, &fixtures, warmup.as_ref());
+            let started = std::time::Instant::now();
+            for _ in 0..iterations {
+                let Some(q) = build_query(&fields, &analyzers, &searcher, query) else {
+                    continue;
+                };
+                let _ = run_query_with(&searcher, &fixtures, q.as_ref());
+            }
+            println!(
+                "{query:?}: {:.3} ms/query over {} docs",
+                started.elapsed().as_secs_f64() * 1000.0 / f64::from(iterations),
+                fixtures.len()
+            );
+        }
     }
 
     #[test]
@@ -1369,8 +2453,7 @@ mod tests {
         // Explicit cache types win over what the weight alone would imply.
         assert_eq!(GeoObjectKind::from_cache(1, 5), GeoObjectKind::Building);
         assert_eq!(GeoObjectKind::from_cache(2, 10), GeoObjectKind::Road);
-        // Areas surface as building until the API grows an area kind.
-        assert_eq!(GeoObjectKind::from_cache(3, 3), GeoObjectKind::Building);
+        assert_eq!(GeoObjectKind::from_cache(3, 3), GeoObjectKind::Area);
     }
 
     #[test]
@@ -1378,7 +2461,8 @@ mod tests {
         // geo_type == 0 (legacy 21-byte record) falls back to the weight proxy.
         assert_eq!(GeoObjectKind::from_cache(0, 5), GeoObjectKind::Road);
         assert_eq!(GeoObjectKind::from_cache(0, 10), GeoObjectKind::Building);
-        assert_eq!(GeoObjectKind::from_cache(0, 3), GeoObjectKind::Building);
+        assert_eq!(GeoObjectKind::from_cache(0, 3), GeoObjectKind::Area);
+        assert_eq!(GeoObjectKind::from_cache(0, 2), GeoObjectKind::Area);
         // Unrecognised future values also fall back rather than fail.
         assert_eq!(GeoObjectKind::from_cache(99, 5), GeoObjectKind::Road);
     }

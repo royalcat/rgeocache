@@ -1,12 +1,3 @@
-mod border_tree;
-mod cache;
-mod forward_geocoder;
-mod geocoder;
-mod server;
-
-#[allow(unused_imports, dead_code)]
-mod proto;
-
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::thread;
@@ -17,7 +8,8 @@ use ntex::io::IoConfig;
 use ntex::web::{HttpServer, WebAppConfig};
 use ntex::SharedCfg;
 
-use crate::cache::CacheFile;
+use rgeocache_server::cache::CacheFile;
+use rgeocache_server::{forward_geocoder, geocoder, server};
 
 #[derive(Parser, Debug)]
 #[command(name = "rgeocache-server")]
@@ -89,13 +81,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // trees the reverse geocoder uses, so it borrows the already-built geocoder
     // instead of loading them twice.
     let geocoder_for_index = geocoder.clone();
+    let metrics_for_index = metrics.clone();
     thread::spawn(move || {
+        let started = std::time::Instant::now();
         // Store the failure rather than panicking: a panicking build thread would
-        // leave the OnceLock empty and block every /fgeocode/search request
-        // forever on `wait()`.
+        // leave the OnceLock empty, and every /fgeocode/search request would keep
+        // answering 503 as if the build were still running, with no error shown.
         let result =
             forward_geocoder::ForwardGeocoder::build(geocoder_for_index, index_dir.as_deref())
+                .map(|(geocoder, mode)| {
+                    metrics_for_index
+                        .fgeocode_index_build_duration
+                        .observe(started.elapsed().as_secs_f64());
+                    match mode {
+                        forward_geocoder::IndexMode::Built => {
+                            metrics_for_index.fgeocode_index_built.inc()
+                        }
+                        forward_geocoder::IndexMode::Reused => {
+                            metrics_for_index.fgeocode_index_reused.inc()
+                        }
+                    }
+                    Arc::new(geocoder)
+                })
                 .map_err(|err| {
+                    metrics_for_index
+                        .fgeocode_index_build_duration
+                        .observe(started.elapsed().as_secs_f64());
+                    metrics_for_index.fgeocode_index_failures.inc();
                     log::error!("failed to build forward geocoder index: {err}");
                     err.to_string()
                 });
@@ -127,6 +139,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .route(
                 "/fgeocode/search",
                 ntex::web::get().to(server::fgeocode_handle),
+            )
+            .route(
+                "/fgeocode/autocomplete",
+                ntex::web::get().to(server::fgeocode_autocomplete_handle),
             )
             .route("/metrics", ntex::web::get().to(server::metrics_handler))
     })
