@@ -102,6 +102,37 @@ func (d *DiskKDBush[V, VP]) NumPoints() int { return d.numPoints }
 // NodeSize returns the node size used when the index was built.
 func (d *DiskKDBush[V, VP]) NodeSize() int { return d.nodeSize }
 
+// diskIterateBatchSize is the number of tree positions read per batch during
+// ForEach. One batch is 4096*8 index bytes + 4096*16 coordinate bytes.
+const diskIterateBatchSize = 4096
+
+// ForEach calls fn for every point stored in the index, in KD-tree order.
+// Coordinates are read in leaf-sized batches; data blobs are read one point at
+// a time. Iteration stops early when fn returns false.
+func (d *DiskKDBush[V, VP]) ForEach(fn func(Point[V]) bool) error {
+	if d.numPoints == 0 {
+		return nil
+	}
+
+	for left := 0; left < d.numPoints; left += diskIterateBatchSize {
+		right := min(left+diskIterateBatchSize-1, d.numPoints-1)
+		idxs, coords, err := d.readLeaf(left, right)
+		if err != nil {
+			return err
+		}
+		for i, origIdx := range idxs {
+			data, err := d.readPointData(origIdx)
+			if err != nil {
+				return err
+			}
+			if !fn(Point[V]{X: coords[2*i], Y: coords[2*i+1], Data: data}) {
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // BuildDisk — build the index in memory and write everything to disk
 // ---------------------------------------------------------------------------

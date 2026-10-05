@@ -21,7 +21,7 @@ func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 	log := options.logger
 
 	log.Info("Loading geocoder points from reader")
-	pointsRaw, zonesRaw, err := cachesaver.LoadFromReader(r, log)
+	pointsRaw, zonesRaw, metadata, err := cachesaver.LoadFromReader(r, log)
 	if err != nil {
 		return nil, fmt.Errorf("error loading points: %s", err.Error())
 	}
@@ -40,7 +40,12 @@ func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 		}
 	}
 
-	return newRGeoCoder(tree, regions, countries, opts...), nil
+	rgeo := newRGeoCoder(tree, regions, countries, opts...)
+	rgeo.zones = zonesRaw
+	if metadata != nil {
+		rgeo.metadata = *metadata
+	}
+	return rgeo, nil
 }
 
 func LoadGeoCoderFromFile(file string, opts ...Option) (*RGeoCoder, error) {
@@ -61,7 +66,7 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 		return fmt.Errorf("error opening points file: %s", err.Error())
 	}
 
-	pointsRaw, zonesRaw, err := cachesaver.LoadFromReader(reader, slog.Default())
+	pointsRaw, zonesRaw, metadata, err := cachesaver.LoadFromReader(reader, slog.Default())
 	if err != nil {
 		return fmt.Errorf("error loading points: %s", err.Error())
 	}
@@ -78,6 +83,10 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 		case cachemodel.ZoneCountry:
 			f.countries.InsertBorder(zone.Name, zone.Polygon)
 		}
+	}
+	f.zones = zonesRaw
+	if metadata != nil {
+		f.metadata = *metadata
 	}
 
 	return nil

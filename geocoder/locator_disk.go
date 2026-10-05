@@ -6,6 +6,7 @@ import (
 	"unique"
 
 	"github.com/paulmach/orb"
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
 	"github.com/royalcat/rgeocache/internal/bordertree"
 	"github.com/royalcat/rgeocache/kdbush"
@@ -22,6 +23,8 @@ type RGeoCoderDisk struct {
 	stringsDataOffset int64    // byte offset of the string data block in the mmap'd file
 	regions           *bordertree.BorderTree[unique.Handle[string]]
 	countries         *bordertree.BorderTree[unique.Handle[string]]
+	zones             []cachemodel.Zone
+	metadata          cachemodel.Metadata
 	searchRadius      float64
 	logger            *slog.Logger
 }
@@ -91,25 +94,78 @@ func (f *RGeoCoderDisk) FindInRadius(lat, lon float64, radius float64) (i InfoMo
 
 // resolvePointData reads strings lazily from the mmap'd string data block.
 func (f *RGeoCoderDisk) resolvePointData(data savev2.V2PointData) *geoInfo {
+	buf := make([]byte, 512)
 	return &geoInfo{
-		Name:        f.readStr(data.NameID),
-		Street:      f.readStr(data.StreetID),
-		HouseNumber: f.readStr(data.HouseNumberID),
-		City:        f.readStr(data.CityID),
-		Region:      f.readStr(data.RegionID),
+		Name:        f.readStrInto(buf, data.NameID),
+		Street:      f.readStrInto(buf, data.StreetID),
+		HouseNumber: f.readStrInto(buf, data.HouseNumberID),
+		City:        f.readStrInto(buf, data.CityID),
+		Region:      f.readStrInto(buf, data.RegionID),
 		Weight:      data.Weight,
 	}
 }
 
-// readStr reads a null-terminated string from the mmap'd string data block by ID.
-func (f *RGeoCoderDisk) readStr(id uint32) unique.Handle[string] {
+// Zones returns the cache's region and country zones.
+func (f *RGeoCoderDisk) Zones() []cachemodel.Zone {
+	return f.zones
+}
+
+// Metadata returns the cache metadata.
+func (f *RGeoCoderDisk) Metadata() cachemodel.Metadata {
+	return f.metadata
+}
+
+// NumPoints returns the number of points in the cache.
+func (f *RGeoCoderDisk) NumPoints() int {
+	return f.diskTree.NumPoints()
+}
+
+// ForEachPoint calls fn for every cached point. Iteration stops early when fn
+// returns false. String IDs are resolved while iterating.
+func (f *RGeoCoderDisk) ForEachPoint(fn func(cachemodel.Point) bool) {
+	buf := make([]byte, 512)
+	err := f.diskTree.ForEach(func(p kdbush.Point[savev2.V2PointData]) bool {
+		return fn(cachemodel.Point{
+			X: p.X,
+			Y: p.Y,
+			Data: cachemodel.Info{
+				Name:        f.readStrInto(buf, p.Data.NameID),
+				Street:      f.readStrInto(buf, p.Data.StreetID),
+				HouseNumber: f.readStrInto(buf, p.Data.HouseNumberID),
+				City:        f.readStrInto(buf, p.Data.CityID),
+				Region:      f.readStrInto(buf, p.Data.RegionID),
+				Weight:      p.Data.Weight,
+				Type:        cachemodel.GeoObjectType(p.Data.GeoType),
+			},
+		})
+	})
+	if err != nil {
+		f.logger.Error("error iterating disk tree", "error", err)
+	}
+}
+
+// CountryAt returns the name of the country containing the given coordinates.
+func (f *RGeoCoderDisk) CountryAt(lat, lon float64) (string, bool) {
+	if f.countries == nil {
+		return "", false
+	}
+	country, ok := f.countries.QueryPoint(orb.Point{lon, lat})
+	if !ok {
+		return "", false
+	}
+	return country.Value(), true
+}
+
+// readStrInto reads a null-terminated string from the mmap'd string data block
+// by ID into a caller-provided scratch buffer, so bulk callers can avoid one
+// allocation per string.
+func (f *RGeoCoderDisk) readStrInto(buf []byte, id uint32) unique.Handle[string] {
 	if id == 0 {
 		return unique.Make("")
 	}
 	start := f.stringsIndex[id]
 	// Read a buffer large enough for any address string.
 	// The null terminator tells us where the string ends.
-	buf := make([]byte, 512)
 	n, err := f.mmapReader.ReadAt(buf, f.stringsDataOffset+int64(start))
 	if err != nil && n == 0 {
 		return unique.Make("")

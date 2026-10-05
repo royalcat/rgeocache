@@ -102,12 +102,47 @@ paths:
     parameters:
       - name: q
         in: query
-        required: true
+        required: false
         description: |
-          Query string to search for an address. Comma- or semicolon-separated
-          parts are all required to match ("Москва, Ленина 12"); tokens within a
-          part may match any address field. The last token is matched as a
-          prefix, so partial input works while typing. Maximum 256 characters.
+          Free-text query for an address. Tokens are all required to match.
+          Maximum 256 characters. Optional when a structured field is given.
+        schema:
+          type: string
+          maxLength: 256
+      - name: city
+        in: query
+        required: false
+        description: Structured city filter, matched against the city field only.
+        schema:
+          type: string
+          maxLength: 256
+      - name: region
+        in: query
+        required: false
+        description: Structured region filter, matched against the region field only.
+        schema:
+          type: string
+          maxLength: 256
+      - name: street
+        in: query
+        required: false
+        description: Structured street filter, matched against the street field only.
+        schema:
+          type: string
+          maxLength: 256
+      - name: house
+        in: query
+        required: false
+        description: |
+          Structured house-number filter. Type-word aliases are normalized
+          ("12 корпус 1" and "12к1" are equivalent).
+        schema:
+          type: string
+          maxLength: 256
+      - name: name
+        in: query
+        required: false
+        description: Structured object-name filter.
         schema:
           type: string
           maxLength: 256
@@ -115,9 +150,9 @@ paths:
         in: query
         required: false
         description: |
-          Comma-separated object kinds to include. Accepts `zone`, `building`
-          and `road` (aliases `z`, `b`, `r`). Unknown values are ignored.
-          Defaults to all kinds.
+          Comma-separated object kinds to include. Accepts `zone`, `building`,
+          `road` and `area` (aliases `z`, `b`, `r`, `a`). Unknown values are
+          ignored. Defaults to all kinds.
         schema:
           type: string
           example: zone,road
@@ -130,6 +165,21 @@ paths:
           minimum: 1
           maximum: 100
           default: 10
+      - name: offset
+        in: query
+        required: false
+        description: Number of results to skip. Pagination is shallow.
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: include_polygon
+        in: query
+        required: false
+        description: Include the full multipolygon for zone hits.
+        schema:
+          type: boolean
+          default: true
     get:
       summary: Get coordinates of found address or zone for a query
       responses:
@@ -170,12 +220,67 @@ paths:
                         geo_type:
                           type: string
                           description: Kind of the matched object
-                          enum: [zone, building, road]
+                          enum: [zone, building, road, area]
+                        country:
+                          type: string
+                          description: Country containing the point; empty for zones
                         multipolygon:
                           type: array
                           description: GeoJSON Multipolygon, only for zones
         "400":
-          description: Bad request (missing `q`, or `q` longer than 256 characters)
+          description: |
+            Bad request (no `q` and no structured field, a value longer than
+            256 characters, or an invalid numeric parameter)
+        "500":
+          description: Server error
+        "503":
+          description: Forward geocoder index is still building or failed to build
+
+  /fgeocode/autocomplete:
+    tags:
+      - forward geocoding
+    parameters:
+      - name: q
+        in: query
+        required: true
+        description: Prefix to complete. Maximum 256 characters.
+        schema:
+          type: string
+          maxLength: 256
+      - name: limit
+        in: query
+        required: false
+        description: Maximum number of suggestions. Clamped to 1-100.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+    get:
+      summary: Suggest address terms for a prefix
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - text
+                        - doc_freq
+                      properties:
+                        text:
+                          type: string
+                        doc_freq:
+                          type: integer
+                          description: Number of indexed documents containing the term
+        "400":
+          description: Bad request (missing `q` or `q` longer than 256 characters)
         "500":
           description: Server error
         "503":

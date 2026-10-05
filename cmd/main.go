@@ -18,6 +18,7 @@ import (
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/royalcat/osmpbfdb"
 	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
+	"github.com/royalcat/rgeocache/fgeocode"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
 	"github.com/royalcat/rgeocache/internal/stats"
@@ -65,6 +66,17 @@ func main() {
 					&cli.StringFlag{
 						Name:  "listen",
 						Value: ":8080",
+					},
+					&cli.BoolFlag{
+						Name:        "fgeocode",
+						Value:       true,
+						Usage:       "enable forward (text) geocoding; the index is built in the background",
+						DefaultText: "true",
+					},
+					&cli.StringFlag{
+						Name:      "fgeocode-index",
+						TakesFile: true,
+						Usage:     "directory to persist the forward geocoding index in (reused until the cache changes); a temporary directory is used when empty",
 					},
 				},
 				Action: serve,
@@ -422,9 +434,25 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		defer closer.Close()
 	}
 
+	var fgeo *fgeocode.Geocoder
+	if cmd.Bool("fgeocode") {
+		source, ok := rgeo.(fgeocode.Source)
+		if !ok {
+			log.Warn("geocoder does not support forward indexing")
+		} else {
+			fgeo = fgeocode.New(fgeocode.Config{
+				Source:    source,
+				IndexDir:  cmd.String("fgeocode-index"),
+				CacheFile: cacheFile,
+				Logger:    log,
+			})
+			defer fgeo.Close()
+		}
+	}
+
 	runtime.GC()
 
-	return server.Run(ctx, cmd.String("listen"), rgeo, pointsPerThread, log)
+	return server.Run(ctx, cmd.String("listen"), rgeo, fgeo, pointsPerThread, log)
 }
 
 // detectV2Cache reads the first 8 bytes of a cache file and returns true

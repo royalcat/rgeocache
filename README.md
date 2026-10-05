@@ -38,6 +38,23 @@ curl -X GET 'localhost:8080/rgeocode/address/59.9176846/30.3930866'
 {"name":"","street":"Obvodny Canal embankment","house_number":"5 litA","city":"Saint Petersburg"}
 ```
 
+The same server also provides forward (text) geocoding:
+
+```bash
+curl -X GET 'localhost:8080/fgeocode/search?q=Невский+проспект+28&limit=5'
+{"results":[{"address_string":"Санкт-Петербург, Невский проспект, 28","score":9.1,"point":[59.9358,30.3255],"geo_type":"building","country":"Россия"}]}
+
+curl -X GET 'localhost:8080/fgeocode/autocomplete?q=Нев&limit=5'
+{"suggestions":[{"text":"невский","doc_freq":1234}]}
+```
+
+The search index is built in the background the first time the server starts, so
+`/fgeocode/search` and `/fgeocode/autocomplete` answer `503` with
+`Retry-After: 5` until it is ready. Pass `--fgeocode-index <dir>` to persist the
+index and reuse it across restarts (it is rebuilt automatically when the cache
+changes); without it a temporary directory is used. `--fgeocode=false` disables
+forward geocoding.
+
 ## Usage as a go module
 
 For go programs, you can avoid the http layer and use the geocoder directly using a module github.com/royalcat/rgeocache/geocoder

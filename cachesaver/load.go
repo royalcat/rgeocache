@@ -33,14 +33,14 @@ func readCompatabilityLevel(reader io.Reader) (uint32, error) {
 	return compatibilityLevel, nil
 }
 
-func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemodel.Info], []cachemodel.Zone, error) {
+func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemodel.Info], []cachemodel.Zone, *cachemodel.Metadata, error) {
 	defer func() {
 		runtime.GC()
 	}()
 
 	magic, err := readMagicBytes(reader)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// If the magic bytes are not equal to the expected value, we assume it's a legacy format
@@ -48,14 +48,14 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemod
 		log.Info("Magic bytes not detected, trying legacy format")
 		points, err := legacyLoader(io.MultiReader(bytes.NewReader(magic), reader))
 		if err != nil {
-			return nil, nil, fmt.Errorf("error loading legacy cache: %s", err.Error())
+			return nil, nil, nil, fmt.Errorf("error loading legacy cache: %s", err.Error())
 		}
-		return points, []cachemodel.Zone{}, nil
+		return points, []cachemodel.Zone{}, nil, nil
 	}
 
 	compatibilityLevel, err := readCompatabilityLevel(reader)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	switch compatibilityLevel {
@@ -63,25 +63,25 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemod
 		log.Info("Loading v1 cache format")
 		points, zones, metadata, err := loadV1Cache(reader)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error loading v1 cache: %s", err.Error())
+			return nil, nil, nil, fmt.Errorf("error loading v1 cache: %s", err.Error())
 		}
 		if metadata != nil {
 			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated)
 		}
-		return points, zones, nil
+		return points, zones, metadata, nil
 	case savev2.COMPATIBILITY_LEVEL:
 		log.Info("Loading v2 cache format")
 		points, zones, metadata, err := loadV2Cache(reader)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error loading v2 cache: %s", err.Error())
+			return nil, nil, nil, fmt.Errorf("error loading v2 cache: %s", err.Error())
 		}
 		if metadata != nil {
 			log.Info("Loaded cache metadata", "version", metadata.Version, "locale", metadata.Locale, "date_created", metadata.DateCreated)
 		}
-		return points, zones, nil
+		return points, zones, metadata, nil
 	}
 
-	return nil, nil, fmt.Errorf("unsupported compatibility level: %d", compatibilityLevel)
+	return nil, nil, nil, fmt.Errorf("unsupported compatibility level: %d", compatibilityLevel)
 
 }
 

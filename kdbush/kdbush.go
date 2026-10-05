@@ -26,6 +26,21 @@ func NewBush[T any](points []Point[T], nodeSize int) *KDBush[T] {
 	return &b
 }
 
+// Len returns the number of indexed points.
+func (bush *KDBush[T]) Len() int {
+	return len(bush.points)
+}
+
+// ForEach calls fn for every point in the bush, in the original input order.
+// Iteration stops early when fn returns false.
+func (bush *KDBush[T]) ForEach(fn func(Point[T]) bool) {
+	for _, p := range bush.points {
+		if !fn(p) {
+			return
+		}
+	}
+}
+
 // Finds all items within the given bounding box and returns an array of indices that refer to the items in the original points input slice.
 func (bush *KDBush[T]) Range(minX, minY, maxX, maxY float64) []int {
 	stack := []int{0, len(bush.idxs) - 1, 0}

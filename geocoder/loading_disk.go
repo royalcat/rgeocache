@@ -81,7 +81,18 @@ func LoadGeoCoderFromFileDisk(file string, opts ...Option) (*RGeoCoderDisk, erro
 		stringsDataOffset: result.StringsDataOffset,
 		regions:           regions,
 		countries:         countries,
+		zones:             result.Zones,
+		metadata:          metadataOrZero(result.Metadata),
 		searchRadius:      options.searchRadius,
 		logger:            log,
 	}, nil
+}
+
+// metadataOrZero dereferences cachesaver metadata, returning the zero value
+// when it is absent.
+func metadataOrZero(m *cachemodel.Metadata) cachemodel.Metadata {
+	if m == nil {
+		return cachemodel.Metadata{}
+	}
+	return *m
 }

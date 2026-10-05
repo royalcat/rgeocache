@@ -1,11 +1,14 @@
 package test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/royalcat/osmpbfdb"
+	"github.com/royalcat/rgeocache/fgeocode"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
 	"github.com/thejerf/slogassert"
@@ -72,5 +75,28 @@ func TestLondon(t *testing.T) {
 	}
 	if i.City != "Greater London" || i.Street != "Cannon Row" || i.HouseNumber != "1" {
 		t.Fatalf("expected Greater London, Cannon Row, 1; got %s, %s, %s", i.City, i.Street, i.HouseNumber)
+	}
+
+	t.Log("Forward geocoding")
+
+	fgeo := fgeocode.New(fgeocode.Config{Source: rgeo})
+	fgeo.Build(context.Background())
+	if err := fgeo.Ready(); err != nil {
+		t.Fatalf("forward geocoder build: %v", err)
+	}
+	defer fgeo.Close()
+
+	results, err := fgeo.Search(fgeocode.SearchRequest{Query: "Cannon Row", Limit: 10})
+	if err != nil {
+		t.Fatalf("forward search: %v", err)
+	}
+	found := false
+	for _, result := range results {
+		if strings.Contains(result.AddressString, "Cannon Row") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a 'Cannon Row' result, got %+v", results)
 	}
 }

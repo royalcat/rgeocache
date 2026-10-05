@@ -19,6 +19,9 @@ FROM scratch
 
 COPY --from=build /rgeocache /app/rgeocache
 ENV PATH="/app:${PATH}"
+# The forward geocoding index defaults to a temporary directory; scratch has
+# none, so expose a writable /tmp volume (or pass --fgeocode-index).
+ENV TMPDIR="/tmp"
 
-VOLUME [ "/data" ]
+VOLUME [ "/data", "/tmp" ]
 ENTRYPOINT [ "rgeocache", "serve", "--points", "/data/points-data.gob" ]

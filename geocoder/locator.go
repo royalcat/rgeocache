@@ -6,6 +6,7 @@ import (
 	"unique"
 
 	"github.com/paulmach/orb"
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/internal/bordertree"
 	"github.com/royalcat/rgeocache/kdbush"
@@ -41,6 +42,8 @@ type RGeoCoder struct {
 	tree         *kdbush.KDBush[*geoInfo]
 	regions      *bordertree.BorderTree[unique.Handle[string]]
 	countries    *bordertree.BorderTree[unique.Handle[string]]
+	zones        []cachemodel.Zone
+	metadata     cachemodel.Metadata
 	searchRadius float64
 	logger       *slog.Logger
 }
@@ -109,6 +112,53 @@ func (f *RGeoCoder) FindInRadius(lat, lon float64, radius float64) (i InfoModel,
 
 	// nothing found
 	return InfoModel{}, false
+}
+
+// Zones returns the cache's region and country zones.
+func (f *RGeoCoder) Zones() []cachemodel.Zone {
+	return f.zones
+}
+
+// Metadata returns the cache metadata. The zero value is returned for legacy
+// caches that carry none.
+func (f *RGeoCoder) Metadata() cachemodel.Metadata {
+	return f.metadata
+}
+
+// NumPoints returns the number of points in the cache.
+func (f *RGeoCoder) NumPoints() int {
+	return f.tree.Len()
+}
+
+// ForEachPoint calls fn for every cached point. Iteration stops early when fn
+// returns false.
+func (f *RGeoCoder) ForEachPoint(fn func(cachemodel.Point) bool) {
+	f.tree.ForEach(func(p kdbush.Point[*geoInfo]) bool {
+		return fn(cachemodel.Point{
+			X: p.X,
+			Y: p.Y,
+			Data: cachemodel.Info{
+				Name:        p.Data.Name,
+				Street:      p.Data.Street,
+				HouseNumber: p.Data.HouseNumber,
+				City:        p.Data.City,
+				Region:      p.Data.Region,
+				Weight:      p.Data.Weight,
+			},
+		})
+	})
+}
+
+// CountryAt returns the name of the country containing the given coordinates.
+func (f *RGeoCoder) CountryAt(lat, lon float64) (string, bool) {
+	if f.countries == nil {
+		return "", false
+	}
+	country, ok := f.countries.QueryPoint(orb.Point{lon, lat})
+	if !ok {
+		return "", false
+	}
+	return country.Value(), true
 }
 
 func distanceSquared(x1, y1, x2, y2 float64) (distance float64) {
