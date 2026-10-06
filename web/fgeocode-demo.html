@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rgeocache forward geocoding</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+  form { display: flex; flex-wrap: wrap; gap: .5rem; }
+  #q { flex: 1 1 14rem; padding: .4rem .6rem; font: inherit; }
+  select, button { padding: .4rem .6rem; font: inherit; }
+  #status { min-height: 1.5em; opacity: .7; }
+  #results { margin: 0; padding-left: 1.4rem; }
+  #results li { margin: .2rem 0; }
+</style>
+</head>
+<body>
+<h1>Forward geocoding</h1>
+<form id="search-form">
+  <input id="q" type="search" name="q" placeholder="Address or place" autocomplete="off" autofocus>
+  <select id="kind" name="kind">
+    <option value="">All kinds</option>
+    <option value="zone">Zone</option>
+    <option value="building">Building</option>
+    <option value="road">Road</option>
+    <option value="area">Area</option>
+  </select>
+  <button type="submit">Search</button>
+</form>
+<p id="status"></p>
+<ul id="results"></ul>
+<script>
+  const form = document.getElementById('search-form');
+  const status = document.getElementById('status');
+  const results = document.getElementById('results');
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const q = document.getElementById('q').value.trim();
+    if (!q) {
+      return;
+    }
+
+    const params = new URLSearchParams({ q, limit: '20', include_polygon: 'false' });
+    const kind = document.getElementById('kind').value;
+    if (kind) {
+      params.set('kind', kind);
+    }
+
+    status.textContent = 'Searching…';
+    results.replaceChildren();
+
+    try {
+      const response = await fetch('/fgeocode/search?' + params);
+      const body = await response.text();
+      if (!response.ok) {
+        status.textContent = body || 'HTTP ' + response.status;
+        return;
+      }
+      const data = JSON.parse(body);
+      status.textContent = data.results.length + (data.results.length === 1 ? ' result' : ' results');
+      for (const result of data.results) {
+        const item = document.createElement('li');
+        item.textContent = result.address_string;
+        results.append(item);
+      }
+    } catch (error) {
+      status.textContent = 'Request failed: ' + error;
+    }
+  });
+</script>
+</body>
+</html>

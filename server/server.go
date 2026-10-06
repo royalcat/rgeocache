@@ -19,6 +19,7 @@ import (
 	"github.com/royalcat/rgeocache/fgeocode"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geomodel"
+	"github.com/royalcat/rgeocache/web"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.opentelemetry.io/otel"
@@ -76,6 +77,7 @@ func Run(ctx context.Context, address string, rgeo geocoder.Geocoder, fgeo *fgeo
 	r.POST("/rgeocode/multiaddress", s.RGeoMultipleCodeHandler)
 	r.GET("/fgeocode/search", s.FGeoCodeHandler)
 	r.GET("/fgeocode/autocomplete", s.FGeoAutocompleteHandler)
+	r.GET("/fgeocode/demo", FGeoDemoHandler)
 	r.Handle(http.MethodGet, "/metrics", fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler()))
 
 	server := &fasthttp.Server{
@@ -350,6 +352,14 @@ func (s *server) FGeoAutocompleteHandler(ctx *fasthttp.RequestCtx) {
 	ctx.Response.Header.SetContentType("application/json")
 	ctx.Response.SetStatusCode(http.StatusOK)
 	ctx.Response.SetBody(body)
+}
+
+// FGeoDemoHandler implements GET /fgeocode/demo, a self-contained browser page
+// for the forward geocoding API. It is a static asset, served even when forward
+// geocoding is disabled; the page itself surfaces the search error.
+func FGeoDemoHandler(ctx *fasthttp.RequestCtx) {
+	ctx.Response.Header.SetContentType("text/html; charset=utf-8")
+	ctx.Response.SetBody(web.FGeoDemo)
 }
 
 // fgeoUnavailable writes the 503 used while the forward index builds or after

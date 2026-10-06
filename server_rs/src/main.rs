@@ -144,6 +144,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "/fgeocode/autocomplete",
                 ntex::web::get().to(server::fgeocode_autocomplete_handle),
             )
+            .route(
+                "/fgeocode/demo",
+                ntex::web::get().to(server::fgeocode_demo_handle),
+            )
             .route("/metrics", ntex::web::get().to(server::metrics_handler))
     })
     .config(

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 	"unique"
@@ -215,5 +216,22 @@ func TestFGeoAutocompleteHandler(t *testing.T) {
 	s.FGeoAutocompleteHandler(ctx)
 	if ctx.Response.StatusCode() != fasthttp.StatusBadRequest {
 		t.Errorf("expected 400 without q, got %d", ctx.Response.StatusCode())
+	}
+}
+
+func TestFGeoDemoHandler(t *testing.T) {
+	ctx := fgeoRequest("/fgeocode/demo")
+	FGeoDemoHandler(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusOK {
+		t.Fatalf("expected 200, got %d", ctx.Response.StatusCode())
+	}
+	if got := string(ctx.Response.Header.ContentType()); got != "text/html; charset=utf-8" {
+		t.Errorf("unexpected content type %q", got)
+	}
+	body := string(ctx.Response.Body())
+	for _, want := range []string{`id="q"`, "/fgeocode/search"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body does not contain %q", want)
+		}
 	}
 }

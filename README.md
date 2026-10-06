@@ -48,6 +48,9 @@ curl -X GET 'localhost:8080/fgeocode/autocomplete?q=Нев&limit=5'
 {"suggestions":[{"text":"невский","doc_freq":1234}]}
 ```
 
+A minimal browser demo of forward geocoding — search box, kind select, address
+list — is served at `http://localhost:8080/fgeocode/demo`.
+
 The search index is built in the background the first time the server starts, so
 `/fgeocode/search` and `/fgeocode/autocomplete` answer `503` with
 `Retry-After: 5` until it is ready. Pass `--fgeocode-index <dir>` to persist the

@@ -451,3 +451,47 @@ pub async fn fgeocode_autocomplete_handle(
         Err(err) => HttpResponse::InternalServerError().body(format!("suggest task failed: {err}")),
     }
 }
+
+/// The self-contained browser demo page for the forward geocoding API, shared
+/// with the Go server (`web/fgeocode-demo.html`).
+const FGEODEMO_HTML: &str = include_str!("../../web/fgeocode-demo.html");
+
+/// `GET /fgeocode/demo`: a static page that drives `/fgeocode/search` from the
+/// browser. It is served even while the index is building or after a failed
+/// build, so the page itself can surface that 503 reason.
+pub async fn fgeocode_demo_handle() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(FGEODEMO_HTML)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ntex::http::StatusCode;
+    use ntex::web::{test, App};
+
+    #[ntex::test]
+    async fn fgeocode_demo_serves_html_page() {
+        let app = test::init_service(
+            App::new().route("/fgeocode/demo", web::get().to(fgeocode_demo_handle)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/fgeocode/demo").to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/html; charset=utf-8")
+        );
+
+        let body = test::read_body(resp).await;
+        let html = std::str::from_utf8(&body).expect("demo page is valid UTF-8");
+        assert!(html.contains("id=\"q\""), "search input missing");
+        assert!(html.contains("/fgeocode/search"), "search endpoint missing");
+    }
+}
