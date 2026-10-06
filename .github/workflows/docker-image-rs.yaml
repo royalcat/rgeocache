@@ -1,0 +1,67 @@
+name: Create and publish the Rust server Docker image
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*.*.*"
+    paths:
+      - ".github/workflows/docker-image-rs.yaml"
+      - "server_rs/**"
+
+jobs:
+  build-and-push-image:
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          # list of Docker images to use as base name for tags
+          images: ghcr.io/${{ github.repository }}-rs
+          # generate Docker tags based on the following events/attributes
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          # The Dockerfile cross-compiles on $BUILDPLATFORM, so this only lists
+          # the targets it knows how to build.
+          context: server_rs
+          file: server_rs/Dockerfile
+          push: true
+          pull: true
+          platforms: linux/amd64,linux/amd64/v2,linux/amd64/v3,linux/arm64,linux/riscv64
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: true
+          cache-from: type=gha,scope=rs
+          cache-to: type=gha,mode=max,scope=rs
+          tags: ${{ steps.meta.outputs.tags }}
