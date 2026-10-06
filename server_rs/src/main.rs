@@ -125,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let max_request_size = args.max_request_size;
 
     let mut srv = HttpServer::new(async move || {
-        ntex::web::App::new()
+        let app = ntex::web::App::new()
             .state(state.clone())
             .state(ntex::web::types::JsonConfig::default().limit(max_request_size))
             .route(
@@ -143,12 +143,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .route(
                 "/fgeocode/autocomplete",
                 ntex::web::get().to(server::fgeocode_autocomplete_handle),
-            )
-            .route(
-                "/fgeocode/demo",
-                ntex::web::get().to(server::fgeocode_demo_handle),
-            )
-            .route("/metrics", ntex::web::get().to(server::metrics_handler))
+            );
+        // The demo page is a non-default feature: without it the route does not
+        // exist and the handler is not compiled in.
+        #[cfg(feature = "demo-page")]
+        let app = app.route(
+            "/fgeocode/demo",
+            ntex::web::get().to(server::fgeocode_demo_handle),
+        );
+        app.route("/metrics", ntex::web::get().to(server::metrics_handler))
     })
     .config(
         SharedCfg::new("rgeocache")

@@ -11,6 +11,7 @@ path = "src/main.rs"
 [features]
 default = ["metrics", "tokio"]
 metrics = []
+demo-page = []
 tokio = ["ntex/tokio"]
 compio = ["ntex/compio"]
 tracing = ["dep:tracing", "dep:tracing-subscriber"]

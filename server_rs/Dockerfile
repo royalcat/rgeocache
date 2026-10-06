@@ -8,8 +8,7 @@ ARG TARGETVARIANT
 
 # protoc is required by build.rs (buffa-build / prost-build).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends protobuf-compiler \
- && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends protobuf-compiler
 
 # Map TARGETARCH to a Rust target triple, install the matching cross C
 # toolchain (zstd-sys, pulled in by tantivy, is the only C code in the tree)
@@ -57,12 +56,15 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY proto/ ./proto/
 COPY src/ ./src/
+# `src/server.rs` embeds `web/fgeocode-demo.html` for the demo page, so the
+# synced copy of the shared page has to be part of this context.
+COPY web/ ./web/
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/build/target,id=target-$TARGETARCH-${TARGETVARIANT:-v1},sharing=locked \
     set -eux; \
     . /cross-env.sh; \
     export CARGO_TARGET_DIR=/build/target; \
-    cargo build --release --target "$RUST_TARGET"; \
+    cargo build --release --target "$RUST_TARGET" --features demo-page; \
     mkdir -p /out; \
     cp "/build/target/$RUST_TARGET/release/rgeocache-server" /out/rgeocache-server
 

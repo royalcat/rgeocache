@@ -453,19 +453,34 @@ pub async fn fgeocode_autocomplete_handle(
 }
 
 /// The self-contained browser demo page for the forward geocoding API, shared
-/// with the Go server (`web/fgeocode-demo.html`).
-const FGEODEMO_HTML: &str = include_str!("../../web/fgeocode-demo.html");
+/// with the Go server.
+///
+/// This embeds `server_rs/web/fgeocode-demo.html`, a synced copy of the shared
+/// `web/fgeocode-demo.html`: the file must live inside this crate because the
+/// Docker build context is `server_rs/` (plain `docker build .`) and BuildKit
+/// refuses to follow symlinks that leave the context. The
+/// `demo_page_copy_matches_shared_page` test keeps the copy identical.
+///
+/// Compiled in only with the non-default `demo-page` feature, so a default
+/// build neither embeds the page nor depends on the copied file.
+#[cfg(feature = "demo-page")]
+const FGEODEMO_HTML: &str = include_str!("../web/fgeocode-demo.html");
 
 /// `GET /fgeocode/demo`: a static page that drives `/fgeocode/search` from the
 /// browser. It is served even while the index is building or after a failed
 /// build, so the page itself can surface that 503 reason.
+///
+/// Requires the non-default `demo-page` Cargo feature.
+#[cfg(feature = "demo-page")]
 pub async fn fgeocode_demo_handle() -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(FGEODEMO_HTML)
 }
 
-#[cfg(test)]
+// The demo route is the only thing this module tests, so the whole module is
+// gated with it; otherwise its imports would be unused in default builds.
+#[cfg(all(test, feature = "demo-page"))]
 mod tests {
     use super::*;
     use ntex::http::StatusCode;
@@ -493,5 +508,20 @@ mod tests {
         let html = std::str::from_utf8(&body).expect("demo page is valid UTF-8");
         assert!(html.contains("id=\"q\""), "search input missing");
         assert!(html.contains("/fgeocode/search"), "search endpoint missing");
+    }
+}
+
+/// Guards `server_rs/web/fgeocode-demo.html` against drifting from the shared
+/// page. Deliberately not behind `demo-page`, so it runs in the default-feature
+/// CI build and fails as soon as the two copies differ.
+#[cfg(test)]
+mod demo_asset_sync {
+    #[test]
+    fn demo_page_copy_matches_shared_page() {
+        assert_eq!(
+            include_str!("../web/fgeocode-demo.html"),
+            include_str!("../../web/fgeocode-demo.html"),
+            "server_rs/web/fgeocode-demo.html is out of sync with web/fgeocode-demo.html; copy the shared page over"
+        );
     }
 }
