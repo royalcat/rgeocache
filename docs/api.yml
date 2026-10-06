@@ -3,10 +3,16 @@ info:
   title: RGeoCoderApi
   version: "1.0"
 
+# x-tagGroups:
+#   - name: Reverse Geocoding
+#     tags:
+#       - reverse
+#   - name: Forward Geocoding
+#     tags:
+#       - forward
+
 paths:
   /rgeocode/address/{lat}/{lon}:
-    tags:
-      - reverse geocoding
     parameters:
       - name: lat
         in: path
@@ -20,6 +26,8 @@ paths:
           type: string
     get:
       summary: Get address by coordinates
+      tags:
+        - reverse
       responses:
         "200":
           description: OK
@@ -35,10 +43,10 @@ paths:
           description: Nothing found in location
 
   /rgeocode/multiaddress:
-    tags:
-      - reverse geocoding
     get:
       summary: Get multiple addresses with single request
+      tags:
+        - reverse
       requestBody:
         content:
           application/json:
@@ -68,6 +76,8 @@ paths:
           description: Bad request
     post:
       summary: Get multiple addresses with single request
+      tags:
+        - reverse
       requestBody:
         content:
           application/json:
@@ -97,8 +107,6 @@ paths:
           description: Bad request
 
   /fgeocode/search:
-    tags:
-      - forward geocoding
     parameters:
       - name: q
         in: query
@@ -182,6 +190,8 @@ paths:
           default: true
     get:
       summary: Get coordinates of found address or zone for a query
+      tags:
+        - forward
       responses:
         "200":
           description: OK
@@ -237,8 +247,6 @@ paths:
           description: Forward geocoder index is still building or failed to build
 
   /fgeocode/autocomplete:
-    tags:
-      - forward geocoding
     parameters:
       - name: q
         in: query
@@ -258,6 +266,8 @@ paths:
           default: 10
     get:
       summary: Suggest address terms for a prefix
+      tags:
+        - forward
       responses:
         "200":
           description: OK

@@ -10,3 +10,4 @@ go.work.sum
 *.out
 *.test
 *.pprof
+redoc-static.html
