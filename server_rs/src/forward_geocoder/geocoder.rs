@@ -7,6 +7,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use tantivy::collector::{FilterCollector, TopDocs};
+use tantivy::fieldnorm::FieldNormReader;
 use tantivy::query::{
     BooleanQuery, BoostQuery, ConstScoreQuery, FuzzyTermQuery, Occur, PhrasePrefixQuery,
     PhraseQuery, Query, TermQuery,
@@ -1111,12 +1112,15 @@ fn token_exists(searcher: &Searcher, fields: &Fields, token: &QueryToken) -> boo
 /// the token the user is still typing (the last one), which may still complete
 /// as a prefix. This is the general form of the short-type-word rule: it needs
 /// no vocabulary and works for every language.
+///
+/// The returned [`BuiltQuery`] also reports how many tokens the phrase covers,
+/// which the collector turns into the whole-address tier.
 fn build_query(
     fields: &Fields,
     analyzers: &Analyzers,
     searcher: &Searcher,
     raw: &str,
-) -> Option<Box<dyn Query>> {
+) -> Option<BuiltQuery> {
     let raw = raw.trim();
     if raw.is_empty() || raw.len() > MAX_QUERY_LEN {
         return None;
@@ -1222,6 +1226,19 @@ fn prefix_target(segments: &[Segment]) -> Option<(usize, usize)> {
     None
 }
 
+/// A built free-text query plus the number of tokens its phrase covers.
+///
+/// `phrase_len` is `Some` when every remaining query token analyzed to exactly
+/// one form, so the whole query maps onto a contiguous run of `merged`
+/// positions — the precondition for both the phrase boost and the
+/// whole-address match tier (see [`rank_tier`]). It is `None` when a token
+/// stemmed or split into several terms (no phrase is built) and for structured
+/// requests that carry no free text.
+struct BuiltQuery {
+    query: Box<dyn Query>,
+    phrase_len: Option<usize>,
+}
+
 /// AND the segments, and AND the tokens within each. A token is free to match
 /// any of the text fields (OR across fields).
 ///
@@ -1229,7 +1246,7 @@ fn prefix_target(segments: &[Segment]) -> Option<(usize, usize)> {
 /// order, as a phrase against `merged` (see [`phrase_query`]). It never
 /// filters — a document that matches every token but not the phrase is still a
 /// hit — it only lifts documents that read as the address the user typed.
-fn assemble(fields: &Fields, segments: &[Segment]) -> Option<Box<dyn Query>> {
+fn assemble(fields: &Fields, segments: &[Segment]) -> Option<BuiltQuery> {
     let target = prefix_target(segments);
     let (last_segment, last_token) = target.unwrap_or((segments.len() - 1, 0));
 
@@ -1273,6 +1290,7 @@ fn assemble(fields: &Fields, segments: &[Segment]) -> Option<Box<dyn Query>> {
     };
 
     let last_is_house = segments[last_segment].tokens[last_token].is_house;
+    let phrase_len = phrase_possible.then_some(phrase_terms.len());
     let phrase_clauses = if phrase_possible {
         phrase_clauses(fields, &phrase_terms, !last_is_house)
     } else {
@@ -1280,7 +1298,10 @@ fn assemble(fields: &Fields, segments: &[Segment]) -> Option<Box<dyn Query>> {
     };
 
     if phrase_clauses.is_empty() {
-        return Some(base);
+        return Some(BuiltQuery {
+            query: base,
+            phrase_len,
+        });
     }
 
     let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(phrase_clauses.len() + 1);
@@ -1288,7 +1309,10 @@ fn assemble(fields: &Fields, segments: &[Segment]) -> Option<Box<dyn Query>> {
     // `Should` beside `Must` is optional: every base match is still a hit,
     // phrase or not. The phrase clauses only raise the score.
     clauses.extend(phrase_clauses);
-    Some(Box::new(BooleanQuery::new(clauses)))
+    Some(BuiltQuery {
+        query: Box::new(BooleanQuery::new(clauses)),
+        phrase_len,
+    })
 }
 
 /// The whole query as ordered phrases against `merged`.
@@ -1451,13 +1475,27 @@ fn token_clause(
     }
 }
 
-/// Ordering key of a collected hit: phrase tier, BM25 score, popularity.
+/// Ordering key of a collected hit: match tier, BM25 score, popularity.
 ///
-/// The tier is a function of the score because the phrase tiers are additive
-/// constants ([`EXACT_PHRASE_SCORE`], [`PHRASE_SCORE`]) whose magnitude dwarfs
-/// any per-token BM25 sum. Encoding the tier first keeps the "phrase always
-/// wins" guarantee; the ordinary score then keeps street/name/region field
-/// boosts meaningful; popularity only breaks the ties BM25 leaves behind.
+/// The tier says how much of the document's indexed address (`merged`) the
+/// query covers:
+///
+/// - `3` — the whole address: a k-token phrase fills a `merged` field that is
+///   exactly k tokens long and the document has no `region` (the one rendered
+///   address part `merged` does not carry). For a single token the one-token
+///   address must be the document's `name`. The zone named `Санкт-Петербург`
+///   is such a document, which is what puts it ahead of the buildings and
+///   streets inside it.
+/// - `2` — a strictly contiguous phrase inside a longer address.
+/// - `1` — a phrase with at most [`PHRASE_SLOP`] intervening tokens.
+/// - `0` — every token matched somewhere, but not as a phrase.
+///
+/// Tiers 1 and 2 are functions of the score because the phrase tiers are
+/// additive constants ([`EXACT_PHRASE_SCORE`], [`PHRASE_SCORE`]) whose
+/// magnitude dwarfs any per-token BM25 sum; tier 3 additionally needs the
+/// document's `merged` length. Encoding the tier first keeps the "a phrase
+/// always wins" guarantee; the ordinary score then keeps street/name/region
+/// field boosts meaningful; popularity only breaks the ties BM25 leaves behind.
 ///
 /// Popularity is deliberately *not* ahead of the score: it is a document-level
 /// signal, so ranking it first would let a document that matched a cheap field
@@ -1465,13 +1503,88 @@ fn token_clause(
 /// just because the document's name is a nationwide chain store.
 type RankKey = (u8, Score, u64);
 
-fn rank_tier(score: Score) -> u8 {
+/// Match tier of a collected hit — see [`RankKey`] for what the values mean.
+///
+/// The token counts come from the fieldnorms
+/// ([`SegmentReader::get_fieldnorms_reader`]): exact for lengths up to 40 and
+/// quantized above that. A whole-address match longer than 40 tokens could in
+/// principle be misread, but no realistic address (and no query under
+/// [`MAX_QUERY_LEN`] characters) gets there.
+///
+/// A k-token phrase can match a k-token `merged` field only by filling it, so
+/// for k ≥ 2 the whole-address tier needs the contiguous phrase (the same
+/// condition as tier 2) plus the length equality. A single-token query has no
+/// phrase clause — the base query already matches the token — so the score
+/// cannot say where the token matched. Requiring the one-token address to be
+/// the document's `name` excludes the points whose `merged` is just the country
+/// (a region-only match, like `Тверская` against `Тверская область`), which
+/// would otherwise look like whole matches.
+fn rank_tier(score: Score, lens: FieldLens, phrase_len: Option<usize>) -> u8 {
+    if let Some(len) = phrase_len {
+        let whole_address = lens.region == 0
+            && if len == 1 {
+                lens.merged == 1 && lens.name == 1
+            } else {
+                score >= EXACT_PHRASE_SCORE && lens.merged as usize == len
+            };
+        if whole_address {
+            return 3;
+        }
+    }
     if score >= EXACT_PHRASE_SCORE {
         2
     } else if score >= PHRASE_SCORE {
         1
     } else {
         0
+    }
+}
+
+/// Token counts of the fields the whole-address tier compares against, read
+/// from the segment's fieldnorms.
+#[derive(Clone, Copy)]
+struct FieldLens {
+    /// `merged`: country, city, street, house number and name concatenated —
+    /// the field the phrase clauses match.
+    merged: u32,
+    /// `name`: a zone's entire indexable address, and the only field that can
+    /// prove a single-token whole match.
+    name: u32,
+    /// `region`: the one rendered address part `merged` does not carry. A
+    /// whole-address match has no region.
+    region: u32,
+}
+
+/// Fieldnorm readers for one segment, reused across its documents.
+struct WholeAddressNorms {
+    merged: Option<FieldNormReader>,
+    name: Option<FieldNormReader>,
+    region: Option<FieldNormReader>,
+}
+
+impl WholeAddressNorms {
+    fn new(segment_reader: &SegmentReader, fields: &Fields) -> Self {
+        let reader = |field: Field| segment_reader.get_fieldnorms_reader(field).ok();
+        Self {
+            merged: reader(fields.merged),
+            name: reader(fields.name),
+            region: reader(fields.region),
+        }
+    }
+
+    /// A field that records no norms disables the tier rather than misreporting
+    /// a length.
+    fn lens(&self, doc: DocId) -> FieldLens {
+        let len = |reader: &Option<FieldNormReader>| {
+            reader
+                .as_ref()
+                .map_or(u32::MAX, |reader| reader.fieldnorm(doc))
+        };
+        FieldLens {
+            merged: len(&self.merged),
+            name: len(&self.name),
+            region: len(&self.region),
+        }
     }
 }
 
@@ -1546,13 +1659,15 @@ impl Default for SearchRequest {
 /// AND the free-text query and the structured fields into one query.
 ///
 /// Either side may be absent; `None` means the request carries no constraint at
-/// all (an empty `q` and no structured values).
+/// all (an empty `q` and no structured values). The phrase length comes from
+/// the free-text half alone — structured values carry no phrase and therefore
+/// never trigger the whole-address tier by themselves.
 fn build_request_query(
     fields: &Fields,
     analyzers: &Analyzers,
     searcher: &Searcher,
     request: &SearchRequest,
-) -> Option<Box<dyn Query>> {
+) -> Option<BuiltQuery> {
     let free = request
         .query
         .as_deref()
@@ -1561,11 +1676,18 @@ fn build_request_query(
     let structured = structured_query(fields, analyzers, searcher, &request.structured);
 
     match (free, structured) {
-        (Some(free), Some(structured)) => Some(Box::new(BooleanQuery::new(vec![
-            (Occur::Must, free),
-            (Occur::Must, structured),
-        ]))),
-        (Some(query), None) | (None, Some(query)) => Some(query),
+        (Some(free), Some(structured)) => Some(BuiltQuery {
+            query: Box::new(BooleanQuery::new(vec![
+                (Occur::Must, free.query),
+                (Occur::Must, structured),
+            ])),
+            phrase_len: free.phrase_len,
+        }),
+        (Some(query), None) => Some(query),
+        (None, Some(query)) => Some(BuiltQuery {
+            query,
+            phrase_len: None,
+        }),
         (None, None) => None,
     }
 }
@@ -1746,11 +1868,11 @@ impl ForwardGeocoder {
         let offset = request.offset.min(MAX_FETCH);
 
         let searcher = self.index_reader.searcher();
-        let Some(query) = build_request_query(&self.fields, &self.analyzers, &searcher, request)
+        let Some(BuiltQuery { query, phrase_len }) =
+            build_request_query(&self.fields, &self.analyzers, &searcher, request)
         else {
             return Ok(Vec::new());
         };
-
         let fetch = (limit + offset)
             .saturating_mul(OVERFETCH)
             .clamp(MIN_FETCH, MAX_FETCH);
@@ -1758,7 +1880,7 @@ impl ForwardGeocoder {
         // One query carries both tiers: exact/prefix clauses are boosted well
         // above the fuzzy ones, so an exact hit always outranks a near-miss
         // while near-misses still surface when nothing better exists.
-        let hits = self.collect(&searcher, query.as_ref(), request.kind, fetch)?;
+        let hits = self.collect(&searcher, query.as_ref(), request.kind, fetch, phrase_len)?;
 
         let mut results =
             self.collapse(&searcher, hits, limit + offset, request.include_polygon)?;
@@ -1785,14 +1907,18 @@ impl ForwardGeocoder {
         query: &dyn Query,
         kind: GeocodeKindFilter,
         fetch: usize,
+        phrase_len: Option<usize>,
     ) -> tantivy::Result<Vec<(RankKey, DocAddress)>> {
         // `FilterCollector` runs the predicate on the fast-field value, so the
         // kind filter is applied during collection rather than after it.
         //
-        // `tweak_score` replaces the raw BM25 score with `(tier, popularity,
-        // score)`: the collector sorts by that key in descending order, so the
-        // over-fetch keeps the most popular members of a score tie instead of
-        // an arbitrary subset.
+        // `tweak_score` replaces the raw BM25 score with the rank key
+        // `(tier, score, popularity)`: the collector sorts by that key in
+        // descending order, so the over-fetch keeps the most relevant members
+        // of a score tie instead of an arbitrary subset. The tier needs the
+        // token counts of the fields the phrase clauses match and of the parts
+        // that decide whether the whole address was matched.
+        let fields = self.fields;
         let collector = FilterCollector::new(
             GEO_TYPE_FIELD.to_string(),
             move |value: u64| {
@@ -1806,7 +1932,14 @@ impl ForwardGeocoder {
                     .u64("popularity")
                     .expect("popularity is a fast field in the schema")
                     .first_or_default_col(0u64);
-                move |doc: DocId, score: Score| (rank_tier(score), score, popularity.get_val(doc))
+                let norms = WholeAddressNorms::new(segment_reader, &fields);
+                move |doc: DocId, score: Score| {
+                    (
+                        rank_tier(score, norms.lens(doc), phrase_len),
+                        score,
+                        popularity.get_val(doc),
+                    )
+                }
             }),
         );
         searcher.search(query, &collector)
@@ -2036,9 +2169,12 @@ mod tests {
     /// Run a built query with the production rank key and render the fixtures.
     fn run_query_with(
         searcher: &Searcher,
+        fields: &Fields,
         fixtures: &[IndexedDoc],
         query: &dyn Query,
+        phrase_len: Option<usize>,
     ) -> Vec<(RankKey, String)> {
+        let fields = *fields;
         let collector =
             TopDocs::with_limit(10).tweak_score(move |segment_reader: &SegmentReader| {
                 let popularity = segment_reader
@@ -2046,7 +2182,14 @@ mod tests {
                     .u64("popularity")
                     .unwrap()
                     .first_or_default_col(0u64);
-                move |doc: DocId, score: Score| (rank_tier(score), score, popularity.get_val(doc))
+                let norms = WholeAddressNorms::new(segment_reader, &fields);
+                move |doc: DocId, score: Score| {
+                    (
+                        rank_tier(score, norms.lens(doc), phrase_len),
+                        score,
+                        popularity.get_val(doc),
+                    )
+                }
             });
         searcher
             .search(query, &collector)
@@ -2062,11 +2205,18 @@ mod tests {
     /// Run a built query with a fresh searcher.
     fn run_query(
         index: &Index,
+        fields: &Fields,
         fixtures: &[IndexedDoc],
-        query: Box<dyn Query>,
+        query: &BuiltQuery,
     ) -> Vec<(RankKey, String)> {
         let searcher = index.reader().unwrap().searcher();
-        run_query_with(&searcher, fixtures, query.as_ref())
+        run_query_with(
+            &searcher,
+            fields,
+            fixtures,
+            query.query.as_ref(),
+            query.phrase_len,
+        )
     }
 
     /// Search and return `(rank key, rendered address)` pairs, in ranked order,
@@ -2081,7 +2231,7 @@ mod tests {
         let searcher = index.reader().unwrap().searcher();
         let query =
             build_query(fields, analyzers, &searcher, query_text).expect("query must build");
-        run_query(index, fixtures, query)
+        run_query(index, fields, fixtures, &query)
     }
 
     /// Search with a full request (structured fields, offset, …).
@@ -2095,7 +2245,7 @@ mod tests {
         let searcher = index.reader().unwrap().searcher();
         let query = build_request_query(fields, analyzers, &searcher, request)
             .expect("request must build a query");
-        run_query(index, fixtures, query)
+        run_query(index, fields, fixtures, &query)
     }
 
     /// Search and render the fixture addresses, in ranked order.
@@ -2269,6 +2419,92 @@ mod tests {
     }
 
     #[test]
+    fn whole_address_match_outranks_longer_phrase_hits() {
+        // The zone's whole address is the query; the building contains the same
+        // two tokens as a contiguous phrase inside a longer address. Both reach
+        // the exact-phrase tier, and the building's BM25 is higher (it matches
+        // its city field too) — only the whole-address tier can order them.
+        let mut zone = indexed_doc("", "", "", "", "New York", 0);
+        zone.geo_kind = GeoObjectKind::Zone;
+        let building = indexed_doc("United States", "New York", "Broadway", "1", "", 1);
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![zone, building]);
+
+        let results = search_ranked(&index, &fields, &analyzers, &fixtures, "new york");
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(
+            results[0].0 .0, 3,
+            "the whole-address match must take the top tier"
+        );
+        assert_eq!(results[0].1, "New York");
+        assert_eq!(
+            (results[1].0 .0, results[1].1.as_str()),
+            (2, "United States, New York, Broadway, 1"),
+            "a phrase hit inside a longer address stays in tier 2"
+        );
+    }
+
+    #[test]
+    fn single_token_whole_address_match_wins() {
+        // A one-token query builds no phrase clause at all — the base query
+        // already matches the token — so the whole-address tier comes from the
+        // document's one-token address alone.
+        let mut zone = indexed_doc("", "", "", "", "Moscow", 0);
+        zone.geo_kind = GeoObjectKind::Zone;
+        let building = indexed_doc("Testland", "Moscow", "High Street", "12", "", 1);
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![zone, building]);
+
+        let results = search_ranked(&index, &fields, &analyzers, &fixtures, "moscow");
+
+        assert_eq!(
+            (results[0].0 .0, results[0].1.as_str()),
+            (3, "Moscow"),
+            "a one-token address that is the query must outrank a longer one"
+        );
+        assert_eq!(results[1].0 .0, 0, "the longer address has no phrase tier");
+    }
+
+    #[test]
+    fn region_only_match_is_not_a_whole_address_match() {
+        // The first document's `merged` is just the country, so it is one token
+        // long — but the query only reached it through the region. Treating
+        // that as a whole-address match would bury every real address hit.
+        let mut region_only = indexed_doc("Testland", "", "", "", "", 0);
+        region_only.region = "High Street".to_string();
+        let street = indexed_doc("", "", "High Street", "", "", 1);
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![region_only, street]);
+
+        let results = search_ranked(&index, &fields, &analyzers, &fixtures, "high");
+
+        assert_eq!(results.len(), 2);
+        assert!(
+            results.iter().all(|(rank, _)| rank.0 < 3),
+            "a region-only match must never reach the whole-address tier"
+        );
+        assert_eq!(
+            results.first().map(|(_, address)| address.as_str()),
+            Some("High Street"),
+            "the document whose address carries the token must win"
+        );
+    }
+
+    #[test]
+    fn whole_address_match_wins_while_the_last_token_is_typed() {
+        let mut zone = indexed_doc("", "", "", "", "New York", 0);
+        zone.geo_kind = GeoObjectKind::Zone;
+        let building = indexed_doc("United States", "New York", "Broadway", "1", "", 1);
+        let (index, fields, analyzers, fixtures) = build_test_index(vec![zone, building]);
+
+        let results = search_ranked(&index, &fields, &analyzers, &fixtures, "new yor");
+
+        assert_eq!(
+            (results[0].0 .0, results[0].1.as_str()),
+            (3, "New York"),
+            "the prefix phrase must still reach the whole-address tier"
+        );
+    }
+
+    #[test]
     fn absent_non_final_token_is_dropped() {
         let (index, fields, analyzers, fixtures) =
             build_test_index(vec![indexed_doc("", "London", "High Street", "12", "", 0)]);
@@ -2432,13 +2668,25 @@ mod tests {
             let Some(warmup) = build_query(&fields, &analyzers, &searcher, query) else {
                 continue;
             };
-            let _ = run_query_with(&searcher, &fixtures, warmup.as_ref());
+            let _ = run_query_with(
+                &searcher,
+                &fields,
+                &fixtures,
+                warmup.query.as_ref(),
+                warmup.phrase_len,
+            );
             let started = std::time::Instant::now();
             for _ in 0..iterations {
                 let Some(q) = build_query(&fields, &analyzers, &searcher, query) else {
                     continue;
                 };
-                let _ = run_query_with(&searcher, &fixtures, q.as_ref());
+                let _ = run_query_with(
+                    &searcher,
+                    &fields,
+                    &fixtures,
+                    q.query.as_ref(),
+                    q.phrase_len,
+                );
             }
             println!(
                 "{query:?}: {:.3} ms/query over {} docs",
