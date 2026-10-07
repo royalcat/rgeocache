@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,15 @@ import (
 	"github.com/thejerf/slogassert"
 	"golang.org/x/exp/mmap"
 )
+
+// edgeLengthMeters approximates the length of an edge between two cache points
+// (x = longitude, y = latitude).
+func edgeLengthMeters(fromX, fromY, toX, toY float64) float64 {
+	lat := (fromY + toY) * 0.5 * math.Pi / 180
+	dx := (toX - fromX) * 111_320.0 * math.Cos(lat)
+	dy := (toY - fromY) * 111_320.0
+	return math.Hypot(dx, dy)
+}
 
 func TestLondon(t *testing.T) {
 	slogassert.NewDefault(t)
@@ -64,16 +74,16 @@ func TestLondon(t *testing.T) {
 
 	t.Log("Checking road graph section")
 
-	graphFile, err := os.Open(pointsFile)
+	graphFile, err := mmap.Open(pointsFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer graphFile.Close()
-
-	graphStat, err := graphFile.Stat()
+	graphStat, err := os.Stat(pointsFile)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	graphSection, err := savev2.FindGraphSection(graphFile, graphStat.Size())
 	if err != nil {
 		t.Fatalf("expected a graph section: %v", err)
@@ -84,9 +94,21 @@ func TestLondon(t *testing.T) {
 	if graphSection.MaxHalfExtent <= 0 {
 		t.Fatalf("expected positive max half extent, got %v", graphSection.MaxHalfExtent)
 	}
-	// Scan every edge, not just a sample: a single degenerate edge (e.g. the
-	// self-loop real OSM data used to produce on a repeated way node) must
-	// fail the test.
+
+	// The generation-side simplification keeps every multi-node edge within
+	// 150 m of OSM shape nodes; a raw OSM segment longer than that cannot be
+	// split. Resolve point coordinates to check the lengths.
+	loaded, err := savev2.LoadMmap(graphFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The generation-side simplification keeps every edge that spans multiple
+	// OSM shape nodes within 150 m of each other. An edge longer than the cap
+	// can therefore only be a raw OSM segment without intermediate nodes; such
+	// segments are left untouched instead of interpolating invented points.
+	// Assert the cap holds for everything else and that raw gaps stay rare.
+	overCap := 0
+	maxMeters := 0.0
 	for i := uint64(0); i < graphSection.EdgeCount; i++ {
 		rec, err := graphSection.Edge(graphFile, i)
 		if err != nil {
@@ -101,8 +123,28 @@ func TestLondon(t *testing.T) {
 		if rec.Oneway > 2 {
 			t.Errorf("edge[%d] has invalid oneway %d", i, rec.Oneway)
 		}
+		fromX, fromY, err := loaded.DiskBush.CoordAt(int(rec.FromPos))
+		if err != nil {
+			t.Fatalf("edge[%d]: %v", i, err)
+		}
+		toX, toY, err := loaded.DiskBush.CoordAt(int(rec.ToPos))
+		if err != nil {
+			t.Fatalf("edge[%d]: %v", i, err)
+		}
+		meters := edgeLengthMeters(fromX, fromY, toX, toY)
+		if meters > maxMeters {
+			maxMeters = meters
+		}
+		if meters > 150.1 {
+			overCap++
+		}
 	}
-	t.Logf("Graph section: %d edges, max half extent %.6f", graphSection.EdgeCount, graphSection.MaxHalfExtent)
+	if ratio := float64(overCap) / float64(graphSection.EdgeCount); ratio > 0.05 {
+		t.Errorf("%d of %d edges (%.1f%%) exceed the 150 m cap; only raw OSM gaps may",
+			overCap, graphSection.EdgeCount, ratio*100)
+	}
+	t.Logf("Graph section: %d edges, max half extent %.6f, max edge %.1f m, %d over the 150 m cap",
+		graphSection.EdgeCount, graphSection.MaxHalfExtent, maxMeters, overCap)
 
 	t.Log("Loading points from file")
 

@@ -102,6 +102,15 @@ func (d *DiskKDBush[V, VP]) NumPoints() int { return d.numPoints }
 // NodeSize returns the node size used when the index was built.
 func (d *DiskKDBush[V, VP]) NodeSize() int { return d.nodeSize }
 
+// CoordAt returns the coordinates of the point at sorted position i, the same
+// order Range, Within and ForEach return points in.
+func (d *DiskKDBush[V, VP]) CoordAt(i int) (x, y float64, err error) {
+	if i < 0 || i >= d.numPoints {
+		return 0, 0, fmt.Errorf("kdbush: position %d out of range [0, %d)", i, d.numPoints)
+	}
+	return d.readCoord(i)
+}
+
 // diskIterateBatchSize is the number of tree positions read per batch during
 // ForEach. One batch is 4096*8 index bytes + 4096*16 coordinate bytes.
 const diskIterateBatchSize = 4096

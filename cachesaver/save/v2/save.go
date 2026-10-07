@@ -25,6 +25,15 @@ type rawEdge struct {
 	class, oneway    uint8
 }
 
+// rawPoint is a point with its strings resolved, before string-ID assignment.
+type rawPoint struct {
+	x, y                                    float64
+	name, street, houseNumber, city, region string
+	weight                                  uint8
+	geoType                                 uint8
+	graphNode                               uint32
+}
+
 // Save writes a v2 cache to w.
 //
 // File layout:
@@ -47,13 +56,6 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 
 	// Phase 1: Materialize points and edges with placeholder data.
 	// Register strings to get IDs; we'll fill V2PointData after building the index.
-	type rawPoint struct {
-		x, y                                    float64
-		name, street, houseNumber, city, region string
-		weight                                  uint8
-		geoType                                 uint8
-		graphNode                               uint32
-	}
 	var rawPoints []rawPoint
 	var rawEdges []rawEdge
 	var maxGraphNode uint32
@@ -100,18 +102,21 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 	// Phase 2: Build offset index and null-terminated string data block
 	offsetIndex, stringData := buildStringIndex(dedup)
 
-	// Phase 3: Fill V2PointData using the assigned IDs. Also record the original
-	// point index of every graph node (id → index) for edge translation.
-	v2points := make([]kdbush.Point[V2PointData], len(rawPoints))
-	// Graph node ids are dense (assigned by claimGraphNode) and every id has
-	// exactly one point, so maxGraphNode+1 is the exact size of the id→point
-	// index. Preallocate once: growing to graphNode+1 on every new maximum is
-	// quadratic, and an amortized length that no longer equals the highest id
-	// would weaken writeGraphSection's out-of-range node check.
+	// Phase 3: Simplify the road graph: drop near-collinear interior nodes and
+	// rewrite the edges between the kept nodes (see simplify.go). The cache
+	// format and every non-road point are untouched; nodeToOrig maps graph node
+	// ids to indexes in the filtered point slice.
 	var nodeToOrig []uint32
-	if maxGraphNode > 0 {
-		nodeToOrig = make([]uint32, int(maxGraphNode)+1)
+	if len(rawEdges) > 0 {
+		var err error
+		rawPoints, rawEdges, nodeToOrig, err = simplifyGraph(rawPoints, rawEdges, maxGraphNode)
+		if err != nil {
+			return err
+		}
 	}
+
+	// Phase 4: Fill V2PointData using the assigned IDs.
+	v2points := make([]kdbush.Point[V2PointData], len(rawPoints))
 	for i, rp := range rawPoints {
 		v2points[i] = kdbush.Point[V2PointData]{
 			X: rp.x, Y: rp.y,
@@ -125,20 +130,17 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 				GeoType:       rp.geoType,
 			},
 		}
-		if rp.graphNode != 0 {
-			nodeToOrig[rp.graphNode] = uint32(i)
-		}
 	}
 	rawPoints = nil // release to GC
 
-	// Phase 4: Materialize zones with inline names
+	// Phase 5: Materialize zones with inline names
 	zonesSection := buildZonesSection(zones)
 	zonesBytes, err := proto.Marshal(zonesSection)
 	if err != nil {
 		return err
 	}
 
-	// Phase 5: Marshal metadata
+	// Phase 6: Marshal metadata
 	metadataProto := &savev1proto.CacheMetadata{
 		Version:     meta.Version,
 		DateCreated: meta.DateCreated.Format(time.RFC3339),
@@ -149,7 +151,7 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 		return err
 	}
 
-	// Phase 6: V2Header
+	// Phase 7: V2Header
 	header := &savev2proto.V2Header{
 		MetadataSize:     uint32(len(metadataBytes)),
 		StringsIndexSize: uint32(len(offsetIndex) * 4),
@@ -161,7 +163,7 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 		return err
 	}
 
-	// Phase 7: Write everything sequentially
+	// Phase 8: Write everything sequentially
 	if err := binary.Write(w, binary.LittleEndian, uint32(len(headerBytes))); err != nil {
 		return err
 	}
