@@ -53,6 +53,7 @@ func (f *GeoGen) parseDatabase() error {
 	fmt.Printf("Duplicate node parse: %d\n", f.parsedNodesDupes.Load())
 	fmt.Printf("Duplicate way parse: %d\n", f.parsedWaysDupes.Load())
 	fmt.Printf("Duplicate relation parse: %d\n", f.parsedRelationsDupes.Load())
+	fmt.Printf("Duplicate graph node: %d\n", f.graphNodesDupes.Load())
 
 	return nil
 }

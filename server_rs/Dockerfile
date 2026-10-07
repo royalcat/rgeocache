@@ -56,8 +56,9 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY proto/ ./proto/
 COPY src/ ./src/
-# `src/server.rs` embeds `web/fgeocode-demo.html` for the demo page, so the
-# synced copy of the shared page has to be part of this context.
+# `src/server.rs` embeds `web/fgeocode-demo.html` and
+# `web/roadgraph-demo.html` for the demo pages, so the synced copies of the
+# shared pages have to be part of this context.
 COPY web/ ./web/
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/build/target,id=target-$TARGETARCH-${TARGETVARIANT:-v1},sharing=locked \

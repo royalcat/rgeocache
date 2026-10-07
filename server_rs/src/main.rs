@@ -9,7 +9,7 @@ use ntex::web::{HttpServer, WebAppConfig};
 use ntex::SharedCfg;
 
 use rgeocache_server::cache::CacheFile;
-use rgeocache_server::{forward_geocoder, geocoder, server};
+use rgeocache_server::{forward_geocoder, geocoder, road_graph, server};
 
 #[derive(Parser, Debug)]
 #[command(name = "rgeocache-server")]
@@ -66,6 +66,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let geocoder = Arc::new(geocoder::Geocoder::load(cache.clone(), args.search_radius)?);
 
+    let road_graph = road_graph::RoadGraph::load(cache.clone())
+        .map_err(|err| format!("invalid road graph section: {err}"))?;
+    match &road_graph {
+        Some(graph) => log::info!(
+            "Loaded road graph: {} edges, max half extent {:.6} degrees",
+            graph.edge_count(),
+            graph.max_half_extent()
+        ),
+        None => log::info!("Cache has no road graph section; /roadgraph/box will answer 503"),
+    }
+
     let metrics = server::Metrics::new()?;
 
     if let Some(dir) = &args.index_dir {
@@ -117,6 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(server::AppState {
         geocoder,
         forward_geocoder: forward_geocoder_once,
+        road_graph: road_graph.map(Arc::new),
         metrics,
     });
 
@@ -143,13 +155,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .route(
                 "/fgeocode/autocomplete",
                 ntex::web::get().to(server::fgeocode_autocomplete_handle),
+            )
+            .route(
+                "/roadgraph/box",
+                ntex::web::get().to(server::roadgraph_box_handler),
             );
-        // The demo page is a non-default feature: without it the route does not
-        // exist and the handler is not compiled in.
+        // The demo pages are a non-default feature: without them the routes do
+        // not exist and the handlers are not compiled in.
         #[cfg(feature = "demo-page")]
         let app = app.route(
             "/fgeocode/demo",
             ntex::web::get().to(server::fgeocode_demo_handle),
+        );
+        #[cfg(feature = "demo-page")]
+        let app = app.route(
+            "/roadgraph/demo",
+            ntex::web::get().to(server::roadgraph_demo_handle),
         );
         app.route("/metrics", ntex::web::get().to(server::metrics_handler))
     })

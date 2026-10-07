@@ -5,6 +5,7 @@ use crate::forward_geocoder::{
     MAX_LIMIT, MAX_QUERY_LEN,
 };
 use crate::geocoder::{Geocoder, Info};
+use crate::road_graph::{self, BBox, RoadGraph};
 use async_stream::try_stream;
 use futures::Stream;
 use geo::MultiPolygon;
@@ -13,7 +14,7 @@ use ntex::util::Bytes;
 use ntex::web::{self, HttpResponse};
 use prometheus::{Counter, Encoder, Histogram, HistogramOpts, Opts, Registry, TextEncoder};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
 
 // ---------------------------------------------------------------------------
@@ -27,6 +28,8 @@ pub struct AppState {
     /// lock is still empty the handler answers 503 with `Retry-After` rather
     /// than blocking an ntex worker for the duration of the build.
     pub forward_geocoder: Arc<OnceLock<Result<Arc<ForwardGeocoder>, String>>>,
+    /// Parsed road graph section of the loaded cache, when present.
+    pub road_graph: Option<Arc<RoadGraph>>,
     pub metrics: Metrics,
 }
 
@@ -49,6 +52,10 @@ pub struct Metrics {
     pub fgeocode_index_built: Counter,
     pub fgeocode_index_reused: Counter,
     pub fgeocode_index_failures: Counter,
+    pub roadgraph_requests: Counter,
+    pub roadgraph_duration: Histogram,
+    pub roadgraph_edges: Histogram,
+    pub roadgraph_truncated: Counter,
     registry: Registry,
 }
 
@@ -145,6 +152,38 @@ impl Metrics {
         )?;
         registry.register(Box::new(fgeocode_index_failures.clone()))?;
 
+        let roadgraph_requests = Counter::new(
+            "rgeocode_roadgraph_requests_total",
+            "Total road graph bbox requests",
+        )?;
+        registry.register(Box::new(roadgraph_requests.clone()))?;
+
+        let roadgraph_duration = Histogram::with_opts(
+            HistogramOpts::new(
+                "rgeocode_roadgraph_duration_seconds",
+                "Road graph bbox query duration",
+            )
+            .buckets(vec![0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5]),
+        )?;
+        registry.register(Box::new(roadgraph_duration.clone()))?;
+
+        let roadgraph_edges = Histogram::with_opts(
+            HistogramOpts::new(
+                "rgeocode_roadgraph_edges",
+                "Number of graph edges returned per bbox request",
+            )
+            .buckets(vec![
+                0.0, 1.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0, 50000.0,
+            ]),
+        )?;
+        registry.register(Box::new(roadgraph_edges.clone()))?;
+
+        let roadgraph_truncated = Counter::new(
+            "rgeocode_roadgraph_truncated_total",
+            "Road graph bbox requests truncated at the edge limit",
+        )?;
+        registry.register(Box::new(roadgraph_truncated.clone()))?;
+
         Ok(Self {
             requests_single,
             requests_multi,
@@ -159,6 +198,10 @@ impl Metrics {
             fgeocode_index_built,
             fgeocode_index_reused,
             fgeocode_index_failures,
+            roadgraph_requests,
+            roadgraph_duration,
+            roadgraph_edges,
+            roadgraph_truncated,
             registry,
         })
     }
@@ -452,6 +495,159 @@ pub async fn fgeocode_autocomplete_handle(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Road graph
+// ---------------------------------------------------------------------------
+
+const ROADGRAPH_DEFAULT_LIMIT: usize = 10_000;
+const ROADGRAPH_MAX_LIMIT: usize = 50_000;
+
+#[derive(Debug, serde::Deserialize)]
+pub struct RoadGraphQuery {
+    /// `min_lon,min_lat,max_lon,max_lat` (GeoJSON axis order).
+    bbox: String,
+    /// Include per-edge direction metadata; defaults to false.
+    directions: Option<bool>,
+    /// Maximum number of edges; clamped to `1..=ROADGRAPH_MAX_LIMIT`.
+    limit: Option<usize>,
+}
+
+/// Parses and validates `min_lon,min_lat,max_lon,max_lat`.
+fn parse_bbox(value: &str) -> Result<BBox, String> {
+    let parts: Vec<&str> = value.split(',').collect();
+    if parts.len() != 4 {
+        return Err("bbox must be min_lon,min_lat,max_lon,max_lat".to_string());
+    }
+
+    let mut coords = [0.0f64; 4];
+    for (i, part) in parts.iter().enumerate() {
+        let part = part.trim();
+        let value: f64 = part
+            .parse()
+            .map_err(|_| format!("invalid bbox coordinate '{part}'"))?;
+        if !value.is_finite() {
+            return Err("bbox coordinates must be finite numbers".to_string());
+        }
+        coords[i] = value;
+    }
+
+    let bbox = BBox {
+        min_lon: coords[0],
+        min_lat: coords[1],
+        max_lon: coords[2],
+        max_lat: coords[3],
+    };
+    if bbox.min_lon < -180.0 || bbox.max_lon > 180.0 || bbox.min_lat < -90.0 || bbox.max_lat > 90.0
+    {
+        return Err("bbox coordinates out of range".to_string());
+    }
+    if bbox.min_lon >= bbox.max_lon || bbox.min_lat >= bbox.max_lat {
+        return Err("bbox min values must be smaller than max values".to_string());
+    }
+
+    Ok(bbox)
+}
+
+/// `GET /roadgraph/box` — road graph edges intersecting a bounding box as a
+/// GeoJSON FeatureCollection, with endpoint node features.
+pub async fn roadgraph_box_handler(
+    state: web::types::State<Arc<AppState>>,
+    web::types::Query(query_params): web::types::Query<RoadGraphQuery>,
+) -> HttpResponse {
+    state.metrics.roadgraph_requests.inc();
+
+    let bbox = match parse_bbox(&query_params.bbox) {
+        Ok(bbox) => bbox,
+        Err(err) => return HttpResponse::BadRequest().body(err),
+    };
+
+    let Some(graph) = state.road_graph.clone() else {
+        return HttpResponse::ServiceUnavailable().body("cache has no road graph section");
+    };
+
+    let directions = query_params.directions.unwrap_or(false);
+    let limit = query_params
+        .limit
+        .unwrap_or(ROADGRAPH_DEFAULT_LIMIT)
+        .clamp(1, ROADGRAPH_MAX_LIMIT);
+
+    let _timer = state.metrics.roadgraph_duration.start_timer();
+    let graph_for_query = graph.clone();
+    let queried =
+        ntex::rt::spawn_blocking(move || graph_for_query.edges_in_bbox(&bbox, limit)).await;
+
+    let (hits, truncated) = match queried {
+        Ok(result) => result,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("road graph task failed: {err}"));
+        }
+    };
+
+    state.metrics.roadgraph_edges.observe(hits.len() as f64);
+    if truncated {
+        state.metrics.roadgraph_truncated.inc();
+    }
+
+    let mut features: Vec<serde_json::Value> = Vec::with_capacity(hits.len() * 2);
+    for hit in &hits {
+        let mut properties = serde_json::Map::new();
+        properties.insert("from".to_string(), serde_json::json!(hit.edge.from_pos));
+        properties.insert("to".to_string(), serde_json::json!(hit.edge.to_pos));
+
+        let name = graph.string(hit.edge.name_id);
+        if !name.is_empty() {
+            properties.insert("name".to_string(), serde_json::json!(name));
+        }
+        let street = graph.string(hit.edge.street_id);
+        if !street.is_empty() {
+            properties.insert("street".to_string(), serde_json::json!(street));
+        }
+        properties.insert(
+            "class".to_string(),
+            serde_json::json!(road_graph::class_name(hit.edge.class)),
+        );
+        if directions {
+            properties.insert(
+                "direction".to_string(),
+                serde_json::json!(road_graph::direction_name(hit.edge.oneway)),
+            );
+        }
+
+        features.push(serde_json::json!({
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[hit.from.0, hit.from.1], [hit.to.0, hit.to.1]],
+            },
+            "properties": serde_json::Value::Object(properties),
+        }));
+    }
+
+    // Every endpoint of a returned edge is included, deduplicated and ordered.
+    let mut node_ids: BTreeSet<u32> = BTreeSet::new();
+    for hit in &hits {
+        node_ids.insert(hit.edge.from_pos);
+        node_ids.insert(hit.edge.to_pos);
+    }
+    for id in node_ids {
+        if let Some((lon, lat)) = graph.coord(id) {
+            features.push(serde_json::json!({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {"id": id},
+            }));
+        }
+    }
+
+    let body = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": features,
+        "truncated": truncated,
+    });
+    HttpResponse::Ok().json(&body)
+}
+
 /// The self-contained browser demo page for the forward geocoding API, shared
 /// with the Go server.
 ///
@@ -478,8 +674,29 @@ pub async fn fgeocode_demo_handle() -> HttpResponse {
         .body(FGEODEMO_HTML)
 }
 
-// The demo route is the only thing this module tests, so the whole module is
-// gated with it; otherwise its imports would be unused in default builds.
+/// The self-contained browser demo page for the road graph API, shared asset
+/// mirrored from `web/roadgraph-demo.html` (same Docker build context reason as
+/// the forward geocoding page). The page pulls Leaflet and OSM tiles from the
+/// network at runtime.
+///
+/// Compiled in only with the non-default `demo-page` feature.
+#[cfg(feature = "demo-page")]
+const ROADGRAPH_DEMO_HTML: &str = include_str!("../web/roadgraph-demo.html");
+
+/// `GET /roadgraph/demo`: a static page that drives `/roadgraph/box` from the
+/// browser. It is served even when the cache has no road graph section, so the
+/// page itself can surface that 503 reason.
+///
+/// Requires the non-default `demo-page` Cargo feature.
+#[cfg(feature = "demo-page")]
+pub async fn roadgraph_demo_handle() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(ROADGRAPH_DEMO_HTML)
+}
+
+// The demo routes are the only thing this module tests, so the whole module is
+// gated with them; otherwise its imports would be unused in default builds.
 #[cfg(all(test, feature = "demo-page"))]
 mod tests {
     use super::*;
@@ -509,19 +726,91 @@ mod tests {
         assert!(html.contains("id=\"q\""), "search input missing");
         assert!(html.contains("/fgeocode/search"), "search endpoint missing");
     }
+
+    #[ntex::test]
+    async fn roadgraph_demo_serves_html_page() {
+        let app = test::init_service(
+            App::new().route("/roadgraph/demo", web::get().to(roadgraph_demo_handle)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/roadgraph/demo").to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/html; charset=utf-8")
+        );
+
+        let body = test::read_body(resp).await;
+        let html = std::str::from_utf8(&body).expect("demo page is valid UTF-8");
+        assert!(html.contains("id=\"min-lon\""), "bbox inputs missing");
+        assert!(
+            html.contains("/roadgraph/box"),
+            "road graph endpoint missing"
+        );
+        assert!(html.contains("leaflet"), "leaflet assets missing");
+    }
 }
 
-/// Guards `server_rs/web/fgeocode-demo.html` against drifting from the shared
-/// page. Deliberately not behind `demo-page`, so it runs in the default-feature
-/// CI build and fails as soon as the two copies differ.
+/// Guards `server_rs/web/*.html` against drifting from the shared pages in
+/// `web/`. Deliberately not behind `demo-page`, so it runs in the
+/// default-feature CI build and fails as soon as the two copies differ.
 #[cfg(test)]
 mod demo_asset_sync {
     #[test]
-    fn demo_page_copy_matches_shared_page() {
+    fn fgeocode_demo_page_copy_matches_shared_page() {
         assert_eq!(
             include_str!("../web/fgeocode-demo.html"),
             include_str!("../../web/fgeocode-demo.html"),
             "server_rs/web/fgeocode-demo.html is out of sync with web/fgeocode-demo.html; copy the shared page over"
         );
+    }
+
+    #[test]
+    fn roadgraph_demo_page_copy_matches_shared_page() {
+        assert_eq!(
+            include_str!("../web/roadgraph-demo.html"),
+            include_str!("../../web/roadgraph-demo.html"),
+            "server_rs/web/roadgraph-demo.html is out of sync with web/roadgraph-demo.html; copy the shared page over"
+        );
+    }
+}
+
+#[cfg(test)]
+mod roadgraph_query_tests {
+    use super::*;
+
+    #[test]
+    fn parses_valid_bbox() {
+        let bbox = parse_bbox("-0.13, 51.50, -0.12, 51.51").expect("valid bbox");
+        assert_eq!(bbox.min_lon, -0.13);
+        assert_eq!(bbox.min_lat, 51.50);
+        assert_eq!(bbox.max_lon, -0.12);
+        assert_eq!(bbox.max_lat, 51.51);
+    }
+
+    #[test]
+    fn rejects_invalid_bboxes() {
+        for value in [
+            "",
+            "1,2,3",
+            "1,2,3,4,5",
+            "a,2,3,4",
+            "nan,0,1,1",
+            "inf,0,1,1",
+            "-200,0,1,1",
+            "0,0,181,1",
+            "0,0,0,1",
+            "0,1,1,1",
+        ] {
+            assert!(
+                parse_bbox(value).is_err(),
+                "expected {value:?} to be rejected"
+            );
+        }
     }
 }

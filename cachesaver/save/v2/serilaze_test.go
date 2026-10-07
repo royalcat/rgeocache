@@ -2,6 +2,8 @@ package savev2
 
 import (
 	"bytes"
+	"encoding/binary"
+	"errors"
 	"testing"
 	"time"
 	"unique"
@@ -72,7 +74,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	// Save to buffer
 	var buf bytes.Buffer
-	err := Save(&buf, sliceToSeq(points), sliceToSeq(zones), meta)
+	err := Save(&buf, pointsToItems(points), sliceToSeq(zones), meta)
 	if err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
@@ -157,7 +159,7 @@ func TestEmptySaveLoad(t *testing.T) {
 	meta := makeTestMetadata()
 	var buf bytes.Buffer
 
-	err := Save(&buf, sliceToSeq([]cachemodel.Point{}), sliceToSeq([]cachemodel.Zone{}), meta)
+	err := Save(&buf, pointsToItems(nil), sliceToSeq([]cachemodel.Zone{}), meta)
 	if err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
@@ -201,5 +203,133 @@ func sliceToSeq[T any](slice []T) func(yield func(T) bool) {
 				return
 			}
 		}
+	}
+}
+
+// writeCacheFilePrefix writes the bytes cachesaver.SaveV2 places before
+// savev2.Save's output (magic + compat level) so FindGraphSection, which
+// expects a complete cache file, can parse the buffer.
+func writeCacheFilePrefix(buf *bytes.Buffer) {
+	buf.WriteString("RGEO")
+	_ = binary.Write(buf, binary.LittleEndian, COMPATIBILITY_LEVEL)
+}
+
+// pointsToItems wraps points without graph node ids into a save item stream.
+func pointsToItems(points []cachemodel.Point) func(yield func(cachemodel.Item) bool) {
+	return func(yield func(cachemodel.Item) bool) {
+		for _, p := range points {
+			if !yield(cachemodel.Item{Kind: cachemodel.ItemPoint, Point: p}) {
+				return
+			}
+		}
+	}
+}
+
+// graphItems emits points numbered 1..N as graph nodes, followed by edges.
+func graphItems(points []cachemodel.Point, edges []cachemodel.GraphEdge) func(yield func(cachemodel.Item) bool) {
+	return func(yield func(cachemodel.Item) bool) {
+		for i, p := range points {
+			if !yield(cachemodel.Item{Kind: cachemodel.ItemPoint, Point: p, GraphNode: uint32(i + 1)}) {
+				return
+			}
+		}
+		for _, e := range edges {
+			if !yield(cachemodel.Item{Kind: cachemodel.ItemEdge, Edge: e}) {
+				return
+			}
+		}
+	}
+}
+
+func TestGraphSectionRoundTrip(t *testing.T) {
+	roadInfo := cachemodel.Info{
+		Name:        unique.Make(""),
+		Street:      unique.Make("Road"),
+		HouseNumber: unique.Make(""),
+		City:        unique.Make(""),
+		Region:      unique.Make(""),
+		Weight:      5,
+		Type:        cachemodel.GeoObjectRoad,
+	}
+	points := []cachemodel.Point{
+		{X: 0, Y: 0, Data: roadInfo},
+		{X: 0, Y: 1, Data: roadInfo},
+		{X: 1, Y: 0, Data: roadInfo},
+		{X: 1, Y: 1, Data: roadInfo},
+	}
+	edges := []cachemodel.GraphEdge{
+		{
+			FromNode: 1, ToNode: 2,
+			Street: unique.Make("First Street"), Name: unique.Make(""),
+			Class: cachemodel.GraphClassPrimary, Oneway: cachemodel.GraphOnewayForward,
+		},
+		{
+			FromNode: 2, ToNode: 3,
+			Street: unique.Make("First Street"), Name: unique.Make(""),
+			Class: cachemodel.GraphClassPrimary, Oneway: cachemodel.GraphOnewayBoth,
+		},
+		{
+			FromNode: 3, ToNode: 1,
+			Street: unique.Make("Second Street"), Name: unique.Make(""),
+			Class: cachemodel.GraphClassSecondary, Oneway: cachemodel.GraphOnewayBackward,
+		},
+	}
+
+	var buf bytes.Buffer
+	writeCacheFilePrefix(&buf)
+	err := Save(&buf, graphItems(points, edges), sliceToSeq([]cachemodel.Zone{}), makeTestMetadata())
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	r := bytes.NewReader(buf.Bytes())
+	section, err := FindGraphSection(r, int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("FindGraphSection failed: %v", err)
+	}
+	if section.EdgeCount != uint64(len(edges)) {
+		t.Fatalf("edge count: got %d, want %d", section.EdgeCount, len(edges))
+	}
+	if section.MaxHalfExtent <= 0 {
+		t.Fatalf("expected positive max half extent, got %v", section.MaxHalfExtent)
+	}
+	if section.Flags&graphFlagHasDirections == 0 {
+		t.Fatalf("expected direction flag, got flags %d", section.Flags)
+	}
+
+	for i, want := range edges {
+		rec, err := section.Edge(r, uint64(i))
+		if err != nil {
+			t.Fatalf("Edge(%d): %v", i, err)
+		}
+		if rec.Class != want.Class {
+			t.Errorf("edge[%d] class: got %d, want %d", i, rec.Class, want.Class)
+		}
+		if rec.Oneway != want.Oneway {
+			t.Errorf("edge[%d] oneway: got %d, want %d", i, rec.Oneway, want.Oneway)
+		}
+		if rec.FromPos >= uint32(len(points)) || rec.ToPos >= uint32(len(points)) {
+			t.Errorf("edge[%d] positions out of range: %d -> %d", i, rec.FromPos, rec.ToPos)
+		}
+		if rec.FromPos == rec.ToPos {
+			t.Errorf("edge[%d] self loop at position %d", i, rec.FromPos)
+		}
+		if want.Street.Value() != "" && rec.StreetID == 0 {
+			t.Errorf("edge[%d] missing street string id", i)
+		}
+	}
+}
+
+func TestNoGraphSection(t *testing.T) {
+	var buf bytes.Buffer
+	writeCacheFilePrefix(&buf)
+	err := Save(&buf, pointsToItems(nil), sliceToSeq([]cachemodel.Zone{}), makeTestMetadata())
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	_, err = FindGraphSection(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if !errors.Is(err, ErrNoGraphSection) {
+		t.Fatalf("expected ErrNoGraphSection, got %v", err)
 	}
 }

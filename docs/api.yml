@@ -296,6 +296,77 @@ paths:
         "503":
           description: Forward geocoder index is still building or failed to build
 
+  /roadgraph/box:
+    parameters:
+      - name: bbox
+        in: query
+        required: true
+        description: |
+          Bounding box as `min_lon,min_lat,max_lon,max_lat` (GeoJSON axis
+          order). Edges are returned whole when their segment intersects it.
+        schema:
+          type: string
+          example: "-0.13,51.50,-0.12,51.51"
+      - name: directions
+        in: query
+        required: false
+        description: |
+          Include per-edge direction metadata (`both`, `forward`, `backward`).
+          Defaults to false.
+        schema:
+          type: boolean
+          default: false
+      - name: limit
+        in: query
+        required: false
+        description: Maximum number of edges returned. Clamped to 1-50000.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50000
+          default: 10000
+    get:
+      summary: Get road graph edges and nodes inside a bounding box
+      description: |
+        Implemented by the Rust server (`server_rs`); the Go server does not
+        expose the road graph yet. Requires a cache generated with a road graph
+        section, and answers 503 for older caches.
+      tags:
+        - roadgraph
+      responses:
+        "200":
+          description: |
+            OK. A GeoJSON FeatureCollection with a `truncated` foreign member:
+            one LineString feature per edge and one Point feature per endpoint
+            node.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [type, features]
+                properties:
+                  type:
+                    type: string
+                    enum: [FeatureCollection]
+                  truncated:
+                    type: boolean
+                    description: True when more edges matched than the limit allowed.
+                  features:
+                    type: array
+                    items:
+                      type: object
+                      description: |
+                        Edge feature: geometry LineString with properties `from`,
+                        `to`, optional `name` and `street`, `class`, and
+                        `direction` when requested. Node feature: geometry Point
+                        with property `id` referencing a stable point position.
+        "400":
+          description: Bad request (malformed or out-of-range `bbox`)
+        "500":
+          description: Server error
+        "503":
+          description: The cache has no road graph section (generated before the feature)
+
 components:
   schemas:
     Address:

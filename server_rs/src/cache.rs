@@ -332,6 +332,21 @@ impl CacheFile {
         self.mmap.len()
     }
 
+    /// End of the KDBH block: the byte after the last point payload.
+    ///
+    /// Anything at or past this offset is a trailing extension (for example the
+    /// road graph section); readers that predate extensions stop before it.
+    pub fn kdbh_end(&self) -> usize {
+        let last_offset_pos = self.data_offsets_offset + self.num_points * 8;
+        let payload_size = read_i64le(&self.mmap, last_offset_pos).get() as usize;
+        self.data_blobs_offset + payload_size
+    }
+
+    /// Raw bytes of the mmap'd cache file.
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.mmap
+    }
+
     /// Read a single original-index value at sorted position `i`.
     #[inline]
     pub fn read_idx(&self, i: usize) -> I64LE {

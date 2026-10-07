@@ -23,6 +23,10 @@ russia.osm.pbf and ./europe/belarus.osm.pbf are input files
 
 Generating a cache of Russia will take about ~50GB of RAM. There is a possibility to shift the load from memory to disk by specifying the parameter --cache /tmp/rgeo_cache (you can specify any directory as the path), in this case, the generation process may significantly slow down
 
+Highway ways (motorway through tertiary) are stored as their OSM shape points
+and additionally produce a road graph section appended to the v2 cache; the Rust
+server serves it through `/roadgraph/box`.
+
 - ### HTTP Api
 
 ```bash
@@ -57,6 +61,23 @@ The search index is built in the background the first time the server starts, so
 index and reuse it across restarts (it is rebuilt automatically when the cache
 changes); without it a temporary directory is used. `--fgeocode=false` disables
 forward geocoding.
+
+The Rust server (`server_rs`) also serves the road graph stored in the cache:
+
+```bash
+curl 'localhost:8080/roadgraph/box?bbox=-0.13,51.50,-0.12,51.51&directions=true&limit=100'
+```
+
+`bbox` is `min_lon,min_lat,max_lon,max_lat` in GeoJSON axis order. The response
+is a GeoJSON FeatureCollection: one LineString per road edge (with `class`,
+`street`/`name`, and `direction` when requested) and one Point per endpoint
+node. Edge endpoints reference stable point positions, so responses for
+adjacent boxes merge. Caches generated before the road graph existed answer
+`503` on this route; the Go server does not expose it yet.
+
+An interactive demo — map, drag-to-select bounding box, direction arrows — is
+served at `http://localhost:8080/roadgraph/demo`. The page loads Leaflet and
+OpenStreetMap tiles from the network.
 
 ## Usage as a go module
 

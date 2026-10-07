@@ -15,19 +15,31 @@ import (
 )
 
 func (f *GeoGen) saveWorker(outputs []ParseOutput) error {
-	points := func(yield func(cachemodel.Point) bool) {
-		for point := range f.parsedPoints {
-			if !yield(cachesaver.Point{
-				X: point.X(),
-				Y: point.Y(),
-				Data: cachemodel.Info{
-					Name:        unique.Make(point.Name),
-					Street:      point.Street,
-					HouseNumber: point.HouseNumber,
-					City:        point.City,
-					Region:      point.Region,
-					Weight:      point.Weight,
-					Type:        point.Type,
+	items := func(yield func(cachemodel.Item) bool) {
+		for item := range f.parsedItems {
+			if item.IsEdge {
+				if !yield(cachemodel.Item{Kind: cachemodel.ItemEdge, Edge: item.Edge}) {
+					return
+				}
+				continue
+			}
+
+			point := item.Point
+			if !yield(cachemodel.Item{
+				Kind:      cachemodel.ItemPoint,
+				GraphNode: point.GraphNode,
+				Point: cachesaver.Point{
+					X: point.X(),
+					Y: point.Y(),
+					Data: cachemodel.Info{
+						Name:        unique.Make(point.Name),
+						Street:      point.Street,
+						HouseNumber: point.HouseNumber,
+						City:        point.City,
+						Region:      point.Region,
+						Weight:      point.Weight,
+						Type:        point.Type,
+					},
 				},
 			}) {
 				return
@@ -67,19 +79,30 @@ func (f *GeoGen) saveWorker(outputs []ParseOutput) error {
 		DateCreated: time.Now(),
 	}
 
-	pointsTee := Tee(points, len(outputs), 1)
+	itemsTee := Tee(items, len(outputs), 1)
 	zonesTee := Tee(zones, len(outputs), 1)
 
 	var wg errgroup.Group
 	for i, output := range outputs {
 		switch output.Format {
 		case "v1":
+			// v1 has no graph section: keep only the point items.
+			points := func(yield func(cachemodel.Point) bool) {
+				for item := range itemsTee[i] {
+					if item.Kind != cachemodel.ItemPoint {
+						continue
+					}
+					if !yield(item.Point) {
+						return
+					}
+				}
+			}
 			wg.Go(func() error {
-				return cachesaver.SaveV1(pointsTee[i], zonesTee[i], meta, output.Writer)
+				return cachesaver.SaveV1(points, zonesTee[i], meta, output.Writer)
 			})
 		case "v2":
 			wg.Go(func() error {
-				return cachesaver.SaveV2(pointsTee[i], zonesTee[i], meta, output.Writer)
+				return cachesaver.SaveV2(itemsTee[i], zonesTee[i], meta, output.Writer)
 			})
 		default:
 			return fmt.Errorf("unsupported format: %s", output.Format)

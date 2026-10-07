@@ -2,7 +2,6 @@ package geoparser
 
 import (
 	"log/slog"
-	"slices"
 	"strings"
 	"unique"
 
@@ -11,9 +10,7 @@ import (
 	"github.com/royalcat/rgeocache/geomodel"
 
 	"github.com/paulmach/orb"
-	"github.com/paulmach/orb/geo"
 	"github.com/paulmach/orb/planar"
-	"github.com/paulmach/orb/resample"
 	"github.com/paulmach/orb/simplify"
 	"github.com/paulmach/osm"
 )
@@ -22,17 +19,25 @@ func (f *GeoGen) parseObject(o osm.Object) {
 	switch obj := o.(type) {
 	case *osm.Node:
 		if point, ok := f.parseNode(obj); ok {
-			f.parsedPoints <- point
+			f.parsedItems <- parseItem{Point: point}
 		}
 	case *osm.Way:
 		for _, point := range f.parseWay(obj) {
-			f.parsedPoints <- point
+			f.parsedItems <- parseItem{Point: point}
 		}
 	case *osm.Relation:
 		for _, point := range f.parseRelation(obj) {
-			f.parsedPoints <- point
+			f.parsedItems <- parseItem{Point: point}
 		}
 	}
+}
+
+// parseItem is one element of the parse output stream: either a cache point or
+// a graph edge.
+type parseItem struct {
+	IsEdge bool
+	Point  geoPoint
+	Edge   cachemodel.GraphEdge
 }
 
 type geoPoint struct {
@@ -47,6 +52,10 @@ type geoPoint struct {
 
 	Weight uint8                    `json:"weight"`
 	Type   cachemodel.GeoObjectType `json:"type"`
+
+	// GraphNode is the dense graph node id of this point (0 when the point is
+	// not a road graph node).
+	GraphNode uint32 `json:"graph_node"`
 }
 
 const (
@@ -87,7 +96,7 @@ func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
 
 	if isBuilding(way.Tags) {
 		return f.parseWayBuilding(way)
-	} else if slices.Contains([]string{"motorway", "trunk", "primary", "secondary", "tertiary"}, way.Tags.Find("highway")) {
+	} else if _, ok := highwayClasses[way.Tags.Find("highway")]; ok {
 		return f.parseWayHighway(way)
 	}
 
@@ -116,35 +125,131 @@ func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
 	}}
 }
 
-func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
-	ls := f.makeLineString(way.Nodes)
-	ls = resample.ToInterval(ls, geo.Distance, f.config.HighwayPointsDistance)
+// highwayClasses maps the OSM highway values kept in the cache to the class
+// byte stored on graph edges.
+var highwayClasses = map[string]uint8{
+	"motorway":  cachemodel.GraphClassMotorway,
+	"trunk":     cachemodel.GraphClassTrunk,
+	"primary":   cachemodel.GraphClassPrimary,
+	"secondary": cachemodel.GraphClassSecondary,
+	"tertiary":  cachemodel.GraphClassTertiary,
+}
 
-	if len(ls) == 0 {
+// parseWayHighway emits the way's OSM shape points as road points and links
+// consecutive points into graph edges.
+//
+// Shape points replace the previous fixed-distance resampling: each OSM node
+// becomes exactly one cache point (the first way to claim it emits it), so ways
+// that share a junction reference the same point and the graph is routable.
+func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
+	class, ok := highwayClasses[way.Tags.Find("highway")]
+	if !ok {
 		return []geoPoint{}
 	}
 
-	out := make([]geoPoint, 0, len(ls))
-	for _, point := range ls {
-		name := f.getHighwayName(way.Tags)
-		street := f.localizedStreetName(way.Tags)
-		if street.Value() == "" {
-			street = unique.Make(name)
-			name = ""
+	name := f.getHighwayName(way.Tags)
+	street := f.localizedStreetName(way.Tags)
+	if street.Value() == "" {
+		street = unique.Make(name)
+		name = ""
+	}
+	nameHandle := unique.Make(name)
+	oneway := parseOneway(way.Tags)
+
+	out := make([]geoPoint, 0, len(way.Nodes))
+	var prevNodeID uint32
+	havePrev := false
+
+	for _, node := range way.Nodes {
+		lon, lat, ok := f.resolveWayNode(node)
+		if !ok {
+			continue
 		}
 
-		out = append(out, geoPoint{
-			Point:       point,
-			Weight:      weightRoad,
-			Type:        cachemodel.GeoObjectRoad,
-			Name:        name,
-			Street:      street,
-			HouseNumber: unique.Make(""),
-			City:        f.localizedCityAddr(way.Tags, point),
-			Region:      f.localizedRegion(point),
-		})
+		nodeID, first := f.claimGraphNode(node.ID)
+		if first {
+			point := orb.Point{lon, lat}
+			out = append(out, geoPoint{
+				Point:       point,
+				Name:        name,
+				Street:      street,
+				HouseNumber: unique.Make(""),
+				City:        f.localizedCityAddr(way.Tags, point),
+				Region:      f.localizedRegion(point),
+				Weight:      weightRoad,
+				Type:        cachemodel.GeoObjectRoad,
+				GraphNode:   nodeID,
+			})
+		}
+
+		if havePrev {
+			f.parsedItems <- parseItem{
+				IsEdge: true,
+				Edge: cachemodel.GraphEdge{
+					FromNode: prevNodeID,
+					ToNode:   nodeID,
+					Street:   street,
+					Name:     nameHandle,
+					Class:    class,
+					Oneway:   oneway,
+				},
+			}
+		}
+		prevNodeID = nodeID
+		havePrev = true
 	}
+
 	return out
+}
+
+// resolveWayNode returns the coordinates of a way node, falling back to the
+// node database when the way member does not carry them.
+func (f *GeoGen) resolveWayNode(node osm.WayNode) (lon, lat float64, ok bool) {
+	if node.Lat != 0 && node.Lon != 0 {
+		return node.Lon, node.Lat, true
+	}
+
+	p, err := f.osmdb.GetNode(node.ID)
+	if err != nil {
+		f.log.Error("failed to get node", "id", node.ID, "error", err.Error())
+		return 0, 0, false
+	}
+	if p.Lat == 0 && p.Lon == 0 {
+		f.log.Error("node has no coordinates", "id", node.ID)
+		return 0, 0, false
+	}
+	return p.Lon, p.Lat, true
+}
+
+// claimGraphNode returns the dense graph node id for an OSM node. The first
+// caller to claim a node reports first=true and is responsible for emitting the
+// node's cache point; later callers reuse the id.
+func (f *GeoGen) claimGraphNode(node osm.NodeID) (id uint32, first bool) {
+	proposed := f.graphNodeSeq.Add(1)
+	actual, loaded := f.graphNodes.LoadOrStore(node, proposed)
+	if loaded {
+		f.graphNodesDupes.Add(1)
+		return actual, false
+	}
+	return proposed, true
+}
+
+// parseOneway maps OSM oneway tagging to the graph direction enum. Roundabouts
+// are one-way by convention unless tagged otherwise.
+func parseOneway(tags osm.Tags) uint8 {
+	switch tags.Find("oneway") {
+	case "yes", "true", "1":
+		return cachemodel.GraphOnewayForward
+	case "-1", "reverse":
+		return cachemodel.GraphOnewayBackward
+	case "no", "false", "0", "reversible":
+		return cachemodel.GraphOnewayBoth
+	}
+
+	if tags.Find("junction") == "roundabout" {
+		return cachemodel.GraphOnewayForward
+	}
+	return cachemodel.GraphOnewayBoth
 }
 
 func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {

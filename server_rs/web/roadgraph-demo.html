@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rgeocache road graph</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.45 system-ui, sans-serif; max-width: 72rem; margin: 1.5rem auto; padding: 0 1rem; }
+  h1 { margin: .2rem 0 .5rem; font-size: 1.4rem; }
+  p.intro { margin: 0 0 .8rem; opacity: .8; }
+  form { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; }
+  label { display: flex; flex-direction: column; gap: .15rem; font-size: .8rem; opacity: .9; }
+  input[type=number] { width: 7.5rem; padding: .35rem .45rem; font: inherit; }
+  button { padding: .4rem .7rem; font: inherit; }
+  .check { flex-direction: row; align-items: center; gap: .35rem; padding-bottom: .35rem; }
+  #status { min-height: 1.4em; margin: .7rem 0; opacity: .85; }
+  #map { height: 65vh; min-height: 20rem; border: 1px solid rgba(128,128,128,.4); border-radius: 4px; }
+  .graph-arrow span { display: inline-block; }
+  .legend { background: rgba(255,255,255,.94); color: #212529; padding: .5rem .6rem; border-radius: 4px; font-size: .78rem; line-height: 1.6; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+  .legend .sw { display: inline-block; width: 1.1rem; height: .28rem; vertical-align: middle; margin-right: .4rem; border-radius: 2px; }
+  .legend .hint { opacity: .7; }
+</style>
+</head>
+<body>
+<h1>Road graph</h1>
+<p class="intro">Edges returned by <code>GET /roadgraph/box</code>, coloured by highway class, with their endpoint nodes. Drag on the map to select a bounding box.</p>
+<form id="query-form">
+  <label>min lon<input id="min-lon" type="number" step="any" value="-0.13"></label>
+  <label>min lat<input id="min-lat" type="number" step="any" value="51.50"></label>
+  <label>max lon<input id="max-lon" type="number" step="any" value="-0.12"></label>
+  <label>max lat<input id="max-lat" type="number" step="any" value="51.51"></label>
+  <label>limit<input id="limit" type="number" min="1" max="50000" step="1" value="5000"></label>
+  <label class="check"><input id="directions" type="checkbox"> directions</label>
+  <button type="submit">Query</button>
+</form>
+<p id="status"></p>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+  const status = document.getElementById('status');
+
+  if (!window.L) {
+    status.textContent = 'Leaflet failed to load (no network access to unpkg.com?)';
+  } else {
+    const CLASS_COLORS = {
+      motorway: '#e8590c',
+      trunk: '#f76707',
+      primary: '#f59f00',
+      secondary: '#74b816',
+      tertiary: '#15aabf',
+      unknown: '#868e96',
+    };
+    const MAX_ARROWS = 1500;
+
+    const input = (id) => document.getElementById(id);
+    const map = L.map('map');
+
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+
+    const dataLayer = L.geoJSON(null, {
+      style: (feature) => ({
+        color: CLASS_COLORS[feature.properties.class] || CLASS_COLORS.unknown,
+        weight: 3,
+        opacity: 0.9,
+      }),
+      pointToLayer: (feature, latlng) =>
+        L.circleMarker(latlng, { radius: 3, weight: 1, color: '#fff', fillColor: '#343a40', fillOpacity: 1 }),
+      onEachFeature: (feature, layer) => {
+        layer.bindPopup(feature.geometry.type === 'Point' ? nodePopup(feature.properties) : edgePopup(feature.properties));
+      },
+    }).addTo(map);
+    const arrowLayer = L.layerGroup().addTo(map);
+
+    // --- popups ------------------------------------------------------------
+
+    function edgePopup(props) {
+      const div = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = props.street || props.name || 'unnamed edge';
+      div.append(title);
+      if (props.name && props.street) {
+        const sub = document.createElement('div');
+        sub.textContent = props.name;
+        div.append(sub);
+      }
+      const meta = document.createElement('div');
+      const bits = [props.class, 'node ' + props.from + ' → ' + props.to];
+      if (props.direction) {
+        bits.push(props.direction);
+      }
+      meta.textContent = bits.join(' · ');
+      div.append(meta);
+      return div;
+    }
+
+    function nodePopup(props) {
+      const div = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = 'node ' + props.id;
+      div.append(title);
+      return div;
+    }
+
+    // --- legend ------------------------------------------------------------
+
+    const legend = L.control({ position: 'bottomright' });
+    legend.onAdd = () => {
+      const div = L.DomUtil.create('div', 'legend');
+      const rows = Object.entries(CLASS_COLORS)
+        .map(([name, color]) => `<div><span class="sw" style="background:${color}"></span>${name}</div>`)
+        .join('');
+      div.innerHTML =
+        rows +
+        '<div><span class="sw" style="background:#1971c2;height:.55rem;width:.55rem;border-radius:50%"></span>endpoint node</div>' +
+        '<div><span class="sw" style="background:#1971c2;height:.55rem;width:.55rem;border-radius:50%"></span>one-way arrow</div>' +
+        '<div class="hint">drag on the map to select a box</div>';
+      return div;
+    };
+    legend.addTo(map);
+
+    // --- queries -----------------------------------------------------------
+
+    let querySeq = 0;
+
+    function readBbox() {
+      const values = {
+        min_lon: Number(input('min-lon').value),
+        min_lat: Number(input('min-lat').value),
+        max_lon: Number(input('max-lon').value),
+        max_lat: Number(input('max-lat').value),
+      };
+      if (!Object.values(values).every(Number.isFinite)) {
+        throw new Error('bbox coordinates must be numbers');
+      }
+      if (values.min_lon < -180 || values.max_lon > 180 || values.min_lat < -90 || values.max_lat > 90) {
+        throw new Error('bbox coordinates out of range');
+      }
+      if (values.min_lon >= values.max_lon || values.min_lat >= values.max_lat) {
+        throw new Error('bbox min values must be smaller than max values');
+      }
+      return values;
+    }
+
+    function setBbox(bounds) {
+      input('min-lon').value = bounds.getWest();
+      input('min-lat').value = bounds.getSouth();
+      input('max-lon').value = bounds.getEast();
+      input('max-lat').value = bounds.getNorth();
+    }
+
+    async function query() {
+      let bbox;
+      try {
+        bbox = readBbox();
+      } catch (error) {
+        status.textContent = error.message;
+        return;
+      }
+
+      const seq = ++querySeq;
+      const params = new URLSearchParams({
+        bbox: [bbox.min_lon, bbox.min_lat, bbox.max_lon, bbox.max_lat].join(','),
+        limit: input('limit').value || '5000',
+      });
+      if (input('directions').checked) {
+        params.set('directions', 'true');
+      }
+
+      status.textContent = 'Querying…';
+      try {
+        const response = await fetch('/roadgraph/box?' + params);
+        const body = await response.text();
+        if (seq !== querySeq) {
+          return;
+        }
+        if (!response.ok) {
+          status.textContent = body || 'HTTP ' + response.status;
+          return;
+        }
+        render(JSON.parse(body));
+      } catch (error) {
+        if (seq === querySeq) {
+          status.textContent = 'Request failed: ' + error;
+        }
+      }
+    }
+
+    function render(data) {
+      dataLayer.clearLayers();
+      arrowLayer.clearLayers();
+      dataLayer.addData(data);
+
+      const features = data.features || [];
+      const edges = features.filter((feature) => feature.geometry.type === 'LineString');
+      const nodes = features.length - edges.length;
+
+      let arrows = 0;
+      let arrowsOmitted = 0;
+      for (const edge of edges) {
+        const direction = edge.properties.direction;
+        if (direction !== 'forward' && direction !== 'backward') {
+          continue;
+        }
+        if (arrows >= MAX_ARROWS) {
+          arrowsOmitted++;
+          continue;
+        }
+        addArrow(edge.geometry.coordinates, direction);
+        arrows++;
+      }
+
+      const parts = [edges.length + ' edges', nodes + ' nodes'];
+      if (arrowsOmitted) {
+        parts.push(arrows + ' one-way arrows (' + arrowsOmitted + ' omitted)');
+      } else if (arrows > 0) {
+        parts.push(arrows + ' one-way arrows');
+      }
+      if (data.truncated) {
+        parts.push('truncated — increase limit');
+      }
+      status.textContent = parts.join(' · ');
+
+      const bounds = dataLayer.getBounds();
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { maxZoom: 17, padding: [10, 10] });
+      }
+    }
+
+    function addArrow(coordinates, direction) {
+      const forward = direction === 'forward';
+      const from = forward ? coordinates[0] : coordinates[1];
+      const to = forward ? coordinates[1] : coordinates[0];
+      const lat = (from[1] + to[1]) / 2;
+      const lon = (from[0] + to[0]) / 2;
+      const dx = (to[0] - from[0]) * Math.cos((lat * Math.PI) / 180);
+      const dy = to[1] - from[1];
+      const deg = (Math.atan2(dx, dy) * 180) / Math.PI - 90;
+      const icon = L.divIcon({
+        className: 'graph-arrow',
+        html: '<span style="transform:rotate(' + deg.toFixed(1) + 'deg)">' +
+          '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 1 L10 6 L2 11 Z" fill="#1971c2"/></svg>' +
+          '</span>',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6],
+      });
+      L.marker([lat, lon], { icon, interactive: false, keyboard: false }).addTo(arrowLayer);
+    }
+
+    // --- drag to select a bounding box -------------------------------------
+
+    let dragStart = null;
+    let dragRect = null;
+
+    map.on('mousedown', (event) => {
+      if (event.originalEvent.button !== 0) {
+        return;
+      }
+      map.dragging.disable();
+      dragStart = event.latlng;
+      dragRect = L.rectangle(L.latLngBounds(dragStart, dragStart), {
+        color: '#1971c2',
+        weight: 1,
+        dashArray: '4 4',
+        fillOpacity: 0.05,
+      }).addTo(map);
+    });
+
+    map.on('mousemove', (event) => {
+      if (dragStart && dragRect) {
+        dragRect.setBounds(L.latLngBounds(dragStart, event.latlng));
+      }
+    });
+
+    map.on('mouseup', (event) => {
+      if (!dragStart) {
+        return;
+      }
+      const bounds = L.latLngBounds(dragStart, event.latlng);
+      map.dragging.enable();
+      dragStart = null;
+      if (dragRect) {
+        map.removeLayer(dragRect);
+        dragRect = null;
+      }
+
+      // A click without movement leaves the current box alone.
+      if (bounds.getEast() - bounds.getWest() < 1e-6 || bounds.getNorth() - bounds.getSouth() < 1e-6) {
+        return;
+      }
+      setBbox(bounds);
+      query();
+    });
+
+    document.getElementById('query-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      query();
+    });
+
+    map.setView([51.505, -0.125], 14);
+    query();
+  }
+</script>
+</body>
+</html>

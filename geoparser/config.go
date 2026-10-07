@@ -6,7 +6,6 @@ type Config struct {
 	Threads               int
 	Version               uint32
 	PreferredLocalization string
-	HighwayPointsDistance float64
 }
 
 func ConfigDefault() Config {
@@ -14,6 +13,5 @@ func ConfigDefault() Config {
 		Threads:               runtime.GOMAXPROCS(-1),
 		Version:               1,
 		PreferredLocalization: "",
-		HighwayPointsDistance: 150,
 	}
 }

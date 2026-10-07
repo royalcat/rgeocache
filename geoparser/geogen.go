@@ -32,8 +32,16 @@ type GeoGen struct {
 	parsedRelations      *rangeindex.Index[osm.RelationID, struct{}]
 	parsedRelationsDupes atomic.Uint64
 
-	parsedPoints chan geoPoint
-	parsingDone  chan struct{}
+	// graphNodes maps the OSM node ids of road shape points to dense graph node
+	// ids (starting at 1). Each node is emitted as a cache point exactly once,
+	// by the way that first claims it, so ways sharing a junction reference the
+	// same point.
+	graphNodes      *xsync.MapOf[osm.NodeID, uint32]
+	graphNodeSeq    atomic.Uint32
+	graphNodesDupes atomic.Uint64
+
+	parsedItems chan parseItem
+	parsingDone chan struct{}
 
 	regionsMu sync.Mutex
 	regions   []geomodel.Zone
@@ -57,6 +65,8 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 		parsedWays:      rangeindex.New[osm.WayID, struct{}](),
 		parsedRelations: rangeindex.New[osm.RelationID, struct{}](),
 
+		graphNodes: xsync.NewMapOf[osm.NodeID, uint32](),
+
 		regions:   []geomodel.Zone{},
 		countries: []geomodel.Zone{},
 
@@ -79,7 +89,7 @@ type ParseOutput struct {
 }
 
 func (f *GeoGen) ParseOSMData(outputs []ParseOutput) error {
-	f.parsedPoints = make(chan geoPoint, 10)
+	f.parsedItems = make(chan parseItem, 10)
 	f.parsingDone = make(chan struct{})
 
 	var wg errgroup.Group
@@ -97,7 +107,7 @@ func (f *GeoGen) ParseOSMData(outputs []ParseOutput) error {
 			return err
 		}
 
-		close(f.parsedPoints)
+		close(f.parsedItems)
 		close(f.parsingDone)
 
 		return nil

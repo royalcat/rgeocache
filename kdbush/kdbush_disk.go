@@ -148,6 +148,16 @@ func (d *DiskKDBush[V, VP]) ForEach(fn func(Point[V]) bool) error {
 func BuildDisk[V encoding.BinaryMarshaler, VP binaryPointer[V]](
 	points []Point[V], nodeSize int, w io.Writer,
 ) (int64, error) {
+	written, _, err := BuildDiskWithMapping[V, VP](points, nodeSize, w)
+	return written, err
+}
+
+// BuildDiskWithMapping is [BuildDisk]; it additionally returns the sorted
+// index permutation: sortedIdxs[pos] is the original index of the point stored
+// at sorted position pos.
+func BuildDiskWithMapping[V encoding.BinaryMarshaler, VP binaryPointer[V]](
+	points []Point[V], nodeSize int, w io.Writer,
+) (int64, []int, error) {
 	n := len(points)
 
 	// --- build sorted index arrays (reuses package-level sort) -----------
@@ -169,7 +179,7 @@ func BuildDisk[V encoding.BinaryMarshaler, VP binaryPointer[V]](
 	for i := range n {
 		data, err := points[i].Data.MarshalBinary()
 		if err != nil {
-			return 0, fmt.Errorf("kdbush: marshal point[%d]: %w", i, err)
+			return 0, nil, fmt.Errorf("kdbush: marshal point[%d]: %w", i, err)
 		}
 		blobs[i] = data
 		offsets[i] = cumOffset
@@ -189,38 +199,38 @@ func BuildDisk[V encoding.BinaryMarshaler, VP binaryPointer[V]](
 	nn, err := w.Write(header[:])
 	written += int64(nn)
 	if err != nil {
-		return written, fmt.Errorf("kdbush: writing header: %w", err)
+		return written, nil, fmt.Errorf("kdbush: writing header: %w", err)
 	}
 
 	// sorted indices
 	n64, err := diskWriteInts(w, idxs)
 	written += n64
 	if err != nil {
-		return written, fmt.Errorf("kdbush: writing indices: %w", err)
+		return written, nil, fmt.Errorf("kdbush: writing indices: %w", err)
 	}
 
 	// sorted coordinates
 	n64, err = diskWriteFloat64s(w, coords)
 	written += n64
 	if err != nil {
-		return written, fmt.Errorf("kdbush: writing coords: %w", err)
+		return written, nil, fmt.Errorf("kdbush: writing coords: %w", err)
 	}
 
 	// data offset table
 	n64, err = diskWriteInt64s(w, offsets)
 	written += n64
 	if err != nil {
-		return written, fmt.Errorf("kdbush: writing data offsets: %w", err)
+		return written, nil, fmt.Errorf("kdbush: writing data offsets: %w", err)
 	}
 
 	// data blobs
 	n64, err = diskWriteBlobs(w, blobs)
 	written += n64
 	if err != nil {
-		return written, fmt.Errorf("kdbush: writing data blobs: %w", err)
+		return written, nil, fmt.Errorf("kdbush: writing data blobs: %w", err)
 	}
 
-	return written, nil
+	return written, idxs, nil
 }
 
 // ---------------------------------------------------------------------------
