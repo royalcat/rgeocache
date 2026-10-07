@@ -56,6 +56,7 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 	}
 	var rawPoints []rawPoint
 	var rawEdges []rawEdge
+	var maxGraphNode uint32
 	for item := range items {
 		if item.Kind == cachemodel.ItemEdge {
 			e := item.Edge
@@ -85,6 +86,9 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 			geoType:     uint8(p.Data.Type),
 			graphNode:   item.GraphNode,
 		})
+		if item.GraphNode > maxGraphNode {
+			maxGraphNode = item.GraphNode
+		}
 		// Register strings to reserve IDs
 		dedup.names.Add(p.Data.Name.Value())
 		dedup.streets.Add(p.Data.Street.Value())
@@ -99,7 +103,15 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 	// Phase 3: Fill V2PointData using the assigned IDs. Also record the original
 	// point index of every graph node (id → index) for edge translation.
 	v2points := make([]kdbush.Point[V2PointData], len(rawPoints))
+	// Graph node ids are dense (assigned by claimGraphNode) and every id has
+	// exactly one point, so maxGraphNode+1 is the exact size of the id→point
+	// index. Preallocate once: growing to graphNode+1 on every new maximum is
+	// quadratic, and an amortized length that no longer equals the highest id
+	// would weaken writeGraphSection's out-of-range node check.
 	var nodeToOrig []uint32
+	if maxGraphNode > 0 {
+		nodeToOrig = make([]uint32, int(maxGraphNode)+1)
+	}
 	for i, rp := range rawPoints {
 		v2points[i] = kdbush.Point[V2PointData]{
 			X: rp.x, Y: rp.y,
@@ -114,11 +126,6 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 			},
 		}
 		if rp.graphNode != 0 {
-			if int(rp.graphNode) >= len(nodeToOrig) {
-				grown := make([]uint32, int(rp.graphNode)+1)
-				copy(grown, nodeToOrig)
-				nodeToOrig = grown
-			}
 			nodeToOrig[rp.graphNode] = uint32(i)
 		}
 	}

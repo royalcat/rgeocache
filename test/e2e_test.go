@@ -84,7 +84,10 @@ func TestLondon(t *testing.T) {
 	if graphSection.MaxHalfExtent <= 0 {
 		t.Fatalf("expected positive max half extent, got %v", graphSection.MaxHalfExtent)
 	}
-	for i := uint64(0); i < graphSection.EdgeCount && i < 16; i++ {
+	// Scan every edge, not just a sample: a single degenerate edge (e.g. the
+	// self-loop real OSM data used to produce on a repeated way node) must
+	// fail the test.
+	for i := uint64(0); i < graphSection.EdgeCount; i++ {
 		rec, err := graphSection.Edge(graphFile, i)
 		if err != nil {
 			t.Fatalf("edge[%d]: %v", i, err)

@@ -182,7 +182,10 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 			})
 		}
 
-		if havePrev {
+		// A way may repeat a node consecutively (real data does: e.g. OSM way
+		// 261379237 repeats node 2669983324). The second occurrence would make
+		// a self-loop edge, which is meaningless in the graph, so skip it.
+		if havePrev && prevNodeID != nodeID {
 			f.parsedItems <- parseItem{
 				IsEdge: true,
 				Edge: cachemodel.GraphEdge{
