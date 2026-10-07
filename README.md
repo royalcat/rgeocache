@@ -24,8 +24,11 @@ russia.osm.pbf and ./europe/belarus.osm.pbf are input files
 Generating a cache of Russia will take about ~50GB of RAM. There is a possibility to shift the load from memory to disk by specifying the parameter --cache /tmp/rgeo_cache (you can specify any directory as the path), in this case, the generation process may significantly slow down
 
 Highway ways (motorway through tertiary) are stored as their OSM shape points
-and additionally produce a road graph section appended to the v2 cache; the Rust
-server serves it through `/roadgraph/box`.
+with redundant collinear vertices removed — a vertex is dropped only when it
+lies within 1e-7° (about a centimetre) of the straight run and at least one
+vertex per 150 m survives wherever OSM provides one — and additionally produce a
+road graph section appended to the v2 cache; the Rust server serves it through
+`/roadgraph/box`.
 
 - ### HTTP Api
 
@@ -69,11 +72,17 @@ curl 'localhost:8080/roadgraph/box?bbox=-0.13,51.50,-0.12,51.51&directions=true&
 ```
 
 `bbox` is `min_lon,min_lat,max_lon,max_lat` in GeoJSON axis order. The response
-is a GeoJSON FeatureCollection: one LineString per road edge (with `class`,
-`street`/`name`, and `direction` when requested) and one Point per endpoint
-node. Edge endpoints reference stable point positions, so responses for
-adjacent boxes merge. Caches generated before the road graph existed answer
-`503` on this route; the Go server does not expose it yet.
+is a GeoJSON FeatureCollection: one LineString per road chain (with `class`,
+`street`/`name`, and `direction` when requested) and one Point per kept vertex.
+Connected edges that share all their properties are merged into a single
+polyline and vertices within 1e-7° (about one centimetre) of the straight
+chord are dropped — chains break at junctions and property changes, so
+junctions are always preserved. Pass `simplify=false` to get the raw two-point
+edges and all their endpoints. `limit` counts raw edges before merging, so a
+simplified response can contain fewer features than `limit`. Edge endpoints
+reference stable point positions, so responses for adjacent boxes merge. Caches
+generated before the road graph existed answer `503` on this route; the Go
+server does not expose it yet.
 
 An interactive demo — map, drag-to-select bounding box, direction arrows — is
 served at `http://localhost:8080/roadgraph/demo`. The page loads Leaflet and

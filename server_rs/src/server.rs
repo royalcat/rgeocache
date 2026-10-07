@@ -508,7 +508,11 @@ pub struct RoadGraphQuery {
     bbox: String,
     /// Include per-edge direction metadata; defaults to false.
     directions: Option<bool>,
-    /// Maximum number of edges; clamped to `1..=ROADGRAPH_MAX_LIMIT`.
+    /// Merge connected edges into polylines and drop vertices that lie within
+    /// [`road_graph::SIMPLIFY_EPSILON`] of the straight chord. Defaults to true;
+    /// `simplify=false` returns one raw two-point edge per graph edge.
+    simplify: Option<bool>,
+    /// Maximum number of raw edges; clamped to `1..=ROADGRAPH_MAX_LIMIT`.
     limit: Option<usize>,
 }
 
@@ -566,6 +570,7 @@ pub async fn roadgraph_box_handler(
     };
 
     let directions = query_params.directions.unwrap_or(false);
+    let simplify = query_params.simplify.unwrap_or(true);
     let limit = query_params
         .limit
         .unwrap_or(ROADGRAPH_DEFAULT_LIMIT)
@@ -590,46 +595,38 @@ pub async fn roadgraph_box_handler(
     }
 
     let mut features: Vec<serde_json::Value> = Vec::with_capacity(hits.len() * 2);
-    for hit in &hits {
-        let mut properties = serde_json::Map::new();
-        properties.insert("from".to_string(), serde_json::json!(hit.edge.from_pos));
-        properties.insert("to".to_string(), serde_json::json!(hit.edge.to_pos));
-
-        let name = graph.string(hit.edge.name_id);
-        if !name.is_empty() {
-            properties.insert("name".to_string(), serde_json::json!(name));
-        }
-        let street = graph.string(hit.edge.street_id);
-        if !street.is_empty() {
-            properties.insert("street".to_string(), serde_json::json!(street));
-        }
-        properties.insert(
-            "class".to_string(),
-            serde_json::json!(road_graph::class_name(hit.edge.class)),
-        );
-        if directions {
-            properties.insert(
-                "direction".to_string(),
-                serde_json::json!(road_graph::direction_name(hit.edge.oneway)),
-            );
-        }
-
-        features.push(serde_json::json!({
-            "type": "Feature",
-            "geometry": {
-                "type": "LineString",
-                "coordinates": [[hit.from.0, hit.from.1], [hit.to.0, hit.to.1]],
-            },
-            "properties": serde_json::Value::Object(properties),
-        }));
-    }
-
-    // Every endpoint of a returned edge is included, deduplicated and ordered.
+    // Every vertex of a returned edge (or of a simplified chain) is included,
+    // deduplicated and ordered at the end.
     let mut node_ids: BTreeSet<u32> = BTreeSet::new();
-    for hit in &hits {
-        node_ids.insert(hit.edge.from_pos);
-        node_ids.insert(hit.edge.to_pos);
+
+    if simplify {
+        for chain in road_graph::simplify_hits(&hits) {
+            let coordinates: Vec<[f64; 2]> =
+                chain.coords.iter().map(|&(lon, lat)| [lon, lat]).collect();
+            features.push(serde_json::json!({
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": coordinates},
+                "properties": edge_properties(&graph, &chain.edge, directions),
+            }));
+            for pos in chain.positions {
+                node_ids.insert(pos);
+            }
+        }
+    } else {
+        for hit in &hits {
+            features.push(serde_json::json!({
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[hit.from.0, hit.from.1], [hit.to.0, hit.to.1]],
+                },
+                "properties": edge_properties(&graph, &hit.edge, directions),
+            }));
+            node_ids.insert(hit.edge.from_pos);
+            node_ids.insert(hit.edge.to_pos);
+        }
     }
+
     for id in node_ids {
         if let Some((lon, lat)) = graph.coord(id) {
             features.push(serde_json::json!({
@@ -646,6 +643,37 @@ pub async fn roadgraph_box_handler(
         "truncated": truncated,
     });
     HttpResponse::Ok().json(&body)
+}
+
+/// GeoJSON properties of one edge (or simplified chain).
+fn edge_properties(
+    graph: &RoadGraph,
+    edge: &road_graph::GraphEdge,
+    directions: bool,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut properties = serde_json::Map::new();
+    properties.insert("from".to_string(), serde_json::json!(edge.from_pos));
+    properties.insert("to".to_string(), serde_json::json!(edge.to_pos));
+
+    let name = graph.string(edge.name_id);
+    if !name.is_empty() {
+        properties.insert("name".to_string(), serde_json::json!(name));
+    }
+    let street = graph.string(edge.street_id);
+    if !street.is_empty() {
+        properties.insert("street".to_string(), serde_json::json!(street));
+    }
+    properties.insert(
+        "class".to_string(),
+        serde_json::json!(road_graph::class_name(edge.class)),
+    );
+    if directions {
+        properties.insert(
+            "direction".to_string(),
+            serde_json::json!(road_graph::direction_name(edge.oneway)),
+        );
+    }
+    properties
 }
 
 /// The self-contained browser demo page for the forward geocoding API, shared
@@ -812,5 +840,16 @@ mod roadgraph_query_tests {
                 "expected {value:?} to be rejected"
             );
         }
+    }
+
+    #[test]
+    fn roadgraph_query_parses_simplify() {
+        let query: RoadGraphQuery = serde_json::from_str(r#"{"bbox":"0,0,1,1"}"#).expect("query");
+        assert_eq!(query.simplify, None);
+        assert!(query.simplify.unwrap_or(true), "simplify defaults to true");
+
+        let query: RoadGraphQuery =
+            serde_json::from_str(r#"{"bbox":"0,0,1,1","simplify":false}"#).expect("query");
+        assert_eq!(query.simplify, Some(false));
     }
 }

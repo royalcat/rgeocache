@@ -316,10 +316,28 @@ paths:
         schema:
           type: boolean
           default: false
+      - name: simplify
+        in: query
+        required: false
+        description: |
+          Merge connected edges that share their `street`/`name`/`class`/
+          `direction` into one LineString and drop vertices that lie within
+          1e-7 degrees (about one centimetre, latitude-weighted) of the
+          straight chord. Chains break at junctions (nodes of degree != 2) and
+          at property changes, so junction points are always kept, and Point
+          features are exactly the vertices kept in the simplified lines.
+          Defaults to true; `simplify=false` returns one two-point LineString
+          per raw edge with every endpoint as a Point.
+        schema:
+          type: boolean
+          default: true
       - name: limit
         in: query
         required: false
-        description: Maximum number of edges returned. Clamped to 1-50000.
+        description: |
+          Maximum number of raw graph edges considered. Clamped to 1-50000.
+          Merging happens after this limit, so an optimized response can
+          contain fewer features than `limit`.
         schema:
           type: integer
           minimum: 1
@@ -337,8 +355,9 @@ paths:
         "200":
           description: |
             OK. A GeoJSON FeatureCollection with a `truncated` foreign member:
-            one LineString feature per edge and one Point feature per endpoint
-            node.
+            LineString features (one merged, simplified polyline per chain by
+            default; one two-point segment per raw edge with
+            `simplify=false`) and one Point feature per kept vertex.
           content:
             application/json:
               schema:
@@ -357,9 +376,10 @@ paths:
                       type: object
                       description: |
                         Edge feature: geometry LineString with properties `from`,
-                        `to`, optional `name` and `street`, `class`, and
-                        `direction` when requested. Node feature: geometry Point
-                        with property `id` referencing a stable point position.
+                        `to` (the chain endpoints when simplified), optional
+                        `name` and `street`, `class`, and `direction` when
+                        requested. Node feature: geometry Point with property
+                        `id` referencing a stable point position.
         "400":
           description: Bad request (malformed or out-of-range `bbox`)
         "500":

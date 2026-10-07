@@ -18,6 +18,7 @@
 //! [`CacheFile::read_string`]. The section is invisible to readers that predate
 //! it because they stop at the end of the point index.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::cache::CacheFile;
@@ -30,6 +31,12 @@ const GRAPH_EDGE_RECORD_SIZE: usize = 18;
 const KDBH_MAGIC: &[u8; 4] = b"KDBH";
 const KDBH_VERSION: u32 = 1;
 const KDBH_HEADER_SIZE: usize = 32;
+
+/// Tolerance of the response-level straight-line simplification, in degrees
+/// scaled to be isotropic (longitude differences are weighted by cos(lat)).
+/// 1e-7° is about one centimetre, so only exactly or almost exactly collinear
+/// vertices are removed.
+pub const SIMPLIFY_EPSILON: f64 = 1e-7;
 
 /// Axis-aligned query box in degrees: x is longitude, y is latitude.
 #[derive(Clone, Copy, Debug)]
@@ -231,7 +238,252 @@ impl RoadGraph {
         hits.truncate(limit);
         (hits, truncated)
     }
+}
 
+/// Property tuple that all edges of a merged chain must share.
+type EdgeKey = (u32, u32, u8, u8);
+
+fn edge_key(edge: &GraphEdge) -> EdgeKey {
+    (edge.street_id, edge.name_id, edge.class, edge.oneway)
+}
+
+/// A run of connected, property-compatible edges after straight-line
+/// simplification. `edge.from_pos`/`edge.to_pos` are the chain endpoints.
+#[derive(Debug, Clone)]
+pub struct SimplifiedEdge {
+    /// Properties shared by the chain; `from_pos`/`to_pos` are its endpoints.
+    pub edge: GraphEdge,
+    /// Point positions of the kept vertices, in polyline order.
+    pub positions: Vec<u32>,
+    /// Coordinates (lon, lat) of the kept vertices, aligned with `positions`.
+    pub coords: Vec<(f64, f64)>,
+}
+
+/// Merges connected [`EdgeHit`]s that share their edge properties into chains
+/// and removes vertices that lie within [`SIMPLIFY_EPSILON`] of the straight
+/// chord. Chains break at nodes whose graph degree differs from two (junctions
+/// and way ends) and where edge properties change, so junction points are
+/// always kept. Directed chains keep the stored `from -> to` orientation so
+/// the oneway property stays meaningful.
+pub fn simplify_hits(hits: &[EdgeHit]) -> Vec<SimplifiedEdge> {
+    let mut adjacency: HashMap<u32, Vec<usize>> = HashMap::with_capacity(hits.len() * 2);
+    for (i, hit) in hits.iter().enumerate() {
+        adjacency.entry(hit.edge.from_pos).or_default().push(i);
+        adjacency.entry(hit.edge.to_pos).or_default().push(i);
+    }
+
+    let mut visited = vec![false; hits.len()];
+    let mut chains = Vec::new();
+
+    for start in 0..hits.len() {
+        if visited[start] {
+            continue;
+        }
+        visited[start] = true;
+        let key = edge_key(&hits[start].edge);
+
+        // Chain order of hit indices and whether each edge is placed along its
+        // stored from -> to direction.
+        let mut order = vec![start];
+        let mut dirs = vec![true];
+
+        loop {
+            let last = *order.last().unwrap();
+            let at = if dirs[dirs.len() - 1] {
+                hits[last].edge.to_pos
+            } else {
+                hits[last].edge.from_pos
+            };
+            let Some(next) = continuation(hits, &adjacency, &visited, at, last, key) else {
+                break;
+            };
+            visited[next] = true;
+            dirs.push(hits[next].edge.from_pos == at);
+            order.push(next);
+        }
+
+        // Extend backwards: collect edges that run into the current chain head,
+        // then prepend them in reverse.
+        let mut head_edge = order[0];
+        let mut head_dir = dirs[0];
+        let mut back: Vec<(usize, bool)> = Vec::new();
+        loop {
+            let at = if head_dir {
+                hits[head_edge].edge.from_pos
+            } else {
+                hits[head_edge].edge.to_pos
+            };
+            let Some(next) = continuation(hits, &adjacency, &visited, at, head_edge, key) else {
+                break;
+            };
+            visited[next] = true;
+            let dir = hits[next].edge.to_pos == at;
+            back.push((next, dir));
+            head_edge = next;
+            head_dir = dir;
+        }
+
+        let mut order_all = Vec::with_capacity(order.len() + back.len());
+        let mut dirs_all = Vec::with_capacity(order.len() + back.len());
+        for &(edge, dir) in back.iter().rev() {
+            order_all.push(edge);
+            dirs_all.push(dir);
+        }
+        order_all.extend_from_slice(&order);
+        dirs_all.extend_from_slice(&dirs);
+
+        // A directed chain must keep the stored orientation; a both-way chain
+        // may be walked from either end.
+        if key.3 != 0 && !dirs_all[0] {
+            order_all.reverse();
+            dirs_all.reverse();
+        }
+
+        let mut positions = Vec::with_capacity(order_all.len() + 1);
+        let mut coords = Vec::with_capacity(order_all.len() + 1);
+        for (i, &edge) in order_all.iter().enumerate() {
+            let hit = &hits[edge];
+            let (head_pos, tail_pos, head, tail) = if dirs_all[i] {
+                (hit.edge.from_pos, hit.edge.to_pos, hit.from, hit.to)
+            } else {
+                (hit.edge.to_pos, hit.edge.from_pos, hit.to, hit.from)
+            };
+            if positions.is_empty() {
+                positions.push(head_pos);
+                coords.push(head);
+            }
+            positions.push(tail_pos);
+            coords.push(tail);
+        }
+
+        let kept = simplified_vertex_indexes(&positions, &coords);
+        let simple_positions: Vec<u32> = kept.iter().map(|&i| positions[i]).collect();
+        let simple_coords: Vec<(f64, f64)> = kept.iter().map(|&i| coords[i]).collect();
+        chains.push(SimplifiedEdge {
+            edge: GraphEdge {
+                from_pos: simple_positions[0],
+                to_pos: *simple_positions.last().unwrap(),
+                street_id: key.0,
+                name_id: key.1,
+                class: key.2,
+                oneway: key.3,
+            },
+            positions: simple_positions,
+            coords: simple_coords,
+        });
+    }
+
+    chains
+}
+
+/// Returns the continuation edge of `current` at `node`: the chain may only
+/// pass through nodes of degree two, and the other edge must share the chain's
+/// properties and be unused.
+fn continuation(
+    hits: &[EdgeHit],
+    adjacency: &HashMap<u32, Vec<usize>>,
+    visited: &[bool],
+    node: u32,
+    current: usize,
+    key: EdgeKey,
+) -> Option<usize> {
+    let incident = adjacency.get(&node)?;
+    if incident.len() != 2 {
+        return None;
+    }
+    let other = incident.iter().copied().find(|&edge| edge != current)?;
+    if visited[other] || edge_key(&hits[other].edge) != key {
+        return None;
+    }
+    Some(other)
+}
+
+/// Douglas-Peucker vertex selection. A closed chain (first position equals the
+/// last) is split at the vertex farthest from the start first, because a chord
+/// from a vertex to itself is degenerate.
+fn simplified_vertex_indexes(positions: &[u32], coords: &[(f64, f64)]) -> Vec<usize> {
+    let n = coords.len();
+    if n <= 2 {
+        return (0..n).collect();
+    }
+    let mut keep = vec![false; n];
+    keep[0] = true;
+    keep[n - 1] = true;
+    if positions[0] == positions[n - 1] {
+        let mut far = 1;
+        let mut far_d = 0.0;
+        for i in 1..n {
+            let d = squared_scaled_distance(coords[i], coords[0]);
+            if d > far_d {
+                far_d = d;
+                far = i;
+            }
+        }
+        if far < n - 1 {
+            keep_span(coords, 0, far, &mut keep);
+            keep_span(coords, far, n - 1, &mut keep);
+        } else {
+            keep_span(coords, 0, n - 2, &mut keep);
+        }
+    } else {
+        keep_span(coords, 0, n - 1, &mut keep);
+    }
+    (0..n).filter(|&i| keep[i]).collect()
+}
+
+/// Marks the kept vertices inside `[a, b]`, endpoints included.
+fn keep_span(coords: &[(f64, f64)], a: usize, b: usize, keep: &mut [bool]) {
+    let mut stack = vec![(a, b)];
+    while let Some((lo, hi)) = stack.pop() {
+        keep[lo] = true;
+        keep[hi] = true;
+        if hi <= lo + 1 {
+            continue;
+        }
+        let mut max_d = 0.0;
+        let mut max_i = lo;
+        for i in lo + 1..hi {
+            let d = point_segment_distance(coords[lo], coords[hi], coords[i]);
+            if d > max_d {
+                max_d = d;
+                max_i = i;
+            }
+        }
+        if max_d > SIMPLIFY_EPSILON {
+            stack.push((lo, max_i));
+            stack.push((max_i, hi));
+        }
+    }
+}
+
+fn lon_scale(lat: f64) -> f64 {
+    lat.to_radians().cos()
+}
+
+/// Distance of `p` from the segment `a -> b`, with longitude weighted by
+/// cos(latitude) so the tolerance is isotropic in metres.
+fn point_segment_distance(a: (f64, f64), b: (f64, f64), p: (f64, f64)) -> f64 {
+    let scale = lon_scale((a.1 + b.1) * 0.5);
+    let (px, py) = (p.0 * scale, p.1);
+    let (ax, ay) = (a.0 * scale, a.1);
+    let (bx, by) = (b.0 * scale, b.1);
+    let (dx, dy) = (bx - ax, by - ay);
+    let len2 = dx * dx + dy * dy;
+    if len2 == 0.0 {
+        return ((px - ax).powi(2) + (py - ay).powi(2)).sqrt();
+    }
+    let t = (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0);
+    ((px - (ax + t * dx)).powi(2) + (py - (ay + t * dy)).powi(2)).sqrt()
+}
+
+fn squared_scaled_distance(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let scale = lon_scale((a.1 + b.1) * 0.5);
+    let dx = (a.0 - b.0) * scale;
+    let dy = a.1 - b.1;
+    dx * dx + dy * dy
+}
+
+impl RoadGraph {
     /// Traverses the edge midpoint index, calling `visit` with edge indices
     /// whose midpoint lies in `search`. Stops early when `visit` returns false.
     fn for_each_candidate(&self, search: &BBox, mut visit: impl FnMut(u64) -> bool) {
@@ -652,5 +904,168 @@ mod tests {
         let mut bytes = build_cache(&points, &edges, true);
         bytes.push(0); // trailing byte the section header does not account for
         assert!(open_graph(&bytes).is_err());
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn hit(
+        index: u64,
+        from_pos: u32,
+        to_pos: u32,
+        from: (f64, f64),
+        to: (f64, f64),
+        street_id: u32,
+        name_id: u32,
+        class: u8,
+        oneway: u8,
+    ) -> EdgeHit {
+        EdgeHit {
+            edge_index: index,
+            edge: GraphEdge {
+                from_pos,
+                to_pos,
+                street_id,
+                name_id,
+                class,
+                oneway,
+            },
+            from,
+            to,
+        }
+    }
+
+    #[test]
+    fn simplify_merges_straight_chain() {
+        let hits = [
+            hit(0, 0, 1, (0.0, 0.0), (0.001, 0.0), 1, 0, 3, 0),
+            hit(1, 1, 2, (0.001, 0.0), (0.002, 0.0), 1, 0, 3, 0),
+            hit(2, 2, 3, (0.002, 0.0), (0.003, 0.0), 1, 0, 3, 0),
+        ];
+        let chains = simplify_hits(&hits);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].positions, vec![0, 3]);
+        assert_eq!(chains[0].coords, vec![(0.0, 0.0), (0.003, 0.0)]);
+        assert_eq!(chains[0].edge.from_pos, 0);
+        assert_eq!(chains[0].edge.to_pos, 3);
+        assert_eq!(chains[0].edge.street_id, 1);
+        assert_eq!(chains[0].edge.class, 3);
+    }
+
+    #[test]
+    fn simplify_single_edge_is_unchanged() {
+        let hits = [hit(0, 0, 1, (0.0, 0.0), (0.001, 0.0), 1, 0, 3, 0)];
+        let chains = simplify_hits(&hits);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].positions, vec![0, 1]);
+    }
+
+    #[test]
+    fn simplify_keeps_corners() {
+        let hits = [
+            hit(0, 0, 1, (0.0, 0.0), (0.001, 0.0), 1, 0, 3, 0),
+            hit(1, 1, 2, (0.001, 0.0), (0.001, 0.001), 1, 0, 3, 0),
+        ];
+        let chains = simplify_hits(&hits);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].positions, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn simplify_drops_only_sub_epsilon_deviations() {
+        let eps = SIMPLIFY_EPSILON;
+
+        let within = [
+            hit(0, 0, 1, (0.0, 0.0), (0.001, eps * 0.5), 1, 0, 3, 0),
+            hit(1, 1, 2, (0.001, eps * 0.5), (0.002, 0.0), 1, 0, 3, 0),
+        ];
+        assert_eq!(simplify_hits(&within)[0].positions, vec![0, 2]);
+
+        let beyond = [
+            hit(0, 0, 1, (0.0, 0.0), (0.001, eps * 10.0), 1, 0, 3, 0),
+            hit(1, 1, 2, (0.001, eps * 10.0), (0.002, 0.0), 1, 0, 3, 0),
+        ];
+        assert_eq!(simplify_hits(&beyond)[0].positions, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn simplify_splits_at_property_changes() {
+        let hits = [
+            hit(0, 0, 1, (0.0, 0.0), (0.001, 0.0), 1, 0, 3, 0),
+            hit(1, 1, 2, (0.001, 0.0), (0.002, 0.0), 1, 0, 4, 0),
+            hit(2, 2, 3, (0.002, 0.0), (0.003, 0.0), 1, 0, 3, 0),
+        ];
+        let chains = simplify_hits(&hits);
+        let classes: Vec<u8> = chains.iter().map(|chain| chain.edge.class).collect();
+        assert_eq!(classes, vec![3, 4, 3]);
+    }
+
+    #[test]
+    fn simplify_splits_at_junctions_and_keeps_the_vertex() {
+        let hits = [
+            hit(0, 0, 1, (0.0, 0.0), (0.001, 0.0), 1, 0, 3, 0),
+            hit(1, 1, 2, (0.001, 0.0), (0.002, 0.0), 1, 0, 3, 0),
+            hit(2, 1, 3, (0.001, 0.0), (0.001, 0.001), 1, 0, 3, 0),
+        ];
+        let chains = simplify_hits(&hits);
+        assert_eq!(chains.len(), 3);
+        for chain in &chains {
+            assert!(chain.positions.contains(&1), "junction vertex must be kept");
+        }
+    }
+
+    #[test]
+    fn simplify_keeps_directed_orientation() {
+        // The same directed way given in either edge order must still run from
+        // 1 to 3: the oneway property is relative to the stored from -> to.
+        let forward = [
+            hit(0, 1, 2, (0.0, 0.0), (0.001, 0.0), 1, 0, 3, 1),
+            hit(1, 2, 3, (0.001, 0.0), (0.002, 0.0), 1, 0, 3, 1),
+        ];
+        let reversed = [
+            hit(1, 2, 3, (0.001, 0.0), (0.002, 0.0), 1, 0, 3, 1),
+            hit(0, 1, 2, (0.0, 0.0), (0.001, 0.0), 1, 0, 3, 1),
+        ];
+        for hits in [&forward[..], &reversed[..]] {
+            let chains = simplify_hits(hits);
+            assert_eq!(chains.len(), 1);
+            assert_eq!(chains[0].edge.from_pos, 1);
+            assert_eq!(chains[0].edge.to_pos, 3);
+            assert_eq!(chains[0].positions, vec![1, 3]);
+        }
+    }
+
+    #[test]
+    fn simplify_closes_loops() {
+        // A rectangle with one collinear midpoint per side, walked as a loop.
+        let coords = [
+            (0.0, 0.0),
+            (0.001, 0.0),
+            (0.002, 0.0),
+            (0.002, 0.001),
+            (0.002, 0.002),
+            (0.001, 0.002),
+            (0.0, 0.002),
+            (0.0, 0.001),
+        ];
+        let mut hits = Vec::new();
+        for i in 0..8u32 {
+            let j = (i + 1) % 8;
+            hits.push(hit(
+                i as u64,
+                i,
+                j,
+                coords[i as usize],
+                coords[j as usize],
+                1,
+                0,
+                3,
+                0,
+            ));
+        }
+        let chains = simplify_hits(&hits);
+        assert_eq!(chains.len(), 1);
+        let chain = &chains[0];
+        assert_eq!(chain.positions.first(), chain.positions.last());
+        assert_eq!(chain.positions.len(), 5);
+        assert_eq!(chain.positions[..4], [0, 2, 4, 6]);
     }
 }
