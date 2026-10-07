@@ -5,6 +5,7 @@
   "forward-geocoding",
   "low-memory-cache",
   "master",
+  "road-graph",
   "rust-server",
   "stream-points-saving",
   "thread-count-selection"
