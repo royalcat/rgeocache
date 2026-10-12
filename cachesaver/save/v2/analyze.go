@@ -1,7 +1,9 @@
 package savev2
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 
@@ -92,14 +94,65 @@ func PrintCacheAnalysis(r io.Reader) error {
 	fmt.Printf("  Data blobs:   %s\n", humanize.Bytes(uint64(totalBlobSize)))
 	fmt.Printf("Points (KDBH) total: %s\n", humanize.Bytes(kdbhTotal))
 
-	// 7. Grand total.
+	// 7. Skip the point blobs to reach the optional trailing graph section.
+	if _, err := io.CopyN(io.Discard, r, totalBlobSize); err != nil {
+		return fmt.Errorf("v2 analyze: failed to skip point blobs: %w", err)
+	}
+	graphSize, err := printGraphSectionAnalysis(r)
+	if err != nil {
+		return err
+	}
+
+	// 8. Grand total.
 	totalSize := headerOverhead +
 		uint64(header.MetadataSize) +
 		uint64(header.StringsIndexSize) +
 		uint64(header.StringsDataSize) +
 		uint64(header.ZonesSize) +
-		kdbhTotal
+		kdbhTotal +
+		graphSize
 	fmt.Printf("Total uncompressed size: %s\n", humanize.Bytes(totalSize))
 
 	return nil
+}
+
+// printGraphSectionAnalysis reads the optional trailing road-graph section
+// (see graph.go for its layout) from r, prints its size breakdown and returns
+// the number of bytes it occupies. A reader already at EOF means the cache has
+// no graph section, which is not an error and contributes zero bytes.
+func printGraphSectionAnalysis(r io.Reader) (uint64, error) {
+	var header [graphHeaderSize]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
+		if errors.Is(err, io.EOF) {
+			fmt.Println("Road graph: none")
+			return 0, nil
+		}
+		return 0, fmt.Errorf("v2 analyze: failed to read graph header: %w", err)
+	}
+	if !bytes.Equal(header[0:4], []byte(graphMagic)) {
+		return 0, fmt.Errorf("v2 analyze: invalid graph magic %q", header[0:4])
+	}
+
+	version := binary.LittleEndian.Uint32(header[4:8])
+	flags := binary.LittleEndian.Uint32(header[8:12])
+	edgeCount := binary.LittleEndian.Uint64(header[12:20])
+	totalSize := binary.LittleEndian.Uint64(header[28:36])
+
+	expectedTotal := uint64(graphHeaderSize) + uint64(graphEdgeIndexSize(edgeCount))
+	if totalSize != expectedTotal {
+		return 0, fmt.Errorf(
+			"v2 analyze: graph section size mismatch: header says %d bytes, want %d",
+			totalSize, expectedTotal,
+		)
+	}
+
+	fmt.Printf("Road graph edges: %d (version %d, flags 0x%x)\n", edgeCount, version, flags)
+	fmt.Printf("  Graph header: %s\n", humanize.Bytes(graphHeaderSize))
+	fmt.Printf("  Edge indices: %s\n", humanize.Bytes(edgeCount*8))
+	fmt.Printf("  Edge coords:  %s\n", humanize.Bytes(edgeCount*16))
+	fmt.Printf("  Edge offsets: %s\n", humanize.Bytes((edgeCount+1)*8))
+	fmt.Printf("  Edge records: %s\n", humanize.Bytes(edgeCount*graphEdgeRecordSize))
+	fmt.Printf("Road graph total: %s\n", humanize.Bytes(expectedTotal))
+
+	return expectedTotal, nil
 }
