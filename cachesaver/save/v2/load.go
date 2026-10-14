@@ -74,14 +74,28 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 	}
 	numPoints := int64(binary.LittleEndian.Uint64(kdbhHeader[16:24]))
 
+	// Read the KDBH tree block. The index permutation and the coordinates are
+	// stored in tree order while the point blobs below are in original order,
+	// so build the inverse permutation to give every point its coordinates.
+	treeIdxs := make([]uint64, numPoints)
+	if err := binary.Read(r, binary.LittleEndian, treeIdxs); err != nil {
+		return nil, nil, nil, fmt.Errorf("v2 load: failed to read tree index: %w", err)
+	}
+	posOf := make([]uint32, numPoints)
+	for pos, orig := range treeIdxs {
+		if orig < uint64(numPoints) {
+			posOf[orig] = uint32(pos)
+		}
+	}
+	treeIdxs = nil
+
+	coords := make([]float64, numPoints*2)
+	if err := binary.Read(r, binary.LittleEndian, coords); err != nil {
+		return nil, nil, nil, fmt.Errorf("v2 load: failed to read tree coordinates: %w", err)
+	}
+
 	// Points iterator: reads V2PointData blobs and resolves strings from the in-memory index.
 	pointsIter := func(yield func(cachemodel.Point, error) bool) {
-		skipSize := numPoints*8 + numPoints*16
-		if _, err := io.CopyN(io.Discard, r, skipSize); err != nil {
-			yield(cachemodel.Point{}, fmt.Errorf("v2 load: failed to skip tree: %w", err))
-			return
-		}
-
 		offsetTable := make([]int64, numPoints+1)
 		for i := range offsetTable {
 			var buf [8]byte
@@ -106,7 +120,11 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 					return
 				}
 			}
-			point := resolvePointFromIndex(stringsIndex, stringsData, data)
+			var x, y float64
+			if pos := posOf[i]; pos*2+1 < uint32(len(coords)) {
+				x, y = coords[pos*2], coords[pos*2+1]
+			}
+			point := resolvePointFromIndex(stringsIndex, stringsData, x, y, data)
 			if !yield(point, nil) {
 				return
 			}
@@ -255,10 +273,11 @@ func readProto(r io.Reader, size uint32, msg proto.Message) error {
 	return proto.Unmarshal(buf, msg)
 }
 
-// resolvePointFromIndex resolves V2PointData to cachemodel.Point using the string index.
-func resolvePointFromIndex(index []uint32, dataBlock []byte, data V2PointData) cachemodel.Point {
+// resolvePointFromIndex resolves V2PointData to cachemodel.Point using the
+// string index and the point's coordinates.
+func resolvePointFromIndex(index []uint32, dataBlock []byte, x, y float64, data V2PointData) cachemodel.Point {
 	return cachemodel.Point{
-		X: 0, Y: 0, // coords not available in streaming path
+		X: x, Y: y,
 		Data: cachemodel.Info{
 			Name:        unique.Make(readStrByID(index, dataBlock, data.NameID)),
 			Street:      unique.Make(readStrByID(index, dataBlock, data.StreetID)),

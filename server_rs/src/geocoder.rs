@@ -273,15 +273,28 @@ fn for_each_in_radius(
     }
 }
 
-/// Nearest point within `radius` degrees of (lon, lat).
+/// Rank one find candidate: squared distance divided by the squared weight —
+/// ranking by distance ÷ weight, so a heavier kind wins at a proportionally
+/// larger distance — with exact score ties broken by longitude, then
+/// latitude. The rank depends only on the candidate, so the winner does not
+/// depend on the order the traversal visits points in.
+fn point_rank(lon: f64, lat: f64, x: f64, y: f64, weight: u8) -> (f64, f64, f64) {
+    // A weight of 0 is not produced by the generator; treat it as the weakest
+    // class so an unknown-weight point can still be found.
+    let w = f64::from(weight.max(1));
+    (sq_dist(x, y, lon, lat) / (w * w), x, y)
+}
+
+/// Nearest point within `radius` degrees of (lon, lat) under the
+/// [`point_rank`] order.
 fn tree_find_in_radius(cache: &CacheFile, lon: f64, lat: f64, radius: f64) -> Option<V2PointData> {
     let mut best_point: Option<V2PointData> = None;
-    let mut best_dist: f64 = f64::INFINITY;
+    let mut best_rank = (f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
 
     for_each_in_radius(cache, lon, lat, radius, |x, y, data| {
-        let dist = sq_dist(x, y, lon, lat);
-        if dist < best_dist || data.weight > best_point.map(|p| p.weight).unwrap_or(0) {
-            best_dist = dist;
+        let rank = point_rank(lon, lat, x, y, data.weight);
+        if best_point.is_none() || rank < best_rank {
+            best_rank = rank;
             best_point = Some(data);
         }
     });
@@ -308,7 +321,7 @@ struct NearestHit {
 
 impl PartialEq for NearestHit {
     fn eq(&self, other: &Self) -> bool {
-        self.dist2 == other.dist2
+        self.cmp(other) == Ordering::Equal
     }
 }
 
@@ -322,8 +335,14 @@ impl PartialOrd for NearestHit {
 
 impl Ord for NearestHit {
     fn cmp(&self, other: &Self) -> Ordering {
-        // BinaryHeap is a max-heap, so the farthest hit must compare greatest.
-        self.dist2.total_cmp(&other.dist2)
+        // BinaryHeap is a max-heap, so the worst kept hit must compare
+        // greatest: farthest first, then larger longitude, then larger
+        // latitude. The total order makes both what is dropped at the limit
+        // and the returned order independent of traversal order.
+        self.dist2
+            .total_cmp(&other.dist2)
+            .then_with(|| self.lon.total_cmp(&other.lon))
+            .then_with(|| self.lat.total_cmp(&other.lat))
     }
 }
 
@@ -353,9 +372,13 @@ impl NearestCollector {
             self.hits.push(hit);
             return;
         }
-        if hit.dist2 < self.hits.peek().map(|h| h.dist2).unwrap_or(f64::INFINITY) {
-            self.hits.pop();
-            self.hits.push(hit);
+        if let Some(worst) = self.hits.peek() {
+            // `worst` is the least desirable kept hit; the heap must drop it
+            // when the new hit ranks strictly better.
+            if hit.cmp(worst) == Ordering::Less {
+                self.hits.pop();
+                self.hits.push(hit);
+            }
         }
     }
 
@@ -366,7 +389,7 @@ impl NearestCollector {
     /// Drain the collector nearest-first.
     fn into_sorted(self) -> Vec<NearestHit> {
         let mut hits = self.hits.into_vec();
-        hits.sort_by(|a, b| a.dist2.total_cmp(&b.dist2));
+        hits.sort();
         hits
     }
 }
@@ -535,5 +558,73 @@ mod tests {
         let listed = geocoder.points_in_radius(0.0, 0.0, 0.01, 10, &GeocodeKindFilter::default());
         assert_eq!(listed.total, 1);
         assert_eq!(listed.points[0].kind, GeoObjectKind::Road);
+    }
+
+    /// Cache with a road at `-0.002` and a building at `building_x`, both on
+    /// the latitude of the origin.
+    fn ranking_cache(building_x: f64) -> Geocoder {
+        // String ids: 0 = "", 1 = "Building", 2 = "Road".
+        let strings = ["", "Building", "Road"];
+        let points = [
+            (building_x, 0.0, point_payload(0, 1, 0, 0, 0, 10, 1)),
+            (-0.002, 0.0, point_payload(0, 2, 0, 0, 0, 5, 2)),
+        ];
+        Geocoder::load(open_cache(&build_cache(&points, &strings, &[])), 0.01)
+            .expect("load geocoder")
+    }
+
+    #[test]
+    fn find_ranks_by_distance_over_weight() {
+        // Building at 0.003° vs road at 0.002°: the building is closer than
+        // twice the road's distance, so its score (distance ÷ weight) wins.
+        let found = ranking_cache(0.003).find(0.0, 0.0).expect("found");
+        assert_eq!(found.street, "Building");
+
+        // At 0.005° the building is beyond twice the road's distance and the
+        // road wins.
+        let found = ranking_cache(0.005).find(0.0, 0.0).expect("found");
+        assert_eq!(found.street, "Road");
+    }
+
+    #[test]
+    fn find_breaks_score_ties_by_coordinate() {
+        // String ids: 0 = "", 1 = "East", 2 = "West".
+        let strings = ["", "East", "West"];
+        let points = [
+            (0.003, 0.0, point_payload(0, 1, 0, 0, 0, 10, 1)),
+            (-0.003, 0.0, point_payload(0, 2, 0, 0, 0, 10, 1)),
+        ];
+        let geocoder = Geocoder::load(open_cache(&build_cache(&points, &strings, &[])), 0.01)
+            .expect("load geocoder");
+
+        let found = geocoder.find(0.0, 0.0).expect("found");
+        assert_eq!(found.street, "West", "smaller longitude wins the tie");
+    }
+
+    #[test]
+    fn find_is_independent_of_point_order() {
+        // String ids: 0 = "", 1 = "Road", 2 = "Middle", 3 = "West".
+        let strings = ["", "Road", "Middle", "West"];
+        let forward = [
+            (0.002, 0.0, point_payload(0, 1, 0, 0, 0, 5, 2)),
+            (0.003, 0.001, point_payload(0, 2, 0, 0, 0, 10, 1)),
+            (-0.003, 0.0, point_payload(0, 3, 0, 0, 0, 10, 1)),
+        ];
+        let reversed = [forward[2].clone(), forward[1].clone(), forward[0].clone()];
+
+        let first = Geocoder::load(open_cache(&build_cache(&forward, &strings, &[])), 0.01)
+            .expect("load forward cache");
+        let second = Geocoder::load(open_cache(&build_cache(&reversed, &strings, &[])), 0.01)
+            .expect("load reversed cache");
+
+        for (lat, lon) in [(0.0, 0.0), (0.001, 0.001), (-0.002, 0.0), (0.002, 0.002)] {
+            let a = first.find(lat, lon);
+            let b = second.find(lat, lon);
+            assert_eq!(
+                a.map(|i| (i.street, i.house_number, i.weight)),
+                b.map(|i| (i.street, i.house_number, i.weight)),
+                "query ({lat}, {lon})"
+            );
+        }
     }
 }

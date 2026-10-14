@@ -62,6 +62,8 @@ func compare(ctx context.Context, cmd *cli.Command) error {
 		mismatchCount atomic.Int64
 		mismatches    []mismatchEntry
 		mismatchesMu  sync.Mutex
+
+		classification = newClassificationCounter()
 	)
 
 	fmt.Printf("Comparing %s (A) vs %s (B)\n", serverA, serverB)
@@ -142,6 +144,8 @@ func compare(ctx context.Context, cmd *cli.Command) error {
 				n := min(len(listA), len(listB), len(points))
 				for i := range n {
 					diffs := compareInfo(listA[i], listB[i])
+					detail := strings.Join(diffs, "; ")
+					classification.add(classifyPair(listA[i], listB[i], len(diffs) == 0), detail, points[i][0], points[i][1])
 					if len(diffs) == 0 {
 						matchCount.Add(1)
 					} else {
@@ -150,7 +154,7 @@ func compare(ctx context.Context, cmd *cli.Command) error {
 						mismatches = append(mismatches, mismatchEntry{
 							Lat:    points[i][0],
 							Lon:    points[i][1],
-							Detail: strings.Join(diffs, "; "),
+							Detail: detail,
 						})
 						mismatchesMu.Unlock()
 					}
@@ -160,6 +164,7 @@ func compare(ctx context.Context, cmd *cli.Command) error {
 				if len(listA) != len(listB) {
 					extra := abs(len(listA) - len(listB))
 					mismatchCount.Add(int64(extra))
+					classification.add("response_length", fmt.Sprintf("A=%d, B=%d", len(listA), len(listB)), 0, 0)
 					mismatchesMu.Lock()
 					mismatches = append(mismatches, mismatchEntry{
 						Lat:    0,
@@ -197,6 +202,8 @@ func compare(ctx context.Context, cmd *cli.Command) error {
 	if totalCmp > 0 {
 		fmt.Printf("Match rate:        %.2f%%\n", float64(matched)/float64(totalCmp)*100)
 	}
+
+	classification.report(int(totalCmp))
 
 	mismatchesMu.Lock()
 	if len(mismatches) > 0 {

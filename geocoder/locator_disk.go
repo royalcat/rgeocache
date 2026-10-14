@@ -37,14 +37,14 @@ func (f *RGeoCoderDisk) Find(lat, lon float64) (InfoModel, bool) {
 // FindInRadius returns the closest address within the given radius.
 func (f *RGeoCoderDisk) FindInRadius(lat, lon float64, radius float64) (i InfoModel, ok bool) {
 	finPoint := kdbush.Point[savev2.V2PointData]{}
-	finDist := math.Inf(1)
+	finRank := rankPoint{score: math.Inf(1)}
 	hasBest := false
 
 	err := f.diskTree.Within(lon, lat, radius, func(p kdbush.Point[savev2.V2PointData]) bool {
-		dist := distanceSquared(lon, lat, p.X, p.Y)
-		if dist < finDist || p.Data.Weight > finPoint.Data.Weight {
+		rank := pointRank(lon, lat, p.X, p.Y, p.Data.Weight)
+		if !hasBest || rank.less(finRank) {
 			finPoint = p
-			finDist = dist
+			finRank = rank
 			hasBest = true
 		}
 		return true

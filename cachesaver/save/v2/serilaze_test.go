@@ -123,6 +123,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	// Verify point data
 	for i, p := range points {
 		lp := loadedPoints[i]
+		if lp.X != p.X || lp.Y != p.Y {
+			t.Errorf("Point[%d] coords mismatch: (%v, %v) != (%v, %v)", i, lp.X, lp.Y, p.X, p.Y)
+		}
 		if lp.Data.Name.Value() != p.Data.Name.Value() {
 			t.Errorf("Point[%d] Name mismatch: %q != %q", i, lp.Data.Name.Value(), p.Data.Name.Value())
 		}

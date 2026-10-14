@@ -63,12 +63,15 @@ func (f *RGeoCoder) Find(lat, lon float64) (i InfoModel, ok bool) {
 
 func (f *RGeoCoder) FindInRadius(lat, lon float64, radius float64) (i InfoModel, ok bool) {
 	finPoint := kdbush.Point[*geoInfo]{}
-	finDist := math.Inf(1)
+	finRank := rankPoint{score: math.Inf(1)}
+	hasBest := false
+
 	f.tree.Within(lon, lat, radius, func(p kdbush.Point[*geoInfo]) bool {
-		dist := distanceSquared(lon, lat, p.X, p.Y)
-		if dist < finDist || p.Data.Weight > finPoint.Data.Weight {
+		rank := pointRank(lon, lat, p.X, p.Y, p.Data.Weight)
+		if !hasBest || rank.less(finRank) {
 			finPoint = p
-			finDist = dist
+			finRank = rank
+			hasBest = true
 		}
 
 		// if dist < thresholdRadius {
@@ -79,7 +82,7 @@ func (f *RGeoCoder) FindInRadius(lat, lon float64, radius float64) (i InfoModel,
 	})
 
 	// point found (happy path)
-	if !math.IsInf(finDist, 1) {
+	if hasBest {
 		out := InfoModel{Info: finPoint.Data.value()}
 
 		if out.Region == "" && f.regions != nil {

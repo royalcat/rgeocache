@@ -94,12 +94,27 @@ type radiusHit[T any] struct {
 	data  T
 }
 
-// radiusHeap is a max-heap on distance², so the collector can drop the
-// farthest hit once `limit` are kept.
+// radiusHeap is a max-heap whose greatest element is the worst hit, so the
+// collector can drop it once `limit` hits are kept.
 type radiusHeap[T any] []radiusHit[T]
 
-func (h radiusHeap[T]) Len() int           { return len(h) }
-func (h radiusHeap[T]) Less(i, j int) bool { return h[i].dist2 > h[j].dist2 }
+// hitLess orders hits nearest-first, with exact distance ties broken by
+// longitude then latitude. The total order makes both the retained set of a
+// bounded collector and the returned order independent of traversal order.
+func hitLess[T any](a, b radiusHit[T]) bool {
+	if a.dist2 != b.dist2 {
+		return a.dist2 < b.dist2
+	}
+	if a.x != b.x {
+		return a.x < b.x
+	}
+	return a.y < b.y
+}
+
+func (h radiusHeap[T]) Len() int { return len(h) }
+
+// Less keeps the heap's root at the worst (farthest) hit.
+func (h radiusHeap[T]) Less(i, j int) bool { return hitLess(h[j], h[i]) }
 func (h radiusHeap[T]) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *radiusHeap[T]) Push(v any) { *h = append(*h, v.(radiusHit[T])) }
@@ -127,7 +142,7 @@ func (c *radiusCollector[T]) add(x, y, dist2 float64, data T) {
 		heap.Push(&c.hits, hit)
 		return
 	}
-	if hit.dist2 < c.hits[0].dist2 {
+	if hitLess(hit, c.hits[0]) {
 		c.hits[0] = hit
 		heap.Fix(&c.hits, 0)
 	}
@@ -136,6 +151,6 @@ func (c *radiusCollector[T]) add(x, y, dist2 float64, data T) {
 // sorted returns the collected hits nearest-first.
 func (c *radiusCollector[T]) sorted() []radiusHit[T] {
 	hits := c.hits
-	sort.Slice(hits, func(i, j int) bool { return hits[i].dist2 < hits[j].dist2 })
+	sort.Slice(hits, func(i, j int) bool { return hitLess(hits[i], hits[j]) })
 	return hits
 }

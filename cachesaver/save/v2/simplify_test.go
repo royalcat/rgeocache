@@ -69,6 +69,64 @@ func TestSimplifyCollinearChainDropsInteriorNodes(t *testing.T) {
 	}
 }
 
+func TestSimplifyKeepsInterpolatedLongSpanPoints(t *testing.T) {
+	// A ~400 m straight span carrying interpolated points every ~133 m: every
+	// point is needed to keep the kept edges within the cap, so none may be
+	// dropped and every resulting edge stays within graphMaxEdgeMeters.
+	points := []rawPoint{
+		testPoint(1, 0.0, 0.0),
+		testPoint(2, 0.0, 0.0012),
+		testPoint(3, 0.0, 0.0024),
+		testPoint(4, 0.0, 0.0036),
+	}
+	edges := []rawEdge{
+		testEdge(1, 2, "A", 3, 0),
+		testEdge(2, 3, "A", 3, 0),
+		testEdge(3, 4, "A", 3, 0),
+	}
+
+	filtered, newEdges, _, err := simplifyGraph(points, edges, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := nodeSet(filtered); len(got) != 4 {
+		t.Fatalf("every interpolated point must survive, got %v", got)
+	}
+	if len(newEdges) != 3 {
+		t.Fatalf("expected 3 edges, got %d", len(newEdges))
+	}
+	for _, e := range newEdges {
+		if m := edgeMeters(filtered, e); m > graphMaxEdgeMeters {
+			t.Errorf("edge %d -> %d is %.1f m, over the %.0f m cap", e.fromNode, e.toNode, m, graphMaxEdgeMeters)
+		}
+	}
+}
+
+func TestSimplifyDropsInterpolatedPointsOnShortSpans(t *testing.T) {
+	// An interpolated point on a span well under the cap is pure redundancy
+	// and must be merged away again.
+	points := []rawPoint{
+		testPoint(1, 0.0, 0.0),
+		testPoint(2, 0.0, 0.0004),
+		testPoint(3, 0.0, 0.0008),
+	}
+	edges := []rawEdge{
+		testEdge(1, 2, "A", 3, 0),
+		testEdge(2, 3, "A", 3, 0),
+	}
+
+	filtered, newEdges, _, err := simplifyGraph(points, edges, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(newEdges) != 1 {
+		t.Fatalf("expected a single merged edge, got %d", len(newEdges))
+	}
+	if got := nodeSet(filtered); len(got) != 2 {
+		t.Fatalf("expected only the endpoints to survive, got %v", got)
+	}
+}
+
 func TestSimplifyKeepsCurves(t *testing.T) {
 	points := []rawPoint{
 		testPoint(1, 0.0, 0.0),

@@ -141,6 +141,9 @@ var highwayClasses = map[string]uint8{
 // Shape points replace the previous fixed-distance resampling: each OSM node
 // becomes exactly one cache point (the first way to claim it emits it), so ways
 // that share a junction reference the same point and the graph is routable.
+// Spans longer than roadInterpolationMeters get intermediate interpolated
+// points, so road fallback points stay as dense as the old resampling left
+// them even where OSM has no shape node for a long distance.
 func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 	class, ok := highwayClasses[way.Tags.Find("highway")]
 	if !ok {
@@ -158,6 +161,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 
 	out := make([]geoPoint, 0, len(way.Nodes))
 	var prevNodeID uint32
+	var prevLon, prevLat float64
 	havePrev := false
 
 	for _, node := range way.Nodes {
@@ -186,10 +190,45 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 		// 261379237 repeats node 2669983324). The second occurrence would make
 		// a self-loop edge, which is meaningless in the graph, so skip it.
 		if havePrev && prevNodeID != nodeID {
+			fromID := prevNodeID
+
+			// A span without an intermediate shape node carries no road point
+			// for its whole length, which can exceed the reverse-geocoding
+			// search radius. Interpolated points are not OSM nodes, so each
+			// gets a fresh graph node id and the span's edge is split around
+			// them; the graph simplifier drops them again wherever the span
+			// is short enough.
+			for _, p := range interpolateRoadSegment(prevLon, prevLat, lon, lat) {
+				synthID := f.graphNodeSeq.Add(1)
+				out = append(out, geoPoint{
+					Point:       p,
+					Name:        name,
+					Street:      street,
+					HouseNumber: unique.Make(""),
+					City:        f.localizedCityAddr(way.Tags, p),
+					Region:      f.localizedRegion(p),
+					Weight:      weightRoad,
+					Type:        cachemodel.GeoObjectRoad,
+					GraphNode:   synthID,
+				})
+				f.parsedItems <- parseItem{
+					IsEdge: true,
+					Edge: cachemodel.GraphEdge{
+						FromNode: fromID,
+						ToNode:   synthID,
+						Street:   street,
+						Name:     nameHandle,
+						Class:    class,
+						Oneway:   oneway,
+					},
+				}
+				fromID = synthID
+			}
+
 			f.parsedItems <- parseItem{
 				IsEdge: true,
 				Edge: cachemodel.GraphEdge{
-					FromNode: prevNodeID,
+					FromNode: fromID,
 					ToNode:   nodeID,
 					Street:   street,
 					Name:     nameHandle,
@@ -199,6 +238,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 			}
 		}
 		prevNodeID = nodeID
+		prevLon, prevLat = lon, lat
 		havePrev = true
 	}
 
