@@ -345,10 +345,6 @@ paths:
           default: 10000
     get:
       summary: Get road graph edges and nodes inside a bounding box
-      description: |
-        Implemented by the Rust server (`server_rs`); the Go server does not
-        expose the road graph yet. Requires a cache generated with a road graph
-        section, and answers 503 for older caches.
       tags:
         - roadgraph
       responses:
