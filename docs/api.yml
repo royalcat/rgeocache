@@ -106,6 +106,122 @@ paths:
         "400":
           description: Bad request
 
+  /rgeocode/points:
+    parameters:
+      - name: lat
+        in: query
+        required: true
+        description: Latitude of the query center, in degrees.
+        schema:
+          type: number
+          format: float64
+          minimum: -90
+          maximum: 90
+      - name: lon
+        in: query
+        required: true
+        description: Longitude of the query center, in degrees.
+        schema:
+          type: number
+          format: float64
+          minimum: -180
+          maximum: 180
+      - name: radius
+        in: query
+        required: false
+        description: |
+          Search radius in degrees around the center. Must be positive; values
+          above 1 are clamped to 1. Defaults to 0.01, the default
+          `--search-radius`.
+        schema:
+          type: number
+          format: float64
+          default: 0.01
+      - name: limit
+        in: query
+        required: false
+        description: |
+          Maximum number of points returned, nearest first. Clamped to
+          1-50000; `truncated` reports when more points matched.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50000
+          default: 10000
+      - name: kind
+        in: query
+        required: false
+        description: |
+          Comma-separated object kinds to include: `building`, `road`, `area`
+          (aliases `b`/`r`/`a`). Unknown values are ignored; absent or empty
+          means all kinds. A cached point is never a zone.
+        schema:
+          type: string
+          example: "building,road"
+    get:
+      summary: Get cached points within a radius of a location
+      tags:
+        - reverse
+      responses:
+        "200":
+          description: |
+            OK. A GeoJSON FeatureCollection with `truncated` and `total`
+            foreign members: one Point feature per cached point, nearest
+            first. Properties carry the point's address, its `weight` and its
+            `geo_type`. `region` and `country` are filled from the zone
+            borders when the stored record lacks them.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [type, features, truncated, total]
+                properties:
+                  type:
+                    type: string
+                    enum: [FeatureCollection]
+                  truncated:
+                    type: boolean
+                    description: True when more points matched than the limit allowed.
+                  total:
+                    type: integer
+                    description: Total number of matching points, before the limit.
+                  features:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum: [Feature]
+                        geometry:
+                          type: object
+                          properties:
+                            type:
+                              type: string
+                              enum: [Point]
+                            coordinates:
+                              type: array
+                              description: "[lon, lat]"
+                              items:
+                                type: number
+                                format: float64
+                        properties:
+                          allOf:
+                            - $ref: "#/components/schemas/Address"
+                            - type: object
+                              properties:
+                                weight:
+                                  type: integer
+                                geo_type:
+                                  type: string
+                                  enum: [building, road, area]
+        "400":
+          description: |
+            Bad request: missing or out-of-range `lat`/`lon`, or a
+            non-positive or malformed `radius`.
+        "500":
+          description: Server error
+
   /fgeocode/search:
     parameters:
       - name: q

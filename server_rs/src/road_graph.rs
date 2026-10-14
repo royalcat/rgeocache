@@ -664,35 +664,8 @@ fn read_f64(bytes: &[u8], offset: usize) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_cache::push_kdbh;
     use buffa::Message;
-
-    /// Writes a KDBH block whose entries all fit in a single leaf, so the
-    /// sorted order equals the insertion order.
-    fn push_kdbh(entries: &[(f64, f64, Vec<u8>)], out: &mut Vec<u8>) {
-        let n = entries.len();
-        const NODE_SIZE: i64 = 64;
-        out.extend_from_slice(KDBH_MAGIC);
-        out.extend_from_slice(&KDBH_VERSION.to_le_bytes());
-        out.extend_from_slice(&NODE_SIZE.to_le_bytes());
-        out.extend_from_slice(&(n as i64).to_le_bytes());
-        out.extend_from_slice(&[0u8; 8]);
-        for i in 0..n {
-            out.extend_from_slice(&(i as i64).to_le_bytes());
-        }
-        for (x, y, _) in entries {
-            out.extend_from_slice(&x.to_le_bytes());
-            out.extend_from_slice(&y.to_le_bytes());
-        }
-        let mut offset = 0i64;
-        for (_, _, payload) in entries {
-            out.extend_from_slice(&offset.to_le_bytes());
-            offset += payload.len() as i64;
-        }
-        out.extend_from_slice(&offset.to_le_bytes());
-        for (_, _, payload) in entries {
-            out.extend_from_slice(payload);
-        }
-    }
 
     fn edge_payload(
         from: u32,

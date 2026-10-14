@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rgeocache reverse geocoding</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.45 system-ui, sans-serif; max-width: 72rem; margin: 1.5rem auto; padding: 0 1rem; }
+  h1 { margin: .2rem 0 .5rem; font-size: 1.4rem; }
+  p.intro { margin: 0 0 .8rem; opacity: .8; }
+  form { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; }
+  label { display: flex; flex-direction: column; gap: .15rem; font-size: .8rem; opacity: .9; }
+  input[type=number] { width: 7.5rem; padding: .35rem .45rem; font: inherit; }
+  button { padding: .4rem .7rem; font: inherit; }
+  .check { flex-direction: row; align-items: center; gap: .35rem; padding-bottom: .35rem; }
+  #status { min-height: 1.4em; margin: .7rem 0; opacity: .85; }
+  #map { height: 65vh; min-height: 20rem; border: 1px solid rgba(128,128,128,.4); border-radius: 4px; }
+  .legend { background: rgba(255,255,255,.94); color: #212529; padding: .5rem .6rem; border-radius: 4px; font-size: .78rem; line-height: 1.6; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+  .legend .sw { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; vertical-align: middle; margin-right: .4rem; }
+  .legend .hint { opacity: .7; }
+  .point-tip strong { display: block; }
+  .point-tip .sub { opacity: .75; }
+</style>
+</head>
+<body>
+<h1>Reverse geocoding</h1>
+<p class="intro">Every cached point within the search radius of a clicked location, from <code>GET /rgeocode/points</code>, coloured by object kind. Hover a dot for its full address.</p>
+<form id="query-form">
+  <label>radius, °<input id="radius" type="number" step="any" min="0.0001" max="1" value="0.01"></label>
+  <label>limit<input id="limit" type="number" min="1" max="50000" step="1" value="5000"></label>
+  <label class="check"><input id="kind-building" type="checkbox" checked> building</label>
+  <label class="check"><input id="kind-road" type="checkbox" checked> road</label>
+  <label class="check"><input id="kind-area" type="checkbox" checked> area</label>
+  <button type="submit">Query</button>
+</form>
+<p id="status"></p>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+  const status = document.getElementById('status');
+
+  if (!window.L) {
+    status.textContent = 'Leaflet failed to load (no network access to unpkg.com?)';
+  } else {
+    const KIND_COLORS = {
+      building: '#1971c2',
+      road: '#e8590c',
+      area: '#2f9e44',
+      unknown: '#868e96',
+    };
+    // Must match the server's maximum radius.
+    const MAX_RADIUS = 1.0;
+    // Degrees of latitude per metre, for the approximate distance display and
+    // for drawing the query circle.
+    const METERS_PER_DEGREE = 111320;
+
+    const input = (id) => document.getElementById(id);
+    const map = L.map('map');
+
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+
+    const dataLayer = L.geoJSON(null, {
+      pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+        radius: 3.5,
+        weight: 1,
+        color: '#fff',
+        fillColor: KIND_COLORS[feature.properties.geo_type] || KIND_COLORS.unknown,
+        fillOpacity: 0.95,
+        bubblingMouseEvents: false,
+      }),
+      onEachFeature: (feature, layer) => {
+        layer.bindTooltip(pointTooltip(feature.properties, layer.getLatLng()));
+      },
+    }).addTo(map);
+
+    let centerMarker = null;
+    let centerCircle = null;
+    let lastCenter = null;
+    let querySeq = 0;
+
+    // --- tooltip ------------------------------------------------------------
+
+    function pointTooltip(props, latlng) {
+      const div = document.createElement('div');
+      div.className = 'point-tip';
+
+      const address = [props.street, props.house_number].filter(Boolean).join(' ');
+      const title = document.createElement('strong');
+      title.textContent = address || props.name || props.geo_type || 'point';
+      div.append(title);
+
+      if (props.name && props.name !== title.textContent) {
+        const name = document.createElement('div');
+        name.textContent = props.name;
+        div.append(name);
+      }
+
+      const place = [props.city, props.region, props.country].filter(Boolean).join(', ');
+      if (place) {
+        const placeLine = document.createElement('div');
+        placeLine.textContent = place;
+        div.append(placeLine);
+      }
+
+      const meta = document.createElement('div');
+      meta.className = 'sub';
+      meta.textContent = [
+        props.geo_type || 'unknown',
+        'weight ' + props.weight,
+        latlng.lat.toFixed(6) + ', ' + latlng.lng.toFixed(6),
+      ].join(' · ');
+      div.append(meta);
+
+      return div;
+    }
+
+    // --- legend -------------------------------------------------------------
+
+    const legend = L.control({ position: 'bottomright' });
+    legend.onAdd = () => {
+      const div = L.DomUtil.create('div', 'legend');
+      const rows = Object.entries(KIND_COLORS)
+        .filter(([name]) => name !== 'unknown')
+        .map(([name, color]) => `<div><span class="sw" style="background:${color}"></span>${name}</div>`)
+        .join('');
+      div.innerHTML = rows + '<div class="hint">click the map to query</div>';
+      return div;
+    };
+    legend.addTo(map);
+
+    // --- queries ------------------------------------------------------------
+
+    function readParams() {
+      const radius = Number(input('radius').value);
+      if (!Number.isFinite(radius) || radius <= 0 || radius > MAX_RADIUS) {
+        throw new Error('radius must be a number in (0, ' + MAX_RADIUS + ']');
+      }
+      const limit = Number(input('limit').value);
+      if (!Number.isInteger(limit) || limit < 1) {
+        throw new Error('limit must be a positive integer');
+      }
+      const kinds = [];
+      if (input('kind-building').checked) kinds.push('building');
+      if (input('kind-road').checked) kinds.push('road');
+      if (input('kind-area').checked) kinds.push('area');
+      if (!kinds.length) {
+        throw new Error('select at least one kind');
+      }
+      return { radius, limit, kinds };
+    }
+
+    function drawCenter(latlng, radius) {
+      const meters = Math.max(radius * METERS_PER_DEGREE, 1);
+      if (!centerMarker) {
+        centerMarker = L.circleMarker(latlng, {
+          radius: 5, weight: 2, color: '#212529', fillColor: '#fff', fillOpacity: 1, interactive: false,
+        }).addTo(map);
+      } else {
+        centerMarker.setLatLng(latlng);
+      }
+      if (!centerCircle) {
+        centerCircle = L.circle(latlng, {
+          radius: meters, weight: 1, color: '#212529', dashArray: '4 4', fill: false, interactive: false,
+        }).addTo(map);
+      } else {
+        centerCircle.setLatLng(latlng);
+        centerCircle.setRadius(meters);
+      }
+    }
+
+    async function query() {
+      if (!lastCenter) {
+        status.textContent = 'Click on the map to query the cache around a point.';
+        return;
+      }
+
+      let params;
+      try {
+        params = readParams();
+      } catch (error) {
+        status.textContent = error.message;
+        return;
+      }
+
+      drawCenter(lastCenter, params.radius);
+
+      const seq = ++querySeq;
+      const search = new URLSearchParams({
+        lat: lastCenter.lat,
+        lon: lastCenter.lng,
+        radius: params.radius,
+        limit: params.limit,
+        kind: params.kinds.join(','),
+      });
+
+      status.textContent = 'Querying…';
+      try {
+        const response = await fetch('/rgeocode/points?' + search);
+        const body = await response.text();
+        if (seq !== querySeq) {
+          return;
+        }
+        if (!response.ok) {
+          status.textContent = body || 'HTTP ' + response.status;
+          return;
+        }
+        render(JSON.parse(body), params);
+      } catch (error) {
+        if (seq === querySeq) {
+          status.textContent = 'Request failed: ' + error;
+        }
+      }
+    }
+
+    function render(data, params) {
+      dataLayer.clearLayers();
+      dataLayer.addData(data);
+
+      const shown = (data.features || []).length;
+      const total = Number.isFinite(data.total) ? data.total : shown;
+      const meters = Math.round(params.radius * METERS_PER_DEGREE);
+      const area = shown === 0
+        ? 'No cached points within ' + params.radius + '° (≈ ' + meters + ' m)'
+        : total.toLocaleString() + (total === 1 ? ' point' : ' points') +
+          ' within ' + params.radius + '° (≈ ' + meters + ' m)';
+      const parts = [area];
+      if (data.truncated) {
+        parts.push('showing nearest ' + shown.toLocaleString() + ' — increase limit');
+      }
+      status.textContent = parts.join(' · ');
+    }
+
+    // --- interaction --------------------------------------------------------
+
+    map.on('click', (event) => {
+      lastCenter = event.latlng;
+      query();
+    });
+
+    document.getElementById('query-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      query();
+    });
+
+    // Adjusting the query parameters re-queries the last clicked center.
+    document.getElementById('query-form').addEventListener('change', () => {
+      if (lastCenter) {
+        query();
+      }
+    });
+
+    map.setView([55.751244, 37.618423], 12);
+    status.textContent = 'Click on the map to query the cache around a point.';
+  }
+</script>
+</body>
+</html>

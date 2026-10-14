@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/royalcat/osmpbfdb"
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
 	"github.com/royalcat/rgeocache/fgeocode"
 	"github.com/royalcat/rgeocache/geocoder"
@@ -161,6 +162,60 @@ func TestLondon(t *testing.T) {
 	if i.City != "Greater London" || i.Street != "Cannon Row" || i.HouseNumber != "1" {
 		t.Fatalf("expected Greater London, Cannon Row, 1; got %s, %s, %s", i.City, i.Street, i.HouseNumber)
 	}
+
+	t.Log("Reverse geocoding points")
+
+	// The synthetic London cache only carries the zones the extract contains,
+	// so only require the border fallback for zone kinds that exist.
+	hasRegionZone := false
+	hasCountryZone := false
+	for _, zone := range rgeo.Zones() {
+		switch zone.Type {
+		case cachemodel.ZoneRegion:
+			hasRegionZone = true
+		case cachemodel.ZoneCountry:
+			hasCountryZone = true
+		}
+	}
+
+	const pointsRadius = 0.01
+	listed, total := rgeo.PointsInRadius(51.501834, -0.125409, pointsRadius, 100, geocoder.PointKindsAll)
+	if total == 0 || len(listed) == 0 {
+		t.Fatal("expected points within the test radius")
+	}
+	if total < len(listed) {
+		t.Fatalf("total %d is smaller than the %d returned points", total, len(listed))
+	}
+
+	prevDist := -1.0
+	foundCannonRow := false
+	for j, point := range listed {
+		dx := point.X + 0.125409
+		dy := point.Y - 51.501834
+		dist := dx*dx + dy*dy
+		if dist < prevDist {
+			t.Errorf("points[%d] is nearer than points[%d]; results must be nearest-first", j, j-1)
+		}
+		if dist > pointsRadius*pointsRadius*1.0001 {
+			t.Errorf("points[%d] lies outside the query radius", j)
+		}
+		prevDist = dist
+
+		if point.Info.Street == "Cannon Row" && point.Info.HouseNumber == "1" {
+			foundCannonRow = true
+			if hasRegionZone && point.Info.Region == "" {
+				t.Errorf("Cannon Row point has no region (border fallback missing)")
+			}
+			if hasCountryZone && point.Info.Country == "" {
+				t.Errorf("Cannon Row point has no country (border fallback missing)")
+			}
+		}
+	}
+	if !foundCannonRow {
+		t.Fatal("expected the Cannon Row 1 point among the radius results")
+	}
+	t.Logf("Reverse points: %d within %.3f° (total %d, region zone %v, country zone %v)",
+		len(listed), pointsRadius, total, hasRegionZone, hasCountryZone)
 
 	t.Log("Forward geocoding")
 

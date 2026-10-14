@@ -45,6 +45,20 @@ curl -X GET 'localhost:8080/rgeocode/address/59.9176846/30.3930866'
 {"name":"","street":"Obvodny Canal embankment","house_number":"5 litA","city":"Saint Petersburg"}
 ```
 
+Every cached point within a radius of a location — the reverse lookup's
+candidates — is served as GeoJSON, nearest first:
+
+```bash
+curl -X GET 'localhost:8080/rgeocode/points?lat=59.9177&lon=30.3931&radius=0.005&limit=10'
+{"type":"FeatureCollection","truncated":true,"total":42,"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[30.3930,59.9176]},"properties":{"name":"","street":"Obvodny Canal embankment","house_number":"5 litA","city":"Санкт-Петербург","region":"Санкт-Петербург","country":"Россия","weight":10,"geo_type":"building"}}]}
+```
+
+`radius` is in degrees (default 0.01, at most 1), `limit` is clamped to
+1-50000, and `kind` filters `building`/`road`/`area`. `region` and `country`
+are filled from the zone borders when the stored record lacks them. An
+interactive map of those points — click the map, hover a dot for its address —
+is served at `http://localhost:8080/rgeocode/demo`.
+
 The same server also provides forward (text) geocoding:
 
 ```bash

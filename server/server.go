@@ -59,6 +59,10 @@ func Run(ctx context.Context, address string, rgeo geocoder.Geocoder, fgeo *fgeo
 	if err != nil {
 		return err
 	}
+	metricRGeoPointsCallCount, err := meter.Int64Counter("rgeocode_points_call_total")
+	if err != nil {
+		return err
+	}
 	s := &server{
 		rgeo:            rgeo,
 		fgeo:            fgeo,
@@ -69,12 +73,15 @@ func Run(ctx context.Context, address string, rgeo geocoder.Geocoder, fgeo *fgeo
 		metricAddressesEncoded:          metricHttpAdressEncoded,
 		metricFGeoCallCount:             metricFGeoCallCount,
 		metricFGeoAutocompleteCallCount: metricFGeoAutocompleteCallCount,
+		metricRGeoPointsCallCount:       metricRGeoPointsCallCount,
 	}
 
 	r := router.New()
 	r.GET("/rgeocode/address/{lat}/{lon}", s.RGeoCodeHandler)
 	r.GET("/rgeocode/multiaddress", s.RGeoMultipleCodeHandler) // DEPRECATED use post endpoint
 	r.POST("/rgeocode/multiaddress", s.RGeoMultipleCodeHandler)
+	r.GET("/rgeocode/points", s.RGeoPointsHandler)
+	r.GET("/rgeocode/demo", RGeoDemoHandler)
 	r.GET("/fgeocode/search", s.FGeoCodeHandler)
 	r.GET("/fgeocode/autocomplete", s.FGeoAutocompleteHandler)
 	r.GET("/fgeocode/demo", FGeoDemoHandler)
@@ -112,6 +119,7 @@ type server struct {
 	metricAddressesEncoded          metric.Int64Counter
 	metricFGeoCallCount             metric.Int64Counter
 	metricFGeoAutocompleteCallCount metric.Int64Counter
+	metricRGeoPointsCallCount       metric.Int64Counter
 }
 
 var reqPointsPool = sync.Pool{
@@ -360,6 +368,15 @@ func (s *server) FGeoAutocompleteHandler(ctx *fasthttp.RequestCtx) {
 func FGeoDemoHandler(ctx *fasthttp.RequestCtx) {
 	ctx.Response.Header.SetContentType("text/html; charset=utf-8")
 	ctx.Response.SetBody(web.FGeoDemo)
+}
+
+// RGeoDemoHandler implements GET /rgeocode/demo, a self-contained browser page
+// for the reverse geocoding points endpoint: click the map, see every cached
+// point within the search radius, hover for the full address. It is a static
+// asset, so it is served regardless of the cache contents.
+func RGeoDemoHandler(ctx *fasthttp.RequestCtx) {
+	ctx.Response.Header.SetContentType("text/html; charset=utf-8")
+	ctx.Response.SetBody(web.RGeoDemo)
 }
 
 // fgeoUnavailable writes the 503 used while the forward index builds or after

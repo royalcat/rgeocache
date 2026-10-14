@@ -56,6 +56,10 @@ pub struct Metrics {
     pub roadgraph_duration: Histogram,
     pub roadgraph_edges: Histogram,
     pub roadgraph_truncated: Counter,
+    pub points_requests: Counter,
+    pub points_duration: Histogram,
+    pub points_returned: Histogram,
+    pub points_truncated: Counter,
     registry: Registry,
 }
 
@@ -184,6 +188,38 @@ impl Metrics {
         )?;
         registry.register(Box::new(roadgraph_truncated.clone()))?;
 
+        let points_requests = Counter::new(
+            "rgeocode_points_requests_total",
+            "Total reverse geocoding point listing requests",
+        )?;
+        registry.register(Box::new(points_requests.clone()))?;
+
+        let points_duration = Histogram::with_opts(
+            HistogramOpts::new(
+                "rgeocode_points_duration_seconds",
+                "Reverse geocoding point listing duration",
+            )
+            .buckets(vec![0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5]),
+        )?;
+        registry.register(Box::new(points_duration.clone()))?;
+
+        let points_returned = Histogram::with_opts(
+            HistogramOpts::new(
+                "rgeocode_points_returned",
+                "Number of cache points returned per listing request",
+            )
+            .buckets(vec![
+                0.0, 1.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0,
+            ]),
+        )?;
+        registry.register(Box::new(points_returned.clone()))?;
+
+        let points_truncated = Counter::new(
+            "rgeocode_points_truncated_total",
+            "Point listing requests truncated at the limit",
+        )?;
+        registry.register(Box::new(points_truncated.clone()))?;
+
         Ok(Self {
             requests_single,
             requests_multi,
@@ -202,6 +238,10 @@ impl Metrics {
             roadgraph_duration,
             roadgraph_edges,
             roadgraph_truncated,
+            points_requests,
+            points_duration,
+            points_returned,
+            points_truncated,
             registry,
         })
     }
@@ -676,6 +716,146 @@ fn edge_properties(
     properties
 }
 
+// ---------------------------------------------------------------------------
+// Reverse geocoding points
+// ---------------------------------------------------------------------------
+
+const POINTS_DEFAULT_RADIUS: f64 = 0.01;
+const POINTS_MAX_RADIUS: f64 = 1.0;
+const POINTS_DEFAULT_LIMIT: usize = 10_000;
+const POINTS_MAX_LIMIT: usize = 50_000;
+
+#[derive(Debug, serde::Deserialize)]
+pub struct PointsQuery {
+    lat: f64,
+    lon: f64,
+    /// Search radius in degrees; defaults to `0.01` (the default
+    /// `--search-radius`) and is clamped to [`POINTS_MAX_RADIUS`].
+    radius: Option<f64>,
+    /// Maximum number of points; clamped to `1..=POINTS_MAX_LIMIT`.
+    limit: Option<usize>,
+    /// Comma-separated object kinds to include: `building`, `road`, `area`
+    /// (aliases `b`/`r`/`a`). Absent or empty means all kinds; unknown values
+    /// are ignored.
+    kind: Option<String>,
+}
+
+/// Validated parameters of a `GET /rgeocode/points` request.
+struct PointsRequest {
+    lat: f64,
+    lon: f64,
+    radius: f64,
+    limit: usize,
+    filter: GeocodeKindFilter,
+}
+
+/// Validate a parsed points query; the error string is the 400 body.
+fn validate_points_query(query: PointsQuery) -> Result<PointsRequest, &'static str> {
+    if !query.lat.is_finite() || !(-90.0..=90.0).contains(&query.lat) {
+        return Err("latitude out of range");
+    }
+    if !query.lon.is_finite() || !(-180.0..=180.0).contains(&query.lon) {
+        return Err("longitude out of range");
+    }
+
+    let radius = query.radius.unwrap_or(POINTS_DEFAULT_RADIUS);
+    if !radius.is_finite() || radius <= 0.0 {
+        return Err("radius must be positive");
+    }
+
+    let limit = query
+        .limit
+        .unwrap_or(POINTS_DEFAULT_LIMIT)
+        .clamp(1, POINTS_MAX_LIMIT);
+
+    // An absent or empty kind list means all kinds, matching the Go server.
+    let filter = match query.kind.as_deref() {
+        Some(kind) if !kind.trim().is_empty() => GeocodeKindFilter::from(kind),
+        _ => GeocodeKindFilter::default(),
+    };
+
+    Ok(PointsRequest {
+        lat: query.lat,
+        lon: query.lon,
+        radius: radius.min(POINTS_MAX_RADIUS),
+        limit,
+        filter,
+    })
+}
+
+/// `GET /rgeocode/points` — every cached point within a radius of a center as a
+/// GeoJSON FeatureCollection, ordered nearest first, with the total number of
+/// matches and a truncation flag.
+pub async fn rgeocode_points_handler(
+    state: web::types::State<Arc<AppState>>,
+    web::types::Query(query_params): web::types::Query<PointsQuery>,
+) -> HttpResponse {
+    state.metrics.points_requests.inc();
+
+    let request = match validate_points_query(query_params) {
+        Ok(request) => request,
+        Err(message) => return HttpResponse::BadRequest().body(message),
+    };
+
+    let geocoder = state.geocoder.clone();
+    let _timer = state.metrics.points_duration.start_timer();
+    let listed = ntex::rt::spawn_blocking(move || {
+        geocoder.points_in_radius(
+            request.lat,
+            request.lon,
+            request.radius,
+            request.limit,
+            &request.filter,
+        )
+    })
+    .await;
+
+    let listed = match listed {
+        Ok(listed) => listed,
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("points task failed: {err}"));
+        }
+    };
+
+    state
+        .metrics
+        .points_returned
+        .observe(listed.points.len() as f64);
+    let truncated = listed.total > listed.points.len();
+    if truncated {
+        state.metrics.points_truncated.inc();
+    }
+
+    let features: Vec<serde_json::Value> = listed
+        .points
+        .iter()
+        .map(|point| {
+            serde_json::json!({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [point.lon, point.lat]},
+                "properties": {
+                    "name": point.info.name,
+                    "street": point.info.street,
+                    "house_number": point.info.house_number,
+                    "city": point.info.city,
+                    "region": point.info.region,
+                    "country": point.info.country,
+                    "weight": point.info.weight,
+                    "geo_type": point.kind.to_string(),
+                },
+            })
+        })
+        .collect();
+
+    let body = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": features,
+        "truncated": truncated,
+        "total": listed.total,
+    });
+    HttpResponse::Ok().json(&body)
+}
+
 /// The self-contained browser demo page for the forward geocoding API, shared
 /// with the Go server.
 ///
@@ -721,6 +901,27 @@ pub async fn roadgraph_demo_handle() -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(ROADGRAPH_DEMO_HTML)
+}
+
+/// The self-contained browser demo page for the reverse geocoding points
+/// endpoint, shared asset mirrored from `web/rgeocode-demo.html` (same Docker
+/// build context reason as the other pages). The page pulls Leaflet and OSM
+/// tiles from the network at runtime.
+///
+/// Compiled in only with the non-default `demo-page` feature.
+#[cfg(feature = "demo-page")]
+const RGEODEMO_HTML: &str = include_str!("../web/rgeocode-demo.html");
+
+/// `GET /rgeocode/demo`: a static page that drives `/rgeocode/points` from the
+/// browser. It is a static asset, so it is served regardless of the cache
+/// contents.
+///
+/// Requires the non-default `demo-page` Cargo feature.
+#[cfg(feature = "demo-page")]
+pub async fn rgeocode_demo_handle() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(RGEODEMO_HTML)
 }
 
 // The demo routes are the only thing this module tests, so the whole module is
@@ -782,6 +983,31 @@ mod tests {
         );
         assert!(html.contains("leaflet"), "leaflet assets missing");
     }
+
+    #[ntex::test]
+    async fn rgeocode_demo_serves_html_page() {
+        let app = test::init_service(
+            App::new().route("/rgeocode/demo", web::get().to(rgeocode_demo_handle)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/rgeocode/demo").to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/html; charset=utf-8")
+        );
+
+        let body = test::read_body(resp).await;
+        let html = std::str::from_utf8(&body).expect("demo page is valid UTF-8");
+        assert!(html.contains("id=\"radius\""), "radius input missing");
+        assert!(html.contains("/rgeocode/points"), "points endpoint missing");
+        assert!(html.contains("leaflet"), "leaflet assets missing");
+    }
 }
 
 /// Guards `server_rs/web/*.html` against drifting from the shared pages in
@@ -804,6 +1030,15 @@ mod demo_asset_sync {
             include_str!("../web/roadgraph-demo.html"),
             include_str!("../../web/roadgraph-demo.html"),
             "server_rs/web/roadgraph-demo.html is out of sync with web/roadgraph-demo.html; copy the shared page over"
+        );
+    }
+
+    #[test]
+    fn rgeocode_demo_page_copy_matches_shared_page() {
+        assert_eq!(
+            include_str!("../web/rgeocode-demo.html"),
+            include_str!("../../web/rgeocode-demo.html"),
+            "server_rs/web/rgeocode-demo.html is out of sync with web/rgeocode-demo.html; copy the shared page over"
         );
     }
 }
@@ -851,5 +1086,150 @@ mod roadgraph_query_tests {
         let query: RoadGraphQuery =
             serde_json::from_str(r#"{"bbox":"0,0,1,1","simplify":false}"#).expect("query");
         assert_eq!(query.simplify, Some(false));
+    }
+}
+
+#[cfg(test)]
+mod points_tests {
+    use super::*;
+    use crate::forward_geocoder::GeoObjectKind;
+    use crate::test_cache::{build_cache, open_cache, point_payload};
+    use ntex::http::StatusCode;
+    use ntex::web::{test, App};
+
+    /// App state over a synthetic cache with two points near the origin (a
+    /// building and a road) and one far away.
+    fn test_state() -> Arc<AppState> {
+        let strings = ["", "Main", "7", "Town"];
+        let points = [
+            (0.001, 0.001, point_payload(0, 1, 2, 3, 0, 10, 1)),
+            (0.005, 0.0, point_payload(0, 1, 0, 3, 0, 5, 2)),
+            (10.0, 10.0, point_payload(0, 0, 0, 0, 0, 10, 1)),
+        ];
+        let geocoder =
+            Geocoder::load(open_cache(&build_cache(&points, &strings, &[])), 0.01).expect("load");
+
+        Arc::new(AppState {
+            geocoder: Arc::new(geocoder),
+            forward_geocoder: Arc::new(OnceLock::new()),
+            road_graph: None,
+            metrics: Metrics::new().expect("metrics"),
+        })
+    }
+
+    async fn get(uri: &str) -> (StatusCode, String) {
+        let app = test::init_service(
+            App::new()
+                .state(test_state())
+                .route("/rgeocode/points", web::get().to(rgeocode_points_handler)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri(uri).to_request();
+        let resp = test::call_service(&app, req).await;
+        let status = resp.status();
+        let body = test::read_body(resp).await;
+        (status, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    #[ntex::test]
+    async fn serves_geojson_feature_collection() {
+        let (status, body) = get("/rgeocode/points?lat=0&lon=0&radius=0.01").await;
+        assert_eq!(status, StatusCode::OK);
+
+        let json: serde_json::Value = serde_json::from_str(&body).expect("valid json");
+        assert_eq!(json["type"], "FeatureCollection");
+        assert_eq!(json["total"], 2);
+        assert_eq!(json["truncated"], false);
+
+        let features = json["features"].as_array().expect("features");
+        assert_eq!(features.len(), 2);
+        assert_eq!(
+            features[0]["geometry"]["coordinates"],
+            serde_json::json!([0.001, 0.001]),
+            "coordinates are lon,lat"
+        );
+        assert_eq!(features[0]["properties"]["street"], "Main");
+        assert_eq!(features[0]["properties"]["house_number"], "7");
+        assert_eq!(features[0]["properties"]["city"], "Town");
+        assert_eq!(features[0]["properties"]["geo_type"], "building");
+        assert_eq!(features[0]["properties"]["weight"], 10);
+        assert_eq!(features[1]["properties"]["geo_type"], "road");
+    }
+
+    #[ntex::test]
+    async fn applies_limit_and_kind() {
+        let (_, body) = get("/rgeocode/points?lat=0&lon=0&radius=0.01&limit=1").await;
+        let json: serde_json::Value = serde_json::from_str(&body).expect("valid json");
+        assert_eq!(json["truncated"], true);
+        assert_eq!(json["total"], 2);
+        assert_eq!(json["features"].as_array().expect("features").len(), 1);
+
+        let (_, body) = get("/rgeocode/points?lat=0&lon=0&radius=0.01&kind=road").await;
+        let json: serde_json::Value = serde_json::from_str(&body).expect("valid json");
+        assert_eq!(json["total"], 1);
+        assert_eq!(json["features"][0]["properties"]["geo_type"], "road");
+    }
+
+    #[ntex::test]
+    async fn rejects_invalid_parameters() {
+        for uri in [
+            "/rgeocode/points",
+            "/rgeocode/points?lon=0",
+            "/rgeocode/points?lat=0",
+            "/rgeocode/points?lat=x&lon=0",
+            "/rgeocode/points?lat=91&lon=0",
+            "/rgeocode/points?lat=0&lon=181",
+            "/rgeocode/points?lat=nan&lon=0",
+            "/rgeocode/points?lat=0&lon=0&radius=0",
+            "/rgeocode/points?lat=0&lon=0&radius=-1",
+            "/rgeocode/points?lat=0&lon=0&radius=nan",
+        ] {
+            let (status, _) = get(uri).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "expected 400 for {uri}");
+        }
+    }
+
+    #[test]
+    fn clamps_radius_and_limit() {
+        let request = validate_points_query(PointsQuery {
+            lat: 0.0,
+            lon: 0.0,
+            radius: Some(5.0),
+            limit: Some(0),
+            kind: None,
+        })
+        .expect("valid query");
+        assert_eq!(request.radius, POINTS_MAX_RADIUS);
+        assert_eq!(request.limit, 1);
+
+        let request = validate_points_query(PointsQuery {
+            lat: 0.0,
+            lon: 0.0,
+            radius: None,
+            limit: Some(usize::MAX),
+            kind: Some(String::new()),
+        })
+        .expect("valid query");
+        assert_eq!(request.radius, POINTS_DEFAULT_RADIUS);
+        assert_eq!(request.limit, POINTS_MAX_LIMIT);
+        // An empty kind parameter means all kinds, matching the Go server.
+        assert!(request.filter.matches(GeoObjectKind::Building));
+        assert!(request.filter.matches(GeoObjectKind::Zone));
+    }
+
+    #[test]
+    fn parses_kind_aliases() {
+        let request = validate_points_query(PointsQuery {
+            lat: 0.0,
+            lon: 0.0,
+            radius: None,
+            limit: None,
+            kind: Some("b,road".to_string()),
+        })
+        .expect("valid query");
+        assert!(request.filter.matches(GeoObjectKind::Building));
+        assert!(request.filter.matches(GeoObjectKind::Road));
+        assert!(!request.filter.matches(GeoObjectKind::Area));
     }
 }

@@ -36,6 +36,11 @@ func (g *geoInfo) value() geomodel.Info {
 // Geocoder is the common interface for both in-memory and disk-backed geocoders.
 type Geocoder interface {
 	Find(lat, lon float64) (InfoModel, bool)
+	// PointsInRadius returns up to limit cached points within radius degrees of
+	// (lat, lon), nearest first, and the total number of points that matched
+	// (which exceeds len(points) when the result was truncated). The kind
+	// filter is a bitmask; a zero mask matches nothing.
+	PointsInRadius(lat, lon, radius float64, limit int, kinds PointKind) ([]PointInRadius, int)
 }
 
 type RGeoCoder struct {
@@ -112,6 +117,35 @@ func (f *RGeoCoder) FindInRadius(lat, lon float64, radius float64) (i InfoModel,
 
 	// nothing found
 	return InfoModel{}, false
+}
+
+// PointsInRadius returns up to limit cached points within radius degrees of
+// (lat, lon), nearest first, together with the total number of matching points.
+func (f *RGeoCoder) PointsInRadius(lat, lon, radius float64, limit int, kinds PointKind) ([]PointInRadius, int) {
+	collector := newRadiusCollector[*geoInfo](limit)
+
+	f.tree.Within(lon, lat, radius, func(p kdbush.Point[*geoInfo]) bool {
+		kind := PointKindFromWeight(p.Data.Weight)
+		if kinds&kind == 0 {
+			return true
+		}
+		collector.add(p.X, p.Y, distanceSquared(lon, lat, p.X, p.Y), p.Data)
+		return true
+	})
+
+	hits := collector.sorted()
+	points := make([]PointInRadius, 0, len(hits))
+	for _, hit := range hits {
+		info := hit.data.value()
+		fillRegionCountry(&info, f.regions, f.countries, hit.x, hit.y)
+		points = append(points, PointInRadius{
+			X:    hit.x,
+			Y:    hit.y,
+			Info: info,
+			Kind: PointKindFromWeight(hit.data.Weight),
+		})
+	}
+	return points, collector.total
 }
 
 // Zones returns the cache's region and country zones.

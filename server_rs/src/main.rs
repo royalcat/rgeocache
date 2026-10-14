@@ -149,6 +149,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ntex::web::post().to(server::rgeocode_multi_handler),
             )
             .route(
+                "/rgeocode/points",
+                ntex::web::get().to(server::rgeocode_points_handler),
+            )
+            .route(
                 "/fgeocode/search",
                 ntex::web::get().to(server::fgeocode_handle),
             )
@@ -171,6 +175,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let app = app.route(
             "/roadgraph/demo",
             ntex::web::get().to(server::roadgraph_demo_handle),
+        );
+        #[cfg(feature = "demo-page")]
+        let app = app.route(
+            "/rgeocode/demo",
+            ntex::web::get().to(server::rgeocode_demo_handle),
         );
         app.route("/metrics", ntex::web::get().to(server::metrics_handler))
     })

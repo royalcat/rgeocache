@@ -338,7 +338,8 @@ impl From<&str> for GeocodeKindFilter {
 }
 
 impl GeocodeKindFilter {
-    fn matches(&self, obj_type: GeoObjectKind) -> bool {
+    /// Whether the filter selects the given object kind.
+    pub(crate) fn matches(&self, obj_type: GeoObjectKind) -> bool {
         match obj_type {
             GeoObjectKind::Zone => self.zones,
             GeoObjectKind::Building => self.buildings,

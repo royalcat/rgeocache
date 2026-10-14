@@ -92,9 +92,48 @@ func (f *RGeoCoderDisk) FindInRadius(lat, lon float64, radius float64) (i InfoMo
 	return InfoModel{}, false
 }
 
+// PointsInRadius returns up to limit cached points within radius degrees of
+// (lat, lon), nearest first, together with the total number of matching points.
+func (f *RGeoCoderDisk) PointsInRadius(lat, lon, radius float64, limit int, kinds PointKind) ([]PointInRadius, int) {
+	collector := newRadiusCollector[savev2.V2PointData](limit)
+
+	err := f.diskTree.Within(lon, lat, radius, func(p kdbush.Point[savev2.V2PointData]) bool {
+		kind := PointKindFromWeight(p.Data.Weight)
+		if kinds&kind == 0 {
+			return true
+		}
+		collector.add(p.X, p.Y, distanceSquared(lon, lat, p.X, p.Y), p.Data)
+		return true
+	})
+	if err != nil {
+		f.logger.Error("error querying disk tree", "error", err)
+		return nil, 0
+	}
+
+	hits := collector.sorted()
+	points := make([]PointInRadius, 0, len(hits))
+	buf := make([]byte, 512)
+	for _, hit := range hits {
+		info := f.resolvePointDataInto(buf, hit.data).value()
+		fillRegionCountry(&info, f.regions, f.countries, hit.x, hit.y)
+		points = append(points, PointInRadius{
+			X:    hit.x,
+			Y:    hit.y,
+			Info: info,
+			Kind: PointKindFromWeight(hit.data.Weight),
+		})
+	}
+	return points, collector.total
+}
+
 // resolvePointData reads strings lazily from the mmap'd string data block.
 func (f *RGeoCoderDisk) resolvePointData(data savev2.V2PointData) *geoInfo {
-	buf := make([]byte, 512)
+	return f.resolvePointDataInto(make([]byte, 512), data)
+}
+
+// resolvePointDataInto is resolvePointData with a caller-provided scratch
+// buffer, so bulk callers can avoid one allocation per point.
+func (f *RGeoCoderDisk) resolvePointDataInto(buf []byte, data savev2.V2PointData) *geoInfo {
 	return &geoInfo{
 		Name:        f.readStrInto(buf, data.NameID),
 		Street:      f.readStrInto(buf, data.StreetID),

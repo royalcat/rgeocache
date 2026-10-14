@@ -14,3 +14,7 @@ pub mod forward_geocoder;
 pub mod geocoder;
 pub mod road_graph;
 pub mod server;
+
+/// Synthetic cache files shared by in-module tests.
+#[cfg(test)]
+pub(crate) mod test_cache;
