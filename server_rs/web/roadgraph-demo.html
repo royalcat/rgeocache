@@ -33,7 +33,7 @@
   <label>max lon<input id="max-lon" type="number" step="any" value="-0.12"></label>
   <label>max lat<input id="max-lat" type="number" step="any" value="51.51"></label>
   <label>limit<input id="limit" type="number" min="1" max="50000" step="1" value="5000"></label>
-  <label class="check"><input id="directions" type="checkbox"> directions</label>
+  <label class="check"><input id="directions" type="checkbox" checked> directions</label>
   <button type="submit">Query</button>
 </form>
 <p id="status"></p>
@@ -172,6 +172,8 @@
       });
       if (input('directions').checked) {
         params.set('directions', 'true');
+      } else {
+        params.set('directions', 'false');
       }
 
       status.textContent = 'Querying…';

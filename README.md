@@ -82,13 +82,16 @@ forward geocoding.
 The Rust server (`server_rs`) also serves the road graph stored in the cache:
 
 ```bash
-curl 'localhost:8080/roadgraph/box?bbox=-0.13,51.50,-0.12,51.51&directions=true&limit=100'
+curl -X GET 'localhost:8080/roadgraph/box?bbox=-0.13,51.50,-0.12,51.51&limit=100'
+{"type":"FeatureCollection","truncated":false,"features":[{"type":"Feature","geometry":{"type":"LineString","coordinates":[[-0.12760,51.50735],[-0.12700,51.50700]]},"properties":{"from":123456,"to":789012,"street":"Oxford Street","class":"primary","direction":"forward"}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-0.12760,51.50735]},"properties":{"id":123456}}]}
 ```
 
 `bbox` is `min_lon,min_lat,max_lon,max_lat` in GeoJSON axis order. The response
 is a GeoJSON FeatureCollection: one LineString per road chain (with `class`,
-`street`/`name`, and `direction` when requested) and one Point per kept vertex.
-Connected edges that share all their properties are merged into a single
+`street`/`name`, and `direction` — `forward`, `backward` or `both`, relative to
+`from`/`to`) and one Point per kept vertex. `direction` is included by default;
+pass `directions=false` to omit it. Connected edges that share all their
+properties are merged into a single
 polyline and vertices within 1e-7° (about one centimetre) of the straight
 chord are dropped — chains break at junctions and property changes, so
 junctions are always preserved. Pass `simplify=false` to get the raw two-point

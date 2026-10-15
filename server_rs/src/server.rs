@@ -546,7 +546,8 @@ const ROADGRAPH_MAX_LIMIT: usize = 50_000;
 pub struct RoadGraphQuery {
     /// `min_lon,min_lat,max_lon,max_lat` (GeoJSON axis order).
     bbox: String,
-    /// Include per-edge direction metadata; defaults to false.
+    /// Include per-edge direction metadata; defaults to true, pass
+    /// `directions=false` to omit it.
     directions: Option<bool>,
     /// Merge connected edges into polylines and drop vertices that lie within
     /// [`road_graph::SIMPLIFY_EPSILON`] of the straight chord. Defaults to true;
@@ -609,7 +610,7 @@ pub async fn roadgraph_box_handler(
         return HttpResponse::ServiceUnavailable().body("cache has no road graph section");
     };
 
-    let directions = query_params.directions.unwrap_or(false);
+    let directions = query_params.directions.unwrap_or(true);
     let simplify = query_params.simplify.unwrap_or(true);
     let limit = query_params
         .limit
@@ -1086,6 +1087,20 @@ mod roadgraph_query_tests {
         let query: RoadGraphQuery =
             serde_json::from_str(r#"{"bbox":"0,0,1,1","simplify":false}"#).expect("query");
         assert_eq!(query.simplify, Some(false));
+    }
+
+    #[test]
+    fn roadgraph_query_parses_directions() {
+        let query: RoadGraphQuery = serde_json::from_str(r#"{"bbox":"0,0,1,1"}"#).expect("query");
+        assert_eq!(query.directions, None);
+        assert!(
+            query.directions.unwrap_or(true),
+            "directions defaults to true"
+        );
+
+        let query: RoadGraphQuery =
+            serde_json::from_str(r#"{"bbox":"0,0,1,1","directions":false}"#).expect("query");
+        assert_eq!(query.directions, Some(false));
     }
 }
 

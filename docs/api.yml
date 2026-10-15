@@ -427,11 +427,12 @@ paths:
         in: query
         required: false
         description: |
-          Include per-edge direction metadata (`both`, `forward`, `backward`).
-          Defaults to false.
+          Include per-edge direction metadata (`both`, `forward`, `backward`)
+          as the `direction` property. Defaults to true; pass
+          `directions=false` to omit the property.
         schema:
           type: boolean
-          default: false
+          default: true
       - name: simplify
         in: query
         required: false
@@ -489,9 +490,31 @@ paths:
                       description: |
                         Edge feature: geometry LineString with properties `from`,
                         `to` (the chain endpoints when simplified), optional
-                        `name` and `street`, `class`, and `direction` when
-                        requested. Node feature: geometry Point with property
-                        `id` referencing a stable point position.
+                        `name` and `street`, `class`, and `direction` unless
+                        `directions=false`. Node feature: geometry Point with
+                        property `id` referencing a stable point position.
+              example:
+                type: FeatureCollection
+                truncated: false
+                features:
+                  - type: Feature
+                    geometry:
+                      type: LineString
+                      coordinates:
+                        - [-0.12760, 51.50735]
+                        - [-0.12700, 51.50700]
+                    properties:
+                      from: 123456
+                      to: 789012
+                      street: Oxford Street
+                      class: primary
+                      direction: forward
+                  - type: Feature
+                    geometry:
+                      type: Point
+                      coordinates: [-0.12760, 51.50735]
+                    properties:
+                      id: 123456
         "400":
           description: Bad request (malformed or out-of-range `bbox`)
         "500":
