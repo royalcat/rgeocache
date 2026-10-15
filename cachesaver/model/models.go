@@ -83,11 +83,12 @@ const (
 
 // Highway classes stored in the graph section.
 const (
-	GraphClassMotorway  uint8 = 1
-	GraphClassTrunk     uint8 = 2
-	GraphClassPrimary   uint8 = 3
-	GraphClassSecondary uint8 = 4
-	GraphClassTertiary  uint8 = 5
+	GraphClassMotorway    uint8 = 1
+	GraphClassTrunk       uint8 = 2
+	GraphClassPrimary     uint8 = 3
+	GraphClassSecondary   uint8 = 4
+	GraphClassTertiary    uint8 = 5
+	GraphClassResidential uint8 = 6
 )
 
 type ZoneType uint8

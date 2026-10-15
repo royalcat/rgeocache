@@ -128,11 +128,12 @@ func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
 // highwayClasses maps the OSM highway values kept in the cache to the class
 // byte stored on graph edges.
 var highwayClasses = map[string]uint8{
-	"motorway":  cachemodel.GraphClassMotorway,
-	"trunk":     cachemodel.GraphClassTrunk,
-	"primary":   cachemodel.GraphClassPrimary,
-	"secondary": cachemodel.GraphClassSecondary,
-	"tertiary":  cachemodel.GraphClassTertiary,
+	"motorway":    cachemodel.GraphClassMotorway,
+	"trunk":       cachemodel.GraphClassTrunk,
+	"primary":     cachemodel.GraphClassPrimary,
+	"secondary":   cachemodel.GraphClassSecondary,
+	"tertiary":    cachemodel.GraphClassTertiary,
+	"residential": cachemodel.GraphClassResidential,
 }
 
 // parseWayHighway emits the way's OSM shape points as road points and links
