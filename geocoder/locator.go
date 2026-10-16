@@ -41,6 +41,9 @@ type Geocoder interface {
 	// (which exceeds len(points) when the result was truncated). The kind
 	// filter is a bitmask; a zero mask matches nothing.
 	PointsInRadius(lat, lon, radius float64, limit int, kinds PointKind) ([]PointInRadius, int)
+	// Metadata returns the cache metadata the geocoder was loaded from; legacy
+	// caches that carry none yield the zero value.
+	Metadata() cachemodel.Metadata
 }
 
 type RGeoCoder struct {

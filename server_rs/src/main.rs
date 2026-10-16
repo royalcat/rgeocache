@@ -139,6 +139,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut srv = HttpServer::new(async move || {
         let app = ntex::web::App::new()
             .state(state.clone())
+            .middleware(server::cache_date_headers(
+                &state.geocoder.cache.date_created,
+            ))
             .state(ntex::web::types::JsonConfig::default().limit(max_request_size))
             .route(
                 "/rgeocode/address/{lat}/{lon}",

@@ -23,7 +23,7 @@ russia.osm.pbf and ./europe/belarus.osm.pbf are input files
 
 Generating a cache of Russia will take about ~50GB of RAM. There is a possibility to shift the load from memory to disk by specifying the parameter --cache /tmp/rgeo_cache (you can specify any directory as the path), in this case, the generation process may significantly slow down
 
-Highway ways (motorway through tertiary) are stored as their OSM shape points
+Highway ways (motorway through unclassified) are stored as their OSM shape points
 with redundant collinear vertices removed — a vertex is dropped only when it
 lies within 1e-7° (about a centimetre) of the straight run and at least one
 vertex per 150 m survives wherever OSM provides one — and additionally produce a

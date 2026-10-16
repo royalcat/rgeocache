@@ -118,7 +118,7 @@ func TestLondon(t *testing.T) {
 		if rec.FromPos == rec.ToPos {
 			t.Errorf("edge[%d] is a self loop at position %d", i, rec.FromPos)
 		}
-		if rec.Class < 1 || rec.Class > 5 {
+		if rec.Class < cachemodel.GraphClassMotorway || rec.Class > cachemodel.GraphClassUnclassified {
 			t.Errorf("edge[%d] has invalid class %d", i, rec.Class)
 		}
 		if rec.Oneway > 2 {

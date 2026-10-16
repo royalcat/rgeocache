@@ -9,7 +9,9 @@ import (
 
 // TestFindRanking pins the deterministic Find rule: candidates are ranked by
 // squared distance divided by squared weight (distance ÷ weight), so a
-// building wins at up to twice a road's distance but loses beyond that.
+// building wins at up to twice a road's distance but loses beyond that —
+// except within the building priority radius, where any building outranks
+// every road whatever the score says.
 func TestFindRanking(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -29,6 +31,22 @@ func TestFindRanking(t *testing.T) {
 			[]cachemodel.Point{
 				pointsTestPoint(0.002, 0, 5, "Road", "", "", cachemodel.GeoObjectRoad),
 				pointsTestPoint(0.005, 0, 10, "Building", "1", "", cachemodel.GeoObjectBuilding),
+			},
+			"Road",
+		},
+		{
+			"building inside the priority radius wins over a nearer road",
+			[]cachemodel.Point{
+				pointsTestPoint(0.0002, 0, 5, "Road", "", "", cachemodel.GeoObjectRoad),
+				pointsTestPoint(0.0007, 0, 10, "Building", "1", "", cachemodel.GeoObjectBuilding),
+			},
+			"Building",
+		},
+		{
+			"building outside the priority radius loses to a nearer road",
+			[]cachemodel.Point{
+				pointsTestPoint(0.0002, 0, 5, "Road", "", "", cachemodel.GeoObjectRoad),
+				pointsTestPoint(0.001, 0, 10, "Building", "1", "", cachemodel.GeoObjectBuilding),
 			},
 			"Road",
 		},

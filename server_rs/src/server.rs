@@ -11,7 +11,7 @@ use futures::Stream;
 use geo::MultiPolygon;
 use ntex::http::header;
 use ntex::util::Bytes;
-use ntex::web::{self, HttpResponse};
+use ntex::web::{self, middleware::DefaultHeaders, HttpResponse};
 use prometheus::{Counter, Encoder, Histogram, HistogramOpts, Opts, Registry, TextEncoder};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::collections::{BTreeSet, HashMap};
@@ -31,6 +31,23 @@ pub struct AppState {
     /// Parsed road graph section of the loaded cache, when present.
     pub road_graph: Option<Arc<RoadGraph>>,
     pub metrics: Metrics,
+}
+
+/// Response header carrying the loaded cache's `date_created` timestamp, so a
+/// client can tell when the served cache was updated.
+pub const CACHE_DATE_HEADER: &str = "X-Cache-Date";
+
+/// Builds the middleware that sets [`CACHE_DATE_HEADER`] on every response.
+///
+/// An empty timestamp (a legacy cache without metadata) or one that is not a
+/// valid header value yields middleware that adds nothing, so a malformed
+/// cache cannot panic a worker at startup.
+pub fn cache_date_headers(date_created: &str) -> DefaultHeaders {
+    let middleware = DefaultHeaders::new();
+    if date_created.is_empty() || header::HeaderValue::from_str(date_created).is_err() {
+        return middleware;
+    }
+    middleware.header(CACHE_DATE_HEADER, date_created)
 }
 
 // ---------------------------------------------------------------------------
@@ -1101,6 +1118,74 @@ mod roadgraph_query_tests {
         let query: RoadGraphQuery =
             serde_json::from_str(r#"{"bbox":"0,0,1,1","directions":false}"#).expect("query");
         assert_eq!(query.directions, Some(false));
+    }
+}
+
+#[cfg(test)]
+mod cache_date_tests {
+    use super::*;
+    use crate::test_cache::{build_cache, open_cache, point_payload};
+    use ntex::http::StatusCode;
+    use ntex::web::{test, App};
+
+    /// App state over a synthetic cache; `test_cache::build_cache` writes the
+    /// `2024-01-01T00:00:00Z` timestamp the middleware must advertise.
+    fn test_state() -> Arc<AppState> {
+        let strings = [""];
+        let points = [(0.0, 0.0, point_payload(0, 0, 0, 0, 0, 10, 1))];
+        let geocoder =
+            Geocoder::load(open_cache(&build_cache(&points, &strings, &[])), 0.01).expect("load");
+
+        Arc::new(AppState {
+            geocoder: Arc::new(geocoder),
+            forward_geocoder: Arc::new(OnceLock::new()),
+            road_graph: None,
+            metrics: Metrics::new().expect("metrics"),
+        })
+    }
+
+    /// Serves `/metrics` through `middleware` and returns the response status
+    /// and the `X-Cache-Date` header.
+    async fn served_cache_date(middleware: DefaultHeaders) -> (StatusCode, Option<String>) {
+        let app = test::init_service(
+            App::new()
+                .state(test_state())
+                .middleware(middleware)
+                .route("/metrics", web::get().to(metrics_handler)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/metrics").to_request();
+        let resp = test::call_service(&app, req).await;
+        (
+            resp.status(),
+            resp.headers()
+                .get(CACHE_DATE_HEADER)
+                .map(|value| value.to_str().expect("ascii header value").to_owned()),
+        )
+    }
+
+    #[ntex::test]
+    async fn advertises_the_cache_generation_date() {
+        let state = test_state();
+        let (status, date) =
+            served_cache_date(cache_date_headers(&state.geocoder.cache.date_created)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(date.as_deref(), Some("2024-01-01T00:00:00Z"));
+    }
+
+    #[ntex::test]
+    async fn omits_the_header_without_a_date() {
+        let (status, date) = served_cache_date(cache_date_headers("")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(date, None);
+    }
+
+    #[ntex::test]
+    async fn ignores_a_date_that_is_not_a_header_value() {
+        let (status, date) = served_cache_date(cache_date_headers("bad\nvalue")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(date, None);
     }
 }
 

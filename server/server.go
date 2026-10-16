@@ -90,7 +90,7 @@ func Run(ctx context.Context, address string, rgeo geocoder.Geocoder, fgeo *fgeo
 	server := &fasthttp.Server{
 		ReadTimeout:        time.Second * 30,
 		MaxRequestBodySize: MaxBodySize,
-		Handler:            r.Handler,
+		Handler:            withCacheDate(r.Handler, cacheDate(rgeo)),
 		// Logger:             logrus.NewEntry(log).WithField("component", "fasthttp"),
 	}
 
@@ -107,6 +107,34 @@ func Run(ctx context.Context, address string, rgeo geocoder.Geocoder, fgeo *fgeo
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	return server.ShutdownWithContext(shutdownCtx)
+}
+
+// CacheDateHeader advertises the generation timestamp of the loaded cache, so
+// a client can notice that the server now serves an updated cache. It is set
+// on every response, including errors.
+const CacheDateHeader = "X-Cache-Date"
+
+// cacheDate formats the loaded cache's generation timestamp for
+// [CacheDateHeader]. Legacy caches without metadata yield an empty string, and
+// the header is omitted.
+func cacheDate(rgeo geocoder.Geocoder) string {
+	created := rgeo.Metadata().DateCreated
+	if created.IsZero() {
+		return ""
+	}
+	return created.UTC().Format(time.RFC3339)
+}
+
+// withCacheDate wraps a handler so every response carries the cache generation
+// timestamp; an empty date leaves the handler untouched.
+func withCacheDate(next fasthttp.RequestHandler, date string) fasthttp.RequestHandler {
+	if date == "" {
+		return next
+	}
+	return func(ctx *fasthttp.RequestCtx) {
+		ctx.Response.Header.Set(CacheDateHeader, date)
+		next(ctx)
+	}
 }
 
 type server struct {

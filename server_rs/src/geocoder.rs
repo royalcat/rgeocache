@@ -273,23 +273,46 @@ fn for_each_in_radius(
     }
 }
 
-/// Rank one find candidate: squared distance divided by the squared weight —
-/// ranking by distance ÷ weight, so a heavier kind wins at a proportionally
-/// larger distance — with exact score ties broken by longitude, then
-/// latitude. The rank depends only on the candidate, so the winner does not
-/// depend on the order the traversal visits points in.
-fn point_rank(lon: f64, lat: f64, x: f64, y: f64, weight: u8) -> (f64, f64, f64) {
+/// Radius in degrees within which a building always outranks a non-building
+/// candidate, whatever the distance ÷ weight score says. CRUTCH: a coarse
+/// degree-space radius (about 100 m north-south, narrowing with the latitude)
+/// added so reverse geocoding prefers the building at an address point over
+/// the street the point sits on; replace it with a proper relevance model
+/// when one exists. See AGENTS.md.
+const BUILDING_PRIORITY_RADIUS_DEGREES: f64 = 100.0 / 111_320.0;
+
+/// Weight at and above which a point counts as a building for the priority
+/// tier. The generator gives buildings weight 10 and every other kind less.
+const BUILDING_MIN_WEIGHT: u8 = 10;
+
+/// Rank one find candidate as `(tier, score, x, y)`. The primary key is the
+/// tier: a building (weight >= [`BUILDING_MIN_WEIGHT`]) within
+/// [`BUILDING_PRIORITY_RADIUS_DEGREES`] is tier 0 and wins over every tier-1
+/// candidate. Within a tier the score orders: squared distance divided by the
+/// squared weight — ranking by distance ÷ weight, so a heavier kind wins at a
+/// proportionally larger distance — with exact score ties broken by longitude,
+/// then latitude. The rank depends only on the candidate, so the winner does
+/// not depend on the order the traversal visits points in.
+fn point_rank(lon: f64, lat: f64, x: f64, y: f64, weight: u8) -> (u8, f64, f64, f64) {
     // A weight of 0 is not produced by the generator; treat it as the weakest
     // class so an unknown-weight point can still be found.
     let w = f64::from(weight.max(1));
-    (sq_dist(x, y, lon, lat) / (w * w), x, y)
+    let dist2 = sq_dist(x, y, lon, lat);
+    let tier = if weight >= BUILDING_MIN_WEIGHT
+        && dist2 <= BUILDING_PRIORITY_RADIUS_DEGREES * BUILDING_PRIORITY_RADIUS_DEGREES
+    {
+        0
+    } else {
+        1
+    };
+    (tier, dist2 / (w * w), x, y)
 }
 
 /// Nearest point within `radius` degrees of (lon, lat) under the
 /// [`point_rank`] order.
 fn tree_find_in_radius(cache: &CacheFile, lon: f64, lat: f64, radius: f64) -> Option<V2PointData> {
     let mut best_point: Option<V2PointData> = None;
-    let mut best_rank = (f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let mut best_rank = (u8::MAX, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
 
     for_each_in_radius(cache, lon, lat, radius, |x, y, data| {
         let rank = point_rank(lon, lat, x, y, data.weight);
@@ -584,6 +607,31 @@ mod tests {
         // road wins.
         let found = ranking_cache(0.005).find(0.0, 0.0).expect("found");
         assert_eq!(found.street, "Road");
+    }
+
+    #[test]
+    fn find_prefers_a_building_inside_the_priority_radius() {
+        // String ids: 0 = "", 1 = "Building", 2 = "Road". The road at 0.0002°
+        // scores better than the building at 0.0007° by distance ÷ weight
+        // alone, but the building is inside the priority radius.
+        let strings = ["", "Building", "Road"];
+        let points = [
+            (0.0007, 0.0, point_payload(0, 1, 0, 0, 0, 10, 1)),
+            (0.0002, 0.0, point_payload(0, 2, 0, 0, 0, 5, 2)),
+        ];
+        let geocoder = Geocoder::load(open_cache(&build_cache(&points, &strings, &[])), 0.01)
+            .expect("load geocoder");
+        assert_eq!(geocoder.find(0.0, 0.0).expect("found").street, "Building");
+
+        // From 0.001° the building is outside the radius, so the road's better
+        // score wins again.
+        let points = [
+            (0.001, 0.0, point_payload(0, 1, 0, 0, 0, 10, 1)),
+            (0.0002, 0.0, point_payload(0, 2, 0, 0, 0, 5, 2)),
+        ];
+        let geocoder = Geocoder::load(open_cache(&build_cache(&points, &strings, &[])), 0.01)
+            .expect("load geocoder");
+        assert_eq!(geocoder.find(0.0, 0.0).expect("found").street, "Road");
     }
 
     #[test]

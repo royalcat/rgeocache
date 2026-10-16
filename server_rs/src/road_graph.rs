@@ -587,6 +587,8 @@ pub fn class_name(class: u8) -> &'static str {
         3 => "primary",
         4 => "secondary",
         5 => "tertiary",
+        6 => "residential",
+        7 => "unclassified",
         _ => "unknown",
     }
 }
@@ -833,6 +835,20 @@ mod tests {
         let (hits, truncated) = graph.edges_in_bbox(&bbox, 2);
         assert!(truncated);
         assert_eq!(hits.len(), 2);
+    }
+
+    #[test]
+    fn class_names_cover_known_classes() {
+        assert_eq!(class_name(1), "motorway");
+        assert_eq!(class_name(2), "trunk");
+        assert_eq!(class_name(3), "primary");
+        assert_eq!(class_name(4), "secondary");
+        assert_eq!(class_name(5), "tertiary");
+        assert_eq!(class_name(6), "residential");
+        assert_eq!(class_name(7), "unclassified");
+        // 0 is not a valid class; legacy caches may carry values we never wrote.
+        assert_eq!(class_name(0), "unknown");
+        assert_eq!(class_name(255), "unknown");
     }
 
     #[test]

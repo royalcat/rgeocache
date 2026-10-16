@@ -82,6 +82,40 @@ func BenchmarkHandlers(b *testing.B) {
 	}
 }
 
+func TestWithCacheDate(t *testing.T) {
+	t.Run("sets the header and calls the wrapped handler", func(t *testing.T) {
+		called := false
+		handler := withCacheDate(func(*fasthttp.RequestCtx) { called = true }, "2024-01-01T00:00:00Z")
+
+		ctx := &fasthttp.RequestCtx{}
+		handler(ctx)
+
+		if !called {
+			t.Fatal("wrapped handler was not called")
+		}
+		if got := string(ctx.Response.Header.Peek(CacheDateHeader)); got != "2024-01-01T00:00:00Z" {
+			t.Errorf("expected cache date header %q, got %q", "2024-01-01T00:00:00Z", got)
+		}
+	})
+
+	t.Run("omits the header without a date", func(t *testing.T) {
+		handler := withCacheDate(func(*fasthttp.RequestCtx) {}, "")
+
+		ctx := &fasthttp.RequestCtx{}
+		handler(ctx)
+
+		if got := ctx.Response.Header.Peek(CacheDateHeader); got != nil {
+			t.Errorf("expected no cache date header, got %q", got)
+		}
+	})
+
+	t.Run("empty for a geocoder without metadata", func(t *testing.T) {
+		if got := cacheDate(buildTestGeoCoder(t, 1)); got != "" {
+			t.Errorf("expected empty cache date, got %q", got)
+		}
+	})
+}
+
 func generatePoints(n int) string {
 	points := "["
 	for i := range n {
