@@ -76,7 +76,7 @@ func (f *GeoGen) saveWorker(outputs []ParseOutput) error {
 	meta := cachesaver.Metadata{
 		Version:     f.config.Version,
 		Locale:      f.config.PreferredLocalization,
-		DateCreated: time.Now(),
+		DateCreated: time.Now().UTC(),
 	}
 
 	itemsTee := Tee(items, len(outputs), 1)

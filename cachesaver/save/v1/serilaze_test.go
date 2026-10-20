@@ -132,6 +132,37 @@ func TestSaveLoad(t *testing.T) {
 	}
 }
 
+func TestSaveNormalizesDateCreatedToUTC(t *testing.T) {
+	meta := cachemodel.Metadata{
+		Version:     123,
+		Locale:      "en",
+		DateCreated: time.Date(2024, 1, 1, 4, 0, 0, 0, time.FixedZone("UTC+4", 4*60*60)),
+	}
+
+	var buf bytes.Buffer
+	if err := Save(&buf, slicesIter([]cachemodel.Point{}), slicesIter([]cachemodel.Zone{}), meta); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	if !bytes.Contains(buf.Bytes(), []byte("2024-01-01T00:00:00Z")) {
+		t.Error("serialized metadata does not contain the UTC timestamp")
+	}
+	if bytes.Contains(buf.Bytes(), []byte("+04:00")) {
+		t.Error("serialized metadata contains a non-UTC offset")
+	}
+
+	_, _, loadedMeta, err := Load(&buf)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if loadedMeta.DateCreated.Location() != time.UTC {
+		t.Errorf("loaded date location: got %v, want UTC", loadedMeta.DateCreated.Location())
+	}
+	if !loadedMeta.DateCreated.Equal(meta.DateCreated) {
+		t.Errorf("loaded date %v does not match original instant %v", loadedMeta.DateCreated, meta.DateCreated)
+	}
+}
+
 func pointsEqual(a, b cachemodel.Point) bool {
 	return a == b
 }

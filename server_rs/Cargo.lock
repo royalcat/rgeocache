@@ -2542,6 +2542,7 @@ dependencies = [
  "strum",
  "tantivy",
  "tempfile",
+ "time",
  "tracing",
  "tracing-subscriber",
  "zerocopy",

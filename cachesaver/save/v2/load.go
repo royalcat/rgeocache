@@ -147,7 +147,7 @@ func Load(r io.Reader) (iter.Seq2[cachemodel.Point, error], iter.Seq2[cachemodel
 	meta := &cachemodel.Metadata{
 		Version:     metadata.Version,
 		Locale:      metadata.Locale,
-		DateCreated: dateCreated,
+		DateCreated: dateCreated.UTC(),
 	}
 
 	return pointsIter, zonesIter, meta, nil
@@ -255,7 +255,7 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 		Metadata: &cachemodel.Metadata{
 			Version:     metadata.Version,
 			Locale:      metadata.Locale,
-			DateCreated: dateCreated,
+			DateCreated: dateCreated.UTC(),
 		},
 		mmapReader: reader,
 	}, nil

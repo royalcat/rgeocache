@@ -57,6 +57,8 @@ tempfile = "3.27.0"
 serde_default_utils = "0.3.1"
 strum = { version = "0.28", features = ["derive"] }
 frostem = "1.20260821.6"
+# Cache timestamp normalization (RFC3339 parsing/formatting)
+time = { version = "0.3", features = ["parsing", "formatting"] }
 
 
 [build-dependencies]

@@ -143,7 +143,7 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 	// Phase 6: Marshal metadata
 	metadataProto := &savev1proto.CacheMetadata{
 		Version:     meta.Version,
-		DateCreated: meta.DateCreated.Format(time.RFC3339),
+		DateCreated: meta.DateCreated.UTC().Format(time.RFC3339),
 		Locale:      meta.Locale,
 	}
 	metadataBytes, err := proto.Marshal(metadataProto)

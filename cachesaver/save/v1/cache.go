@@ -70,7 +70,7 @@ func cacheFromPoints(inputPoints iter.Seq[cachemodel.Point], inputZones iter.Seq
 	return cache{
 		Version:     metadata.Version,
 		Locale:      metadata.Locale,
-		DateCreated: metadata.DateCreated.Format(time.RFC3339),
+		DateCreated: metadata.DateCreated.UTC().Format(time.RFC3339),
 
 		StreetsNames: streetsNames.Slice(),
 		CitiesNames:  citiesNames.Slice(),

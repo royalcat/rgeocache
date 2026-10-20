@@ -16,6 +16,8 @@ use prometheus::{Counter, Encoder, Histogram, HistogramOpts, Opts, Registry, Tex
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
+use time::format_description::well_known::Rfc3339;
+use time::{OffsetDateTime, UtcOffset};
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -39,15 +41,30 @@ pub const CACHE_DATE_HEADER: &str = "X-Cache-Date";
 
 /// Builds the middleware that sets [`CACHE_DATE_HEADER`] on every response.
 ///
-/// An empty timestamp (a legacy cache without metadata) or one that is not a
-/// valid header value yields middleware that adds nothing, so a malformed
-/// cache cannot panic a worker at startup.
+/// The stored timestamp is normalized to UTC first, so a cache whose metadata
+/// carries a numeric offset (older caches generated in a local timezone) is
+/// still advertised as an RFC3339 UTC instant. An empty timestamp (a legacy
+/// cache without metadata) or one that is not RFC3339 yields middleware that
+/// adds nothing, so a malformed cache cannot panic a worker at startup.
 pub fn cache_date_headers(date_created: &str) -> DefaultHeaders {
     let middleware = DefaultHeaders::new();
-    if date_created.is_empty() || header::HeaderValue::from_str(date_created).is_err() {
+    let Some(date) = utc_cache_date(date_created) else {
         return middleware;
+    };
+    middleware.header(CACHE_DATE_HEADER, date)
+}
+
+/// Parses an RFC3339 timestamp and renders it in UTC, or returns `None` when
+/// the value is empty or malformed.
+fn utc_cache_date(date_created: &str) -> Option<String> {
+    if date_created.is_empty() {
+        return None;
     }
-    middleware.header(CACHE_DATE_HEADER, date_created)
+    OffsetDateTime::parse(date_created, &Rfc3339)
+        .ok()?
+        .to_offset(UtcOffset::UTC)
+        .format(&Rfc3339)
+        .ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -1175,6 +1192,22 @@ mod cache_date_tests {
     }
 
     #[ntex::test]
+    async fn normalizes_a_numeric_offset_to_utc() {
+        let (status, date) =
+            served_cache_date(cache_date_headers("2026-10-16T17:58:03+04:00")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(date.as_deref(), Some("2026-10-16T13:58:03Z"));
+    }
+
+    #[ntex::test]
+    async fn normalizes_an_offset_across_a_date_boundary() {
+        let (status, date) =
+            served_cache_date(cache_date_headers("2026-10-16T02:30:00+04:00")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(date.as_deref(), Some("2026-10-15T22:30:00Z"));
+    }
+
+    #[ntex::test]
     async fn omits_the_header_without_a_date() {
         let (status, date) = served_cache_date(cache_date_headers("")).await;
         assert_eq!(status, StatusCode::OK);
@@ -1182,7 +1215,14 @@ mod cache_date_tests {
     }
 
     #[ntex::test]
-    async fn ignores_a_date_that_is_not_a_header_value() {
+    async fn omits_a_date_that_is_not_rfc3339() {
+        let (status, date) = served_cache_date(cache_date_headers("not-a-date")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(date, None);
+    }
+
+    #[ntex::test]
+    async fn omits_a_date_that_is_not_a_header_value() {
         let (status, date) = served_cache_date(cache_date_headers("bad\nvalue")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(date, None);
