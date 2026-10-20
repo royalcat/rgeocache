@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/dustin/go-humanize"
+	savev1proto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 	savev2proto "github.com/royalcat/rgeocache/cachesaver/save/v2/proto"
 	"google.golang.org/protobuf/proto"
 )
@@ -39,13 +40,20 @@ func PrintCacheAnalysis(r io.Reader) error {
 		return fmt.Errorf("v2 analyze: failed to unmarshal header: %w", err)
 	}
 
+	var metadata savev1proto.CacheMetadata
+	if err := readProto(r, header.MetadataSize, &metadata); err != nil {
+		fmt.Errorf("Failed to read metadata: %s", err.Error())
+	}
+
+	fmt.Printf("Metadata: %v\n", metadata.String())
+
 	// Header size itself (the uint32 we just read + the proto blob)
 	headerOverhead := uint64(4 + headerSize)
 
 	printCacheSizeAnalysisFromHeader(&header)
 
-	// 2. Skip metadata + string index + string data + zones to reach the KDBH block.
-	skipSize := int64(header.MetadataSize) + int64(header.StringsIndexSize) + int64(header.StringsDataSize) + int64(header.ZonesSize)
+	// 2. Skip string index + string data + zones to reach the KDBH block. Metadata already has been readen
+	skipSize := int64(header.StringsIndexSize) + int64(header.StringsDataSize) + int64(header.ZonesSize)
 	if _, err := io.CopyN(io.Discard, r, skipSize); err != nil {
 		return fmt.Errorf("v2 analyze: failed to skip to KDBH: %w", err)
 	}
