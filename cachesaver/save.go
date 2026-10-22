@@ -8,6 +8,8 @@ import (
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	savev1 "github.com/royalcat/rgeocache/cachesaver/save/v1"
 	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
+	"github.com/royalcat/rgeocache/internal/spool"
+	"github.com/royalcat/rgeocache/internal/strtab"
 )
 
 func SaveV1(points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], meta cachemodel.Metadata, w io.Writer) error {
@@ -42,4 +44,24 @@ func SaveV2(items iter.Seq[cachemodel.Item], zones iter.Seq[cachemodel.Zone], me
 	}
 
 	return savev2.Save(w, items, zones, meta)
+}
+
+// SaveV2FromSpool writes a v2 cache directly from the generation spool. All
+// point and edge payloads stay on disk; the writer only holds the indexes of
+// the phase it is currently building.
+func SaveV2FromSpool(
+	sp *spool.Reader,
+	table *strtab.Table,
+	zones []cachemodel.Zone,
+	meta cachemodel.Metadata,
+	w io.Writer,
+	workDir string,
+) error {
+	if _, err := w.Write(MAGIC_BYTES); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binary.LittleEndian, savev2.COMPATIBILITY_LEVEL); err != nil {
+		return err
+	}
+	return savev2.WriteSpool(w, sp, table, zones, meta, workDir)
 }

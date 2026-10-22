@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"github.com/paulmach/orb"
-	"github.com/paulmach/orb/planar"
 	"github.com/paulmach/orb/simplify"
 	"github.com/tidwall/qtree"
 )
@@ -25,7 +24,9 @@ type border[D any] struct {
 	Data D
 
 	OversimplifiedPolygon orb.MultiPolygon
+	OversimplifiedBounds  [][]orb.Bound
 	Polygon               orb.MultiPolygon
+	Bounds                [][]orb.Bound
 }
 
 func (bt *BorderTree[Data]) InsertBorder(data Data, b orb.MultiPolygon) {
@@ -34,10 +35,14 @@ func (bt *BorderTree[Data]) InsertBorder(data Data, b orb.MultiPolygon) {
 	bt.mu.Lock()
 	defer bt.mu.Unlock()
 
+	oversimplified := simplify.VisvalingamKeep(10).MultiPolygon(b.Clone())
+	polygon := b.Clone()
 	bt.borders = append(bt.borders, border[Data]{
 		Data:                  data,
-		OversimplifiedPolygon: simplify.VisvalingamKeep(10).MultiPolygon(b.Clone()),
-		Polygon:               b.Clone(),
+		OversimplifiedPolygon: oversimplified,
+		OversimplifiedBounds:  ringBounds(oversimplified),
+		Polygon:               polygon,
+		Bounds:                ringBounds(polygon),
 	})
 	bt.qt.Insert(bound.Min, bound.Max, bt.idCounter)
 	bt.idCounter++
@@ -53,12 +58,13 @@ func (bt *BorderTree[Data]) QueryPoint(point orb.Point) (Data, bool) {
 	bt.qt.Search(point, point, func(_, _ [2]float64, data interface{}) bool {
 		id := data.(uint64)
 
-		if !planar.MultiPolygonContains(bt.borders[id].OversimplifiedPolygon, point) {
+		b := &bt.borders[id]
+		if !multiPolygonContains(b.OversimplifiedPolygon, b.OversimplifiedBounds, point) {
 			return true
 		}
 
-		if planar.MultiPolygonContains(bt.borders[id].Polygon, point) {
-			out = bt.borders[id].Data
+		if multiPolygonContains(b.Polygon, b.Bounds, point) {
+			out = b.Data
 			found = true
 			return false
 		}

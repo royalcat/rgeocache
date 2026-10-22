@@ -18,26 +18,42 @@ import (
 func (f *GeoGen) parseObject(o osm.Object) {
 	switch obj := o.(type) {
 	case *osm.Node:
+		f.seenNodes.Add(1)
 		if point, ok := f.parseNode(obj); ok {
-			f.parsedItems <- parseItem{Point: point}
+			f.send(parseItem{Points: []geoPoint{point}})
 		}
 	case *osm.Way:
-		for _, point := range f.parseWay(obj) {
-			f.parsedItems <- parseItem{Point: point}
-		}
+		f.seenWays.Add(1)
+		f.send(f.parseWay(obj))
 	case *osm.Relation:
-		for _, point := range f.parseRelation(obj) {
-			f.parsedItems <- parseItem{Point: point}
+		f.seenRelations.Add(1)
+		for _, item := range f.parseRelation(obj) {
+			f.send(item)
 		}
 	}
 }
 
-// parseItem is one element of the parse output stream: either a cache point or
-// a graph edge.
+// send hands one batch to the collector. Empty batches are dropped.
+func (f *GeoGen) send(item parseItem) {
+	if len(item.Points) == 0 && len(item.Edges) == 0 {
+		return
+	}
+	f.parsedItems <- item
+}
+
+// parseItem is one batch of parse output: the points of one OSM object (or
+// relation member way) and the graph edges between them. Edge endpoints are
+// indexes into Points; the collector translates them to point occurrences.
 type parseItem struct {
-	IsEdge bool
-	Point  geoPoint
-	Edge   cachemodel.GraphEdge
+	Points []geoPoint
+	Edges  []edgeRef
+}
+
+// edgeRef is a graph edge whose endpoints are local point indexes.
+type edgeRef struct {
+	FromLocal, ToLocal uint32
+	Street, Name       unique.Handle[string]
+	Class, Oneway      uint8
 }
 
 type geoPoint struct {
@@ -48,14 +64,16 @@ type geoPoint struct {
 	HouseNumber unique.Handle[string] `json:"house_number"`
 	City        unique.Handle[string] `json:"city"`
 	Region      unique.Handle[string] `json:"region"`
-	Country     unique.Handle[string] `json:"country"`
 
 	Weight uint8                    `json:"weight"`
 	Type   cachemodel.GeoObjectType `json:"type"`
 
-	// GraphNode is the dense graph node id of this point (0 when the point is
-	// not a road graph node).
-	GraphNode uint32 `json:"graph_node"`
+	// NodeKey identifies the OSM node shared by road shape points. It is a
+	// unique synthetic key for interpolated points and 0 for non-road points.
+	NodeKey uint64 `json:"node_key"`
+	// ClaimSeq is the parser's encounter order, used to pick which way's
+	// attributes win at a shared node.
+	ClaimSeq uint32 `json:"claim_seq"`
 }
 
 const (
@@ -88,19 +106,20 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 	return geoPoint{}, false
 }
 
-func (f *GeoGen) parseWay(way *osm.Way) []geoPoint {
-	if !f.parsedWays.SetIfAbsent(way.ID, struct{}{}) {
+func (f *GeoGen) parseWay(way *osm.Way) parseItem {
+	if !f.parsedWays.Add(int64(way.ID)) {
 		f.parsedWaysDupes.Add(1)
-		return []geoPoint{}
+		return parseItem{}
 	}
 
 	if isBuilding(way.Tags) {
-		return f.parseWayBuilding(way)
-	} else if _, ok := highwayClasses[way.Tags.Find("highway")]; ok {
+		return parseItem{Points: f.parseWayBuilding(way)}
+	}
+	if _, ok := highwayClasses[way.Tags.Find("highway")]; ok {
 		return f.parseWayHighway(way)
 	}
 
-	return []geoPoint{}
+	return parseItem{}
 }
 
 func (f *GeoGen) parseWayBuilding(way *osm.Way) []geoPoint {
@@ -137,19 +156,23 @@ var highwayClasses = map[string]uint8{
 	"unclassified": cachemodel.GraphClassUnclassified,
 }
 
-// parseWayHighway emits the way's OSM shape points as road points and links
-// consecutive points into graph edges.
+// parseWayHighway emits one point per way node occurrence and links consecutive
+// occurrences into graph edges.
 //
-// Shape points replace the previous fixed-distance resampling: each OSM node
-// becomes exactly one cache point (the first way to claim it emits it), so ways
-// that share a junction reference the same point and the graph is routable.
-// Spans longer than roadInterpolationMeters get intermediate interpolated
-// points, so road fallback points stay as dense as the old resampling left
-// them even where OSM has no shape node for a long distance.
-func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
+// Every occurrence is emitted, including nodes already seen on another way:
+// the collector canonicalizes them later by OSM node id, dropping duplicates
+// from the point table while keeping the shared junction. This keeps the
+// generator's memory bounded — there is no OSM node id -> dense id map.
+//
+// A span without an intermediate shape node carries no road point for its whole
+// length, which can exceed the reverse-geocoding search radius. Interpolated
+// points get unique synthetic node keys, so they are never merged with anything
+// else; the graph simplifier drops them again wherever the span is short
+// enough.
+func (f *GeoGen) parseWayHighway(way *osm.Way) parseItem {
 	class, ok := highwayClasses[way.Tags.Find("highway")]
 	if !ok {
-		return []geoPoint{}
+		return parseItem{}
 	}
 
 	name := f.getHighwayName(way.Tags)
@@ -161,10 +184,18 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 	nameHandle := unique.Make(name)
 	oneway := parseOneway(way.Tags)
 
-	out := make([]geoPoint, 0, len(way.Nodes))
-	var prevNodeID uint32
-	var prevLon, prevLat float64
-	havePrev := false
+	out := parseItem{
+		Points: make([]geoPoint, 0, len(way.Nodes)),
+		Edges:  make([]edgeRef, 0, len(way.Nodes)),
+	}
+
+	var (
+		prevLocal  int
+		prevNodeID osm.NodeID
+		prevLon    float64
+		prevLat    float64
+		havePrev   bool
+	)
 
 	for _, node := range way.Nodes {
 		lon, lat, ok := f.resolveWayNode(node)
@@ -172,37 +203,33 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 			continue
 		}
 
-		nodeID, first := f.claimGraphNode(node.ID)
-		if first {
-			point := orb.Point{lon, lat}
-			out = append(out, geoPoint{
-				Point:       point,
-				Name:        name,
-				Street:      street,
-				HouseNumber: unique.Make(""),
-				City:        f.localizedCityAddr(way.Tags, point),
-				Region:      f.localizedRegion(point),
-				Weight:      weightRoad,
-				Type:        cachemodel.GeoObjectRoad,
-				GraphNode:   nodeID,
-			})
-		}
+		local := len(out.Points)
+		point := orb.Point{lon, lat}
+		claimSeq := f.claimSeq.Add(1)
+		out.Points = append(out.Points, geoPoint{
+			Point:       point,
+			Name:        name,
+			Street:      street,
+			HouseNumber: unique.Make(""),
+			City:        f.localizedCityAddr(way.Tags, point),
+			Region:      f.localizedRegion(point),
+			Weight:      weightRoad,
+			Type:        cachemodel.GeoObjectRoad,
+			NodeKey:     uint64(node.ID),
+			ClaimSeq:    claimSeq,
+		})
 
 		// A way may repeat a node consecutively (real data does: e.g. OSM way
 		// 261379237 repeats node 2669983324). The second occurrence would make
-		// a self-loop edge, which is meaningless in the graph, so skip it.
-		if havePrev && prevNodeID != nodeID {
-			fromID := prevNodeID
+		// a self-loop edge, which is meaningless in the graph, so skip it. The
+		// duplicate point is still emitted and canonicalized away later.
+		if havePrev && prevNodeID != node.ID {
+			fromLocal := prevLocal
 
-			// A span without an intermediate shape node carries no road point
-			// for its whole length, which can exceed the reverse-geocoding
-			// search radius. Interpolated points are not OSM nodes, so each
-			// gets a fresh graph node id and the span's edge is split around
-			// them; the graph simplifier drops them again wherever the span
-			// is short enough.
 			for _, p := range interpolateRoadSegment(prevLon, prevLat, lon, lat) {
-				synthID := f.graphNodeSeq.Add(1)
-				out = append(out, geoPoint{
+				synthLocal := len(out.Points)
+				synthSeq := f.claimSeq.Add(1)
+				out.Points = append(out.Points, geoPoint{
 					Point:       p,
 					Name:        name,
 					Street:      street,
@@ -211,35 +238,32 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) []geoPoint {
 					Region:      f.localizedRegion(p),
 					Weight:      weightRoad,
 					Type:        cachemodel.GeoObjectRoad,
-					GraphNode:   synthID,
+					NodeKey:     f.syntheticNodeKey(),
+					ClaimSeq:    synthSeq,
 				})
-				f.parsedItems <- parseItem{
-					IsEdge: true,
-					Edge: cachemodel.GraphEdge{
-						FromNode: fromID,
-						ToNode:   synthID,
-						Street:   street,
-						Name:     nameHandle,
-						Class:    class,
-						Oneway:   oneway,
-					},
-				}
-				fromID = synthID
+				out.Edges = append(out.Edges, edgeRef{
+					FromLocal: uint32(fromLocal),
+					ToLocal:   uint32(synthLocal),
+					Street:    street,
+					Name:      nameHandle,
+					Class:     class,
+					Oneway:    oneway,
+				})
+				fromLocal = synthLocal
 			}
 
-			f.parsedItems <- parseItem{
-				IsEdge: true,
-				Edge: cachemodel.GraphEdge{
-					FromNode: fromID,
-					ToNode:   nodeID,
-					Street:   street,
-					Name:     nameHandle,
-					Class:    class,
-					Oneway:   oneway,
-				},
-			}
+			out.Edges = append(out.Edges, edgeRef{
+				FromLocal: uint32(fromLocal),
+				ToLocal:   uint32(local),
+				Street:    street,
+				Name:      nameHandle,
+				Class:     class,
+				Oneway:    oneway,
+			})
 		}
-		prevNodeID = nodeID
+
+		prevLocal = local
+		prevNodeID = node.ID
 		prevLon, prevLat = lon, lat
 		havePrev = true
 	}
@@ -266,19 +290,6 @@ func (f *GeoGen) resolveWayNode(node osm.WayNode) (lon, lat float64, ok bool) {
 	return p.Lon, p.Lat, true
 }
 
-// claimGraphNode returns the dense graph node id for an OSM node. The first
-// caller to claim a node reports first=true and is responsible for emitting the
-// node's cache point; later callers reuse the id.
-func (f *GeoGen) claimGraphNode(node osm.NodeID) (id uint32, first bool) {
-	proposed := f.graphNodeSeq.Add(1)
-	actual, loaded := f.graphNodes.LoadOrStore(node, proposed)
-	if loaded {
-		f.graphNodesDupes.Add(1)
-		return actual, false
-	}
-	return proposed, true
-}
-
 // parseOneway maps OSM oneway tagging to the graph direction enum. Roundabouts
 // are one-way by convention unless tagged otherwise.
 func parseOneway(tags osm.Tags) uint8 {
@@ -297,34 +308,33 @@ func parseOneway(tags osm.Tags) uint8 {
 	return cachemodel.GraphOnewayBoth
 }
 
-func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
-	if !f.parsedRelations.SetIfAbsent(rel.ID, struct{}{}) {
+func (f *GeoGen) parseRelation(rel *osm.Relation) []parseItem {
+	if !f.parsedRelations.Add(int64(rel.ID)) {
 		f.parsedRelationsDupes.Add(1)
-		return []geoPoint{}
+		return nil
 	}
 
 	switch rel.Tags.Find("type") {
 	case "multipolygon", "boundary":
 		switch rel.Tags.Find("landuse") {
 		case "quarry", "industrial":
-			return f.parseRelationArea(rel, weightAreaIndustrial)
+			return pointsOnly(f.parseRelationArea(rel, weightAreaIndustrial))
 		}
 		if rel.Tags.Find("boundary") == "protected_area" {
-			return f.parseRelationArea(rel, weightAreaProtected)
+			return pointsOnly(f.parseRelationArea(rel, weightAreaProtected))
 		}
 		if isBuilding(rel.Tags) {
-			return f.parseRelationBuilding(rel)
+			return pointsOnly(f.parseRelationBuilding(rel))
 		}
 		if rel.Tags.Find("boundary") == "administrative" {
 			switch rel.Tags.Find("admin_level") {
 			case "4":
 				f.parseRelationRegion(rel)
-				return []geoPoint{}
+				return nil
 			case "2":
 				f.parseRelationCountry(rel)
-				return []geoPoint{}
+				return nil
 			}
-
 		}
 	case "building":
 		if rel.Tags.Find("route") == "road" && strings.Contains(rel.Tags.Find("network"), "national") {
@@ -332,7 +342,14 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []geoPoint {
 		}
 	}
 
-	return []geoPoint{}
+	return nil
+}
+
+func pointsOnly(points []geoPoint) []parseItem {
+	if len(points) == 0 {
+		return nil
+	}
+	return []parseItem{{Points: points}}
 }
 
 func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
@@ -368,8 +385,8 @@ func (f *GeoGen) parseRelationBuilding(rel *osm.Relation) []geoPoint {
 	return points
 }
 
-func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
-	out := []geoPoint{}
+func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []parseItem {
+	var out []parseItem
 	for _, m := range rel.Members {
 		if m.Type != osm.TypeWay {
 			continue
@@ -381,9 +398,11 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []geoPoint {
 			continue
 		}
 
-		out = append(out, f.parseWay(way)...)
+		item := f.parseWay(way)
+		if len(item.Points) > 0 || len(item.Edges) > 0 {
+			out = append(out, item)
+		}
 	}
-
 	return out
 }
 

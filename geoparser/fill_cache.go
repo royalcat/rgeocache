@@ -32,30 +32,81 @@ func (f *GeoGen) fillRelCache() error {
 func (f *GeoGen) parseDatabase() error {
 	pool := pool.New().WithMaxGoroutines(f.config.Threads)
 
-	objectsCount := int(f.osmdb.CountNodes() + f.osmdb.CountWays() + f.osmdb.CountRelations())
-	objectsIter := iterConcurrently(
-		castIterToObject(f.osmdb.IterNodes()),
-		castIterToObject(f.osmdb.IterWays()),
-		castIterToObject(f.osmdb.IterRelations()),
-	)
-
-	for obj, err := range iterWithProgress(objectsIter, objectsCount, "4/4 generating database") {
-		if err != nil {
-			return err
+	var parseErr error
+	consume := func(source iter.Seq2[osm.Object, error], total int, name string) {
+		if parseErr != nil {
+			return
 		}
-		pool.Go(func() {
-			f.parseObject(obj)
-		})
+		for obj, err := range iterWithProgress(source, total, name) {
+			if err != nil {
+				parseErr = err
+				return
+			}
+			pool.Go(func() {
+				f.parseObject(obj)
+			})
+		}
 	}
 
-	pool.Wait()
+	// Nodes and ways have to be read together: while the node iterator keeps
+	// the OSM window cache warm, way-node lookups hit it. Reading nodes first
+	// and ways afterwards turns every way-node lookup into a block decode
+	// (measured ~14x slower on the post-CIS input).
+	nodesWays := iterConcurrently(
+		castIterToObject(f.osmdb.IterNodes()),
+		castIterToObject(f.osmdb.IterWays()),
+	)
+	consume(nodesWays, int(f.osmdb.CountNodes()+f.osmdb.CountWays()), "4/4 generating nodes and ways")
 
-	fmt.Printf("Duplicate node parse: %d\n", f.parsedNodesDupes.Load())
+	// Relations are a separate pass. Running three sources concurrently made
+	// the OSM window cache drop relation windows under collector backpressure;
+	// the relation set is small enough that a dedicated pass costs little.
+	consume(castIterToObject(f.osmdb.IterRelations()), int(f.osmdb.CountRelations()), "4/4 generating relations")
+
+	pool.Wait()
+	if parseErr != nil {
+		return parseErr
+	}
+
+	fmt.Printf("Seen nodes: %d (index %d)\n", f.seenNodes.Load(), f.osmdb.CountNodes())
+	fmt.Printf("Seen ways: %d (index %d)\n", f.seenWays.Load(), f.osmdb.CountWays())
+	fmt.Printf("Seen relations: %d (index %d)\n", f.seenRelations.Load(), f.osmdb.CountRelations())
 	fmt.Printf("Duplicate way parse: %d\n", f.parsedWaysDupes.Load())
 	fmt.Printf("Duplicate relation parse: %d\n", f.parsedRelationsDupes.Load())
-	fmt.Printf("Duplicate graph node: %d\n", f.graphNodesDupes.Load())
 
 	return nil
+}
+
+// iterConcurrently merges several object iterators into one sequence.
+func iterConcurrently[T any](sources ...iter.Seq2[T, error]) iter.Seq2[T, error] {
+	type elem struct {
+		item T
+		err  error
+	}
+
+	out := make(chan elem, len(sources))
+	var wg sync.WaitGroup
+	for _, source := range sources {
+		wg.Add(1)
+		go func(source iter.Seq2[T, error]) {
+			defer wg.Done()
+			for item, err := range source {
+				out <- elem{item: item, err: err}
+			}
+		}(source)
+	}
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return func(yield func(T, error) bool) {
+		for val := range out {
+			if !yield(val.item, val.err) {
+				return
+			}
+		}
+	}
 }
 
 func iterWithProgress[T any](source iter.Seq2[T, error], total int, name string) iter.Seq2[T, error] {
@@ -78,38 +129,6 @@ func iterWithProgress[T any](source iter.Seq2[T, error], total int, name string)
 				return
 			}
 			bar.Increment()
-		}
-	}
-}
-
-func iterConcurrently[T any](sources ...iter.Seq2[T, error]) iter.Seq2[T, error] {
-	type elem struct {
-		item T
-		err  error
-	}
-
-	out := make(chan elem, len(sources))
-	var wg sync.WaitGroup
-	for _, source := range sources {
-		wg.Add(1)
-		go func(source iter.Seq2[T, error]) {
-			defer wg.Done()
-			for item, err := range source {
-				out <- elem{item: item, err: err}
-			}
-		}(source)
-	}
-
-	go func() {
-		wg.Wait()
-		close(out)
-	}()
-
-	return func(yield func(T, error) bool) {
-		for val := range out {
-			if !yield(val.item, val.err) {
-				return
-			}
 		}
 	}
 }

@@ -134,7 +134,11 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 	rawPoints = nil // release to GC
 
 	// Phase 5: Materialize zones with inline names
-	zonesSection := buildZonesSection(zones)
+	var zoneList []cachemodel.Zone
+	for z := range zones {
+		zoneList = append(zoneList, z)
+	}
+	zonesSection := buildZonesSection(zoneList)
 	zonesBytes, err := proto.Marshal(zonesSection)
 	if err != nil {
 		return err
@@ -280,11 +284,11 @@ func writeGraphSection(
 }
 
 // buildZonesSection converts zones to V2ZonesSection proto with inline names and geometry.
-func buildZonesSection(zones iter.Seq[cachemodel.Zone]) *savev2proto.V2ZonesSection {
+func buildZonesSection(zones []cachemodel.Zone) *savev2proto.V2ZonesSection {
 	var regionZones []*savev2proto.V2Zone
 	var countryZones []*savev2proto.V2Zone
 
-	for z := range zones {
+	for _, z := range zones {
 		v2z := &savev2proto.V2Zone{
 			Name:         []byte(z.Name.Value()),
 			Bounds:       mapBoundsToV2(z.Bounds),

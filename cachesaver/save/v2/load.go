@@ -162,6 +162,7 @@ type LoadMmapResult struct {
 	DiskBush          *kdbush.DiskKDBush[V2PointData, *V2PointData]
 	StringsIndex      []uint32 // offset index: id → byte offset into string data
 	StringsDataOffset int64    // byte offset of the string data block within the mmap'd file
+	StringsDataSize   int64    // byte size of the string data block
 	Zones             []cachemodel.Zone
 	Metadata          *cachemodel.Metadata
 	mmapReader        *mmap.ReaderAt
@@ -170,6 +171,27 @@ type LoadMmapResult struct {
 // Close releases resources held by the result.
 func (r *LoadMmapResult) Close() error {
 	return r.mmapReader.Close()
+}
+
+// Strings materializes the string table in id order.
+func (r *LoadMmapResult) Strings() ([]string, error) {
+	data := make([]byte, r.StringsDataSize)
+	if _, err := r.mmapReader.ReadAt(data, r.StringsDataOffset); err != nil {
+		return nil, fmt.Errorf("v2 mmap: reading strings: %w", err)
+	}
+	out := make([]string, len(r.StringsIndex))
+	for id, off := range r.StringsIndex {
+		if int64(off) >= int64(len(data)) {
+			continue
+		}
+		end := bytes.IndexByte(data[off:], 0)
+		if end < 0 {
+			out[id] = string(data[off:])
+			continue
+		}
+		out[id] = string(data[off : off+uint32(end)])
+	}
+	return out, nil
 }
 
 // LoadMmap opens a v2 cache from a memory-mapped file.
@@ -251,6 +273,7 @@ func LoadMmap(reader *mmap.ReaderAt) (*LoadMmapResult, error) {
 		DiskBush:          diskBush,
 		StringsIndex:      stringsIndex,
 		StringsDataOffset: stringsDataOffset,
+		StringsDataSize:   int64(header.StringsDataSize),
 		Zones:             parsedZones,
 		Metadata: &cachemodel.Metadata{
 			Version:     metadata.Version,

@@ -3,16 +3,22 @@ package geoparser
 import (
 	"io"
 	"log/slog"
+	"os"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
+	"time"
+	"unique"
 
-	"github.com/paulmach/osm"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/royalcat/osmpbfdb"
+	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	"github.com/royalcat/rgeocache/geomodel"
 	"github.com/royalcat/rgeocache/internal/bordertree"
-	"github.com/royalcat/rgeocache/internal/rangeindex"
+	"github.com/royalcat/rgeocache/internal/idset"
+	"github.com/royalcat/rgeocache/internal/spool"
+	"github.com/royalcat/rgeocache/internal/strtab"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -25,23 +31,22 @@ type GeoGen struct {
 
 	localizationCache *xsync.MapOf[string, string]
 
-	parsedNodes          *rangeindex.Index[osm.NodeID, struct{}]
-	parsedNodesDupes     atomic.Uint64
-	parsedWays           *rangeindex.Index[osm.WayID, struct{}]
+	parsedWays           *idset.Set
 	parsedWaysDupes      atomic.Uint64
-	parsedRelations      *rangeindex.Index[osm.RelationID, struct{}]
+	parsedRelations      *idset.Set
 	parsedRelationsDupes atomic.Uint64
+	seenNodes            atomic.Int64
+	seenWays             atomic.Int64
+	seenRelations        atomic.Int64
 
-	// graphNodes maps the OSM node ids of road shape points to dense graph node
-	// ids (starting at 1). Each node is emitted as a cache point exactly once,
-	// by the way that first claims it, so ways sharing a junction reference the
-	// same point.
-	graphNodes      *xsync.MapOf[osm.NodeID, uint32]
-	graphNodeSeq    atomic.Uint32
-	graphNodesDupes atomic.Uint64
+	// synthKeySeq assigns unique node keys to interpolated road points. The
+	// high bit is set so they can never collide with a real OSM node id.
+	synthKeySeq atomic.Uint64
+	// claimSeq is the parser's encounter order for road points. It decides
+	// which way's attributes win at a node shared by several ways.
+	claimSeq atomic.Uint32
 
 	parsedItems chan parseItem
-	parsingDone chan struct{}
 
 	regionsMu sync.Mutex
 	regions   []geomodel.Zone
@@ -61,11 +66,8 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 		regionIndex:       bordertree.NewBorderTree[string](),
 		localizationCache: xsync.NewMapOf[string, string](),
 
-		parsedNodes:     rangeindex.New[osm.NodeID, struct{}](),
-		parsedWays:      rangeindex.New[osm.WayID, struct{}](),
-		parsedRelations: rangeindex.New[osm.RelationID, struct{}](),
-
-		graphNodes: xsync.NewMapOf[osm.NodeID, uint32](),
+		parsedWays:      idset.New(),
+		parsedRelations: idset.New(),
 
 		regions:   []geomodel.Zone{},
 		countries: []geomodel.Zone{},
@@ -83,35 +85,142 @@ func (f *GeoGen) ResetCache() error {
 	return nil
 }
 
+// syntheticNodeKey returns a node key that is unique across the whole run.
+func (f *GeoGen) syntheticNodeKey() uint64 {
+	return 1<<63 | f.synthKeySeq.Add(1)
+}
+
 type ParseOutput struct {
 	Format string
 	Writer io.Writer
 }
 
+// ParseOSMData parses the OSM database into an on-disk spool and then writes
+// every requested output from it. Only the v2 format is supported here; v1
+// caches are produced by cachesaver.ConvertV2ToV1 from a finished v2 file.
+//
+// The spool directory defaults to a temporary directory that is removed when
+// ParseOSMData returns. When config.SpoolDir is set it is used instead and is
+// removed on success (kept on failure for inspection).
 func (f *GeoGen) ParseOSMData(outputs []ParseOutput) error {
+	for _, output := range outputs {
+		if output.Format != "v2" {
+			return &UnsupportedFormatError{Format: output.Format}
+		}
+	}
+
+	spoolDir := f.config.SpoolDir
+	temporary := false
+	if spoolDir == "" {
+		dir, err := os.MkdirTemp("", "rgeocache-spool-*")
+		if err != nil {
+			return err
+		}
+		spoolDir = dir
+		temporary = true
+	}
+	success := false
+	defer func() {
+		if success || temporary {
+			_ = os.RemoveAll(spoolDir)
+		}
+	}()
+
+	if err := os.MkdirAll(spoolDir, 0o755); err != nil {
+		return err
+	}
+
+	sp, err := spool.Create(spoolDir)
+	if err != nil {
+		return err
+	}
+	table := strtab.New()
+
 	f.parsedItems = make(chan parseItem, 10)
-	f.parsingDone = make(chan struct{})
 
 	var wg errgroup.Group
 	wg.Go(func() error {
-		return f.saveWorker(outputs)
+		return f.collectWorker(sp, table)
 	})
 	wg.Go(func() error {
-		err := f.fillRelCache()
-		if err != nil {
+		defer close(f.parsedItems)
+		if err := f.fillRelCache(); err != nil {
 			return err
 		}
-
-		err = f.parseDatabase()
-		if err != nil {
-			return err
-		}
-
-		close(f.parsedItems)
-		close(f.parsingDone)
-
-		return nil
+		return f.parseDatabase()
 	})
+	if err := wg.Wait(); err != nil {
+		_ = sp.Close()
+		return err
+	}
+	if err := sp.Close(); err != nil {
+		return err
+	}
 
-	return wg.Wait()
+	// The border trees and duplicate sets are parse-only and large. Release
+	// them before the writer allocates its index arrays.
+	f.placeIndex = nil
+	f.regionIndex = nil
+	f.localizationCache = nil
+	f.parsedWays = nil
+	f.parsedRelations = nil
+	runtime.GC()
+
+	spoolReader, err := spool.Open(spoolDir)
+	if err != nil {
+		return err
+	}
+
+	meta := cachemodel.Metadata{
+		Version:     f.config.Version,
+		Locale:      f.config.PreferredLocalization,
+		DateCreated: time.Now().UTC(),
+	}
+	zones := f.buildZones()
+
+	for _, output := range outputs {
+		// The writer keeps several whole-cache index arrays live at once. A
+		// lower GC target halves that headroom; the phases are I/O bound, so
+		// the extra collections cost little.
+		previous := debug.SetGCPercent(50)
+		err := writeV2Output(spoolReader, table, zones, meta, output.Writer, spoolDir)
+		debug.SetGCPercent(previous)
+		if err != nil {
+			return err
+		}
+	}
+
+	success = true
+	return nil
+}
+
+// UnsupportedFormatError is returned by ParseOSMData for formats it cannot
+// stream from the spool.
+type UnsupportedFormatError struct {
+	Format string
+}
+
+func (e *UnsupportedFormatError) Error() string {
+	return "geoparser: unsupported output format " + e.Format + " (v1 is produced by cachesaver.ConvertV2ToV1 from a v2 cache)"
+}
+
+func (f *GeoGen) buildZones() []cachemodel.Zone {
+	zones := make([]cachemodel.Zone, 0, len(f.regions)+len(f.countries))
+	for _, zone := range f.regions {
+		zones = append(zones, cachemodel.Zone{
+			Type:    cachemodel.ZoneRegion,
+			Name:    unique.Make(zone.Name),
+			Bounds:  zone.Bounds,
+			Polygon: zone.Polygon,
+		})
+	}
+	for _, zone := range f.countries {
+		zones = append(zones, cachemodel.Zone{
+			Type:    cachemodel.ZoneCountry,
+			Name:    unique.Make(zone.Name),
+			Bounds:  zone.Bounds,
+			Polygon: zone.Polygon,
+		})
+	}
+	return zones
 }

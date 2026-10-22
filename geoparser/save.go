@@ -1,182 +1,85 @@
 package geoparser
 
 import (
-	"cmp"
 	"fmt"
-	"iter"
-	"slices"
-	"sync"
-	"time"
-	"unique"
+	"io"
+	"math"
 
 	"github.com/royalcat/rgeocache/cachesaver"
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
-	"golang.org/x/sync/errgroup"
+	"github.com/royalcat/rgeocache/internal/spool"
+	"github.com/royalcat/rgeocache/internal/strtab"
 )
 
-func (f *GeoGen) saveWorker(outputs []ParseOutput) error {
-	items := func(yield func(cachemodel.Item) bool) {
-		for item := range f.parsedItems {
-			if item.IsEdge {
-				if !yield(cachemodel.Item{Kind: cachemodel.ItemEdge, Edge: item.Edge}) {
-					return
+// collectWorker turns parse batches into spool records. Point occurrence ids
+// are the point indexes in the spool, which is what edges reference.
+func (f *GeoGen) collectWorker(sp *spool.Writer, table *strtab.Table) (err error) {
+	defer func() {
+		if err != nil {
+			// The parser may still be writing to the channel. Drain it so it
+			// cannot block forever after a collection failure.
+			go func() {
+				for range f.parsedItems {
 				}
-				continue
-			}
-
-			point := item.Point
-			if !yield(cachemodel.Item{
-				Kind:      cachemodel.ItemPoint,
-				GraphNode: point.GraphNode,
-				Point: cachesaver.Point{
-					X: point.X(),
-					Y: point.Y(),
-					Data: cachemodel.Info{
-						Name:        unique.Make(point.Name),
-						Street:      point.Street,
-						HouseNumber: point.HouseNumber,
-						City:        point.City,
-						Region:      point.Region,
-						Weight:      point.Weight,
-						Type:        point.Type,
-					},
-				},
-			}) {
-				return
-			}
-		}
-	}
-
-	zones := func(yield func(cachemodel.Zone) bool) {
-		<-f.parsingDone
-
-		for _, zone := range f.regions {
-			if !yield(cachesaver.Zone{
-				Type:    cachemodel.ZoneRegion,
-				Name:    unique.Make(zone.Name),
-				Bounds:  zone.Bounds,
-				Polygon: zone.Polygon,
-			}) {
-				return
-			}
-		}
-
-		for _, zone := range f.countries {
-			if !yield(cachesaver.Zone{
-				Type:    cachemodel.ZoneCountry,
-				Name:    unique.Make(zone.Name),
-				Bounds:  zone.Bounds,
-				Polygon: zone.Polygon,
-			}) {
-				return
-			}
-		}
-	}
-
-	meta := cachesaver.Metadata{
-		Version:     f.config.Version,
-		Locale:      f.config.PreferredLocalization,
-		DateCreated: time.Now().UTC(),
-	}
-
-	itemsTee := Tee(items, len(outputs), 1)
-	zonesTee := Tee(zones, len(outputs), 1)
-
-	var wg errgroup.Group
-	for i, output := range outputs {
-		switch output.Format {
-		case "v1":
-			// v1 has no graph section: keep only the point items.
-			points := func(yield func(cachemodel.Point) bool) {
-				for item := range itemsTee[i] {
-					if item.Kind != cachemodel.ItemPoint {
-						continue
-					}
-					if !yield(item.Point) {
-						return
-					}
-				}
-			}
-			wg.Go(func() error {
-				return cachesaver.SaveV1(points, zonesTee[i], meta, output.Writer)
-			})
-		case "v2":
-			wg.Go(func() error {
-				return cachesaver.SaveV2(itemsTee[i], zonesTee[i], meta, output.Writer)
-			})
-		default:
-			return fmt.Errorf("unsupported format: %s", output.Format)
-		}
-	}
-
-	return wg.Wait()
-}
-
-func uniqueGeoPoints(points []geoPoint) []geoPoint {
-	// go requires strict weak ordering but struct not directry comparable, so we use a Cantor pairing function for cooridates with fixed precision
-	const precisionAmplifier = 1_000_000
-	cantorPairFunc := func(xf, yf float64) int64 {
-		x := int64(xf * precisionAmplifier)
-		y := int64(yf * precisionAmplifier)
-
-		return (x+y)*(x+y+1)/2 + y
-	}
-	slices.SortFunc(points, func(a, b geoPoint) int {
-		if a == b {
-			return 0
-		}
-		return cmp.Compare(cantorPairFunc(a.X(), a.Y()), cantorPairFunc(b.X(), b.Y()))
-	})
-	return slices.Compact(points)
-}
-
-// Tee duplicates a source iterator into 'n' independent copies.
-func Tee[V any](src iter.Seq[V], n int, bufferSize int) []iter.Seq[V] {
-	// A slice of channels to hold data for each copy
-	chs := make([]chan V, n)
-	for i := range chs {
-		chs[i] = make(chan V, bufferSize)
-	}
-
-	// Fan out data from the source iterator
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer func() {
-			for _, ch := range chs {
-				close(ch) // Close all channels when src is exhausted
-			}
-		}()
-
-		for v := range src {
-			for _, ch := range chs {
-				ch <- v
-			}
+			}()
 		}
 	}()
 
-	// Create 'n' independent iterators from the channels
-	iters := make([]iter.Seq[V], n)
-	for i := range chs {
-		ch := chs[i]
-		iters[i] = func(yield func(V) bool) {
-			for {
-				v, ok := <-ch
-				if !ok {
-					break // Channel closed, this specific iterator exits
-				}
-				if !yield(v) {
-					// Loop body exited early (break), disconnect this channel
-					// by draining it to prevent the source goroutine from blocking.
-					go func() {
-						for range ch {
-						}
-					}()
-					break
-				}
+	for item := range f.parsedItems {
+		if int64(sp.NumPoints())+int64(len(item.Points)) > int64(math.MaxUint32) {
+			return fmt.Errorf("geoparser: point occurrences exceed the uint32 cache limit")
+		}
+		base := uint32(sp.NumPoints())
+
+		for _, p := range item.Points {
+			rec := spool.Point{
+				X:             p.X(),
+				Y:             p.Y(),
+				NameID:        table.Add(p.Name),
+				StreetID:      table.Add(p.Street.Value()),
+				HouseNumberID: table.Add(p.HouseNumber.Value()),
+				CityID:        table.Add(p.City.Value()),
+				RegionID:      table.Add(p.Region.Value()),
+				Weight:        p.Weight,
+				GeoType:       uint8(p.Type),
+				NodeKey:       p.NodeKey,
+				ClaimSeq:      p.ClaimSeq,
+			}
+			if err := sp.WritePoint(rec); err != nil {
+				return err
+			}
+		}
+
+		for _, e := range item.Edges {
+			if e.FromLocal >= uint32(len(item.Points)) || e.ToLocal >= uint32(len(item.Points)) {
+				return fmt.Errorf(
+					"geoparser: edge endpoint out of range: %d -> %d (batch has %d points)",
+					e.FromLocal, e.ToLocal, len(item.Points),
+				)
+			}
+			rec := spool.Edge{
+				From:     base + e.FromLocal,
+				To:       base + e.ToLocal,
+				StreetID: table.Add(e.Street.Value()),
+				NameID:   table.Add(e.Name.Value()),
+				Class:    e.Class,
+				Oneway:   e.Oneway,
+			}
+			if err := sp.WriteEdge(rec); err != nil {
+				return err
 			}
 		}
 	}
+	return nil
+}
 
-	return iters
+func writeV2Output(
+	sp *spool.Reader,
+	table *strtab.Table,
+	zones []cachemodel.Zone,
+	meta cachemodel.Metadata,
+	w io.Writer,
+	workDir string,
+) error {
+	return cachesaver.SaveV2FromSpool(sp, table, zones, meta, w, workDir)
 }

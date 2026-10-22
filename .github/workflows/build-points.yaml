@@ -22,13 +22,13 @@ jobs:
       matrix:
         include:
           - name: "post-cis_ru"
-            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia,asia/armenia"
+            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia"
             locale: "ru"
           - name: "russia"
             maps: "russia"
             locale: "official"
           - name: "post-cis"
-            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia,asia/armenia"
+            maps: "europe/ukraine,russia,europe/belarus,europe/finland,europe/georgia,asia/afghanistan,asia/armenia,asia/azerbaijan,asia/kazakhstan,asia/uzbekistan,asia/mongolia"
             locale: "official"
     env:
       MAPS: ${{ matrix.maps }}
@@ -85,9 +85,17 @@ jobs:
           chmod +x ./rgeocache
           ./rgeocache generate --pprof.profile --pprof.heap --stats stats.txt \
             -l ${{ matrix.locale }} --version ${{ github.run_id }} \
-            --output ${{ matrix.name }}_points.rgc \
+            --spool-dir spool \
             --output-v2 ${{ matrix.name }}_points_v2.rgc \
             ${MAPS_FILES}
+      - name: Free map files
+        shell: bash
+        working-directory: cache_build
+        run: rm -rf maps
+      - name: Convert v1 cache
+        shell: bash
+        working-directory: cache_build
+        run: ./rgeocache convert -p ${{ matrix.name }}_points_v2.rgc -o ${{ matrix.name }}_points.rgc
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}_points
@@ -99,6 +107,7 @@ jobs:
           path: |
             cache_build/${{ matrix.name }}_points_v2.rgc
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: ${{ matrix.name }}_profile
           path: |

@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/KimMachineGun/automemlimit v1.0.0
+	github.com/RoaringBitmap/roaring/v2 v2.14.5
 	github.com/blevesearch/bleve/v2 v2.6.1
 	github.com/cheggaaa/pb/v3 v3.2.1
 	github.com/dustin/go-humanize v1.0.1
@@ -47,7 +48,6 @@ require (
 
 require (
 	github.com/4kills/go-libdeflate/v2 v2.2.2 // indirect
-	github.com/RoaringBitmap/roaring/v2 v2.14.5 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

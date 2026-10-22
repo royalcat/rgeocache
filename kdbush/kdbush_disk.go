@@ -199,7 +199,46 @@ func BuildDiskWithMapping[V encoding.BinaryMarshaler, VP binaryPointer[V]](
 	// --- write everything ------------------------------------------------
 	var written int64
 
-	// header
+	n64, err := WriteIndex(w, idxs, coords, nodeSize)
+	written += n64
+	if err != nil {
+		return written, nil, err
+	}
+
+	// data section: offsets + blobs
+	n64, err = diskWriteInt64s(w, offsets)
+	written += n64
+	if err != nil {
+		return written, nil, fmt.Errorf("kdbush: writing data offsets: %w", err)
+	}
+
+	n64, err = diskWriteBlobs(w, blobs)
+	written += n64
+	if err != nil {
+		return written, nil, fmt.Errorf("kdbush: writing data blobs: %w", err)
+	}
+
+	return written, idxs, nil
+}
+
+// Sort arranges idxs and coords into KD-tree order. coords holds interleaved
+// x, y pairs.
+func Sort(idxs []int, coords []float64, nodeSize int) {
+	if len(idxs) > 0 {
+		sort(idxs, coords, nodeSize, 0, len(idxs)-1, 0)
+	}
+}
+
+// WriteIndex writes a KDBH header, the sorted index array and the sorted
+// coordinates. idxs and coords must already be in KD-tree order (see Sort).
+// It returns the number of bytes written.
+func WriteIndex(w io.Writer, idxs []int, coords []float64, nodeSize int) (int64, error) {
+	n := len(idxs)
+	if len(coords) != 2*n {
+		return 0, fmt.Errorf("kdbush: %d coords for %d points", len(coords), n)
+	}
+
+	var written int64
 	var header [diskHeaderSize]byte
 	copy(header[0:4], diskMagic[:])
 	diskByteOrder.PutUint32(header[4:8], diskVersion)
@@ -208,38 +247,43 @@ func BuildDiskWithMapping[V encoding.BinaryMarshaler, VP binaryPointer[V]](
 	nn, err := w.Write(header[:])
 	written += int64(nn)
 	if err != nil {
-		return written, nil, fmt.Errorf("kdbush: writing header: %w", err)
+		return written, fmt.Errorf("kdbush: writing header: %w", err)
 	}
 
-	// sorted indices
 	n64, err := diskWriteInts(w, idxs)
 	written += n64
 	if err != nil {
-		return written, nil, fmt.Errorf("kdbush: writing indices: %w", err)
+		return written, fmt.Errorf("kdbush: writing indices: %w", err)
 	}
 
-	// sorted coordinates
 	n64, err = diskWriteFloat64s(w, coords)
 	written += n64
 	if err != nil {
-		return written, nil, fmt.Errorf("kdbush: writing coords: %w", err)
+		return written, fmt.Errorf("kdbush: writing coords: %w", err)
 	}
 
-	// data offset table
-	n64, err = diskWriteInt64s(w, offsets)
-	written += n64
-	if err != nil {
-		return written, nil, fmt.Errorf("kdbush: writing data offsets: %w", err)
-	}
+	return written, nil
+}
 
-	// data blobs
-	n64, err = diskWriteBlobs(w, blobs)
-	written += n64
-	if err != nil {
-		return written, nil, fmt.Errorf("kdbush: writing data blobs: %w", err)
+// WriteFixedOffsets writes the cumulative byte-offset table for n records of
+// recordSize bytes each.
+func WriteFixedOffsets(w io.Writer, n, recordSize int) (int64, error) {
+	const chunk = 4096
+	buf := make([]int64, min(n+1, chunk))
+	var written int64
+	for i := 0; i <= n; {
+		cnt := min(n+1-i, chunk)
+		for j := 0; j < cnt; j++ {
+			buf[j] = int64(i+j) * int64(recordSize)
+		}
+		nn, err := diskWriteInt64s(w, buf[:cnt])
+		written += nn
+		if err != nil {
+			return written, err
+		}
+		i += cnt
 	}
-
-	return written, idxs, nil
+	return written, nil
 }
 
 // ---------------------------------------------------------------------------

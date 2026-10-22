@@ -17,6 +17,7 @@ import (
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/royalcat/osmpbfdb"
+	"github.com/royalcat/rgeocache/cachesaver"
 	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
 	"github.com/royalcat/rgeocache/fgeocode"
 	"github.com/royalcat/rgeocache/geocoder"
@@ -149,8 +150,32 @@ func main() {
 						Value:       60000,
 						DefaultText: "60000",
 					},
+					&cli.StringFlag{
+						Name:      "spool-dir",
+						TakesFile: true,
+						Usage:     "directory for the on-disk generation spool (defaults to <output-v2>.spool; removed on success)",
+					},
 				},
 				Action: generate,
+			},
+			{
+				Name:  "convert",
+				Usage: "convert a v2 cache into the legacy v1 format",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:      "points",
+						Aliases:   []string{"p", "input"},
+						Required:  true,
+						TakesFile: true,
+					},
+					&cli.StringFlag{
+						Name:      "output",
+						Aliases:   []string{"o"},
+						Required:  true,
+						TakesFile: true,
+					},
+				},
+				Action: convertV1,
 			},
 			{
 				Name: "analyze",
@@ -233,6 +258,26 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 
 	version := cmd.Int("version")
 
+	v1Path := normalizeCachePath(cmd.String("output"))
+	v2Path := normalizeCachePath(cmd.String("output-v2"))
+	if v1Path == "" && v2Path == "" {
+		return fmt.Errorf("either 'output' or 'output-v2' must be set")
+	}
+	removeTempV2 := false
+	if v2Path == "" {
+		// v1 is produced from a v2 cache, so a v1-only request writes a
+		// temporary v2 next to the output and removes it afterwards.
+		v2Path = v1Path + ".v2.tmp.rgc"
+		removeTempV2 = true
+		defer func() { _ = os.Remove(v2Path) }()
+	}
+	spoolDir := cmd.String("spool-dir")
+	if spoolDir == "" {
+		// Default to disk next to the output: /tmp may be a memory-backed
+		// filesystem, and the spool is one to ten gigabytes.
+		spoolDir = v2Path + ".spool"
+	}
+
 	if pprofListen := cmd.String("pprof.listen"); pprofListen != "" {
 		go func() {
 			log.Info("Starting pprof server", "address", pprofListen)
@@ -270,7 +315,7 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 		inputsReaders = append(inputsReaders, file)
 	}
 
-	log.Info("Tuning gc to respect only soft mem limit")
+	log.Info("Tuning GC for bounded batch generation")
 	err = tuneGC()
 	if err != nil {
 		log.Error("Error tuning gc", "error", err)
@@ -290,8 +335,10 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	config := geoparser.ConfigDefault()
+	config.Threads = threads
 	config.PreferredLocalization = preferredLocalization
 	config.Version = uint32(version)
+	config.SpoolDir = spoolDir
 
 	geoGen, err := geoparser.NewGeoGen(osmdb, config)
 	if err != nil {
@@ -299,51 +346,15 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	log.Info("Creating OSM cache")
-
-	outputs := []geoparser.ParseOutput{}
-	if saveFilePath := cmd.String("output"); saveFilePath != "" {
-		if !strings.HasSuffix(saveFilePath, ".rgc") {
-			saveFilePath = saveFilePath + ".rgc"
-		}
-
-		log.Info("Saving cache in v1 format", "path", saveFilePath)
-
-		outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
-		if err != nil {
-			return err
-		}
-		defer outputFile.Close()
-
-		outputs = append(outputs, geoparser.ParseOutput{
-			Format: "v1",
-			Writer: outputFile,
-		})
+	log.Info("Saving cache in v2 format", "path", v2Path)
+	v2File, err := os.OpenFile(v2Path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+	if err != nil {
+		return err
 	}
-	if saveFilePath := cmd.String("output-v2"); saveFilePath != "" {
-		if !strings.HasSuffix(saveFilePath, ".rgc") {
-			saveFilePath = saveFilePath + ".rgc"
-		}
-
-		outputFile, err := os.OpenFile(saveFilePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
-		if err != nil {
-			return err
-		}
-		defer outputFile.Close()
-
-		log.Info("Saving cache in v2 format", "path", saveFilePath)
-
-		outputs = append(outputs, geoparser.ParseOutput{
-			Format: "v2",
-			Writer: outputFile,
-		})
+	err = geoGen.ParseOSMData([]geoparser.ParseOutput{{Format: "v2", Writer: v2File}})
+	if closeErr := v2File.Close(); err == nil {
+		err = closeErr
 	}
-
-	if len(outputs) == 0 {
-		log.Info("No output specified")
-		return nil
-	}
-
-	err = geoGen.ParseOSMData(outputs)
 	if err != nil {
 		return fmt.Errorf("error parsing osm with error: %s", err.Error())
 	}
@@ -352,6 +363,28 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 		err := writeHeapProfile("profile")
 		if err != nil {
 			return fmt.Errorf("error writing heap profile: %s", err.Error())
+		}
+	}
+
+	if v1Path != "" {
+		debug.FreeOSMemory()
+		log.Info("Converting cache to v1 format", "path", v1Path)
+		v1File, err := os.OpenFile(v1Path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+		if err != nil {
+			return err
+		}
+		err = cachesaver.ConvertV2ToV1(v2Path, v1File)
+		if closeErr := v1File.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return fmt.Errorf("error converting cache to v1: %w", err)
+		}
+	}
+
+	if removeTempV2 {
+		if err := os.Remove(v2Path); err != nil && !os.IsNotExist(err) {
+			log.Warn("Failed to remove temporary v2 cache", "path", v2Path, "error", err)
 		}
 	}
 
@@ -374,6 +407,28 @@ func writeHeapProfile(name string) error {
 	}
 	defer f.Close()
 	return pprof.WriteHeapProfile(f)
+}
+
+func normalizeCachePath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if !strings.HasSuffix(path, ".rgc") {
+		return path + ".rgc"
+	}
+	return path
+}
+
+func convertV1(_ context.Context, cmd *cli.Command) error {
+	out, err := os.OpenFile(cmd.String("output"), os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	err = cachesaver.ConvertV2ToV1(cmd.String("points"), out)
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 const defaultSearchRadius = 0.01
@@ -482,7 +537,7 @@ func detectV2Cache(file string) bool {
 
 func tuneGC() error {
 	_, err := memlimit.Set(
-		memlimit.WithRatio(0.5),
+		memlimit.WithRatio(0.85),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(
 				memlimit.FromCgroup,
@@ -495,6 +550,9 @@ func tuneGC() error {
 		return fmt.Errorf("error setting memory limit: %s", err.Error())
 	}
 
-	debug.SetGCPercent(-1)
+	// Generation is memory-bound, not allocation-throughput-bound. Keep normal
+	// collection pacing and a soft limit below the host RAM: with GOGC=off the
+	// heap grew to tens of gigabytes and the process was OOM-killed on CI.
+	debug.SetGCPercent(100)
 	return nil
 }
