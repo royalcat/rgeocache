@@ -16,6 +16,28 @@ import (
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
+// newZoneBorderTrees builds the runtime region and country indexes. Regions
+// use smallest-area selection so overlapping admin_level=4 boundaries (for
+// example former provinces and current regions) resolve independently of the
+// order the zones were loaded. Countries keep the original first-match
+// behavior because a country tree is not an administrative hierarchy.
+func newZoneBorderTrees(zones []cachemodel.Zone) (
+	*bordertree.BorderTree[unique.Handle[string]],
+	*bordertree.BorderTree[unique.Handle[string]],
+) {
+	regions := bordertree.NewBorderTreeWithSelection[unique.Handle[string]](bordertree.Smallest)
+	countries := bordertree.NewBorderTree[unique.Handle[string]]()
+	for _, zone := range zones {
+		switch zone.Type {
+		case cachemodel.ZoneRegion:
+			regions.InsertBorderKeyed(zone.Name, zone.Name.Value(), zone.Polygon)
+		case cachemodel.ZoneCountry:
+			countries.InsertBorder(zone.Name, zone.Polygon)
+		}
+	}
+	return regions, countries
+}
+
 func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 	options := loadOptions(opts...)
 	log := options.logger
@@ -29,16 +51,7 @@ func LoadGeoCoderFromReader(r io.Reader, opts ...Option) (*RGeoCoder, error) {
 	points := optimizePoints(pointsRaw)
 	tree := kdbush.NewBush(points, kdbush.DefaultNodeSize)
 
-	regions := bordertree.NewBorderTree[unique.Handle[string]]()
-	countries := bordertree.NewBorderTree[unique.Handle[string]]()
-	for _, zone := range zonesRaw {
-		switch zone.Type {
-		case cachemodel.ZoneRegion:
-			regions.InsertBorder(zone.Name, zone.Polygon)
-		case cachemodel.ZoneCountry:
-			countries.InsertBorder(zone.Name, zone.Polygon)
-		}
-	}
+	regions, countries := newZoneBorderTrees(zonesRaw)
 
 	rgeo := newRGeoCoder(tree, regions, countries, opts...)
 	rgeo.zones = zonesRaw
@@ -74,16 +87,7 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 	points := optimizePoints(pointsRaw)
 	f.tree = kdbush.NewBush(points, 256)
 
-	f.regions = bordertree.NewBorderTree[unique.Handle[string]]()
-	f.countries = bordertree.NewBorderTree[unique.Handle[string]]()
-	for _, zone := range zonesRaw {
-		switch zone.Type {
-		case cachemodel.ZoneRegion:
-			f.regions.InsertBorder(zone.Name, zone.Polygon)
-		case cachemodel.ZoneCountry:
-			f.countries.InsertBorder(zone.Name, zone.Polygon)
-		}
-	}
+	f.regions, f.countries = newZoneBorderTrees(zonesRaw)
 	f.zones = zonesRaw
 	if metadata != nil {
 		f.metadata = *metadata
@@ -97,8 +101,7 @@ func (f *RGeoCoder) LoadFromPointsFile(file string) error {
 func NewGeoCoderFromPoints(points []cachemodel.Point, opts ...Option) *RGeoCoder {
 	optimized := optimizePoints(points)
 	tree := kdbush.NewBush(optimized, 128)
-	regions := bordertree.NewBorderTree[unique.Handle[string]]()
-	countries := bordertree.NewBorderTree[unique.Handle[string]]()
+	regions, countries := newZoneBorderTrees(nil)
 	return newRGeoCoder(tree, regions, countries, opts...)
 }
 

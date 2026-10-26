@@ -58,9 +58,9 @@ func writeSpoolBody(
 	}
 	slog.Info("Writing v2 cache from spool", "points", n, "edges", sp.NumEdges())
 
-	// 1. Canonicalize road node occurrences by OSM node key. The first
-	// occurrence of a node (lowest point index) wins, matching the previous
-	// "first way claims the node" behavior.
+	// 1. Canonicalize road node occurrences by OSM node key. The occurrence
+	// with the lowest ClaimSeq wins; ClaimSeq is assigned from the way input
+	// order, so the result is deterministic across runs.
 	canonical, nodeCount, err := canonicalizePoints(sp, workDir)
 	if err != nil {
 		return err
@@ -256,7 +256,14 @@ func canonicalizePoints(sp *spool.Reader, workDir string) ([]uint32, int, error)
 			return nil
 		}
 		canonical[occ] = uint32(occ)
-		return sorter.Add(p.NodeKey, p.ClaimSeq, uint32(occ))
+		// Prefer a way that carries a street or name over one that does not.
+		// The high bit sorts empty occurrences after named ones; the low bits
+		// keep the deterministic way input order within each group.
+		priority := uint32(0)
+		if p.StreetID == 0 && p.NameID == 0 {
+			priority = 1 << 31
+		}
+		return sorter.Add(p.NodeKey, priority|p.ClaimSeq, uint32(occ))
 	}); err != nil {
 		return nil, 0, err
 	}

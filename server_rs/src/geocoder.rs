@@ -62,8 +62,8 @@ impl Geocoder {
         cache: Arc<CacheFile>,
         search_radius: f64,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let regions = BorderTree::build(&cache.zones, crate::cache::ZoneType::Region);
-        let countries = BorderTree::build(&cache.zones, crate::cache::ZoneType::Country);
+        let regions = BorderTree::build(&cache.zones, crate::cache::ZoneType::Region, true);
+        let countries = BorderTree::build(&cache.zones, crate::cache::ZoneType::Country, false);
 
         log::info!(
             "Loaded v2 cache: {} points, {} zones, node_size={}",

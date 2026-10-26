@@ -27,9 +27,9 @@ const (
 
 // Point is one cache point as it is written during parsing. NodeKey is the OSM
 // node id for a road shape point, a unique synthetic key for an interpolated
-// road point, and 0 for every other point. ClaimSeq is the order in which the
-// parser encountered the point; it decides which way's attributes win when
-// several ways share a node.
+// road point, and 0 for every other point. ClaimSeq is the way's deterministic
+// input order; it decides which way's attributes win when several ways share a
+// node.
 type Point struct {
 	X, Y                                    float64
 	NameID, StreetID, HouseNumberID, CityID uint32

@@ -37,13 +37,22 @@ func (f *GeoGen) parseDatabase() error {
 		if parseErr != nil {
 			return
 		}
+		// Assign claim sequence in the single-threaded consume loop, not in
+		// the worker, so a shared node always canonicalizes to the same way
+		// regardless of goroutine scheduling.
+		var waySeq uint32
 		for obj, err := range iterWithProgress(source, total, name) {
 			if err != nil {
 				parseErr = err
 				return
 			}
+			seq := waySeq
+			if _, ok := obj.(*osm.Way); ok {
+				waySeq++
+				seq = waySeq
+			}
 			pool.Go(func() {
-				f.parseObject(obj)
+				f.parseObject(obj, seq)
 			})
 		}
 	}

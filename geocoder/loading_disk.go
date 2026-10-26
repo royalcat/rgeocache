@@ -3,11 +3,9 @@ package geocoder
 import (
 	"encoding/binary"
 	"fmt"
-	"unique"
 
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
 	savev2 "github.com/royalcat/rgeocache/cachesaver/save/v2"
-	"github.com/royalcat/rgeocache/internal/bordertree"
 	"golang.org/x/exp/mmap"
 )
 
@@ -56,17 +54,8 @@ func LoadGeoCoderFromFileDisk(file string, opts ...Option) (*RGeoCoderDisk, erro
 		return nil, fmt.Errorf("error loading v2 cache via mmap: %w", err)
 	}
 
-	// Build border trees for region/country lookups
-	regions := bordertree.NewBorderTree[unique.Handle[string]]()
-	countries := bordertree.NewBorderTree[unique.Handle[string]]()
-	for _, zone := range result.Zones {
-		switch zone.Type {
-		case cachemodel.ZoneRegion:
-			regions.InsertBorder(zone.Name, zone.Polygon)
-		case cachemodel.ZoneCountry:
-			countries.InsertBorder(zone.Name, zone.Polygon)
-		}
-	}
+	// Build border trees for region/country lookups.
+	regions, countries := newZoneBorderTrees(result.Zones)
 
 	log.Info("v2 geocoder loaded via mmap",
 		"num_points", result.DiskBush.NumPoints(),

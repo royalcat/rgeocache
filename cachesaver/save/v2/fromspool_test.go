@@ -171,6 +171,41 @@ func TestCanonicalizePicksLowestClaimSeq(t *testing.T) {
 	}
 }
 
+func TestCanonicalizePrefersNamedStreet(t *testing.T) {
+	dir := t.TempDir()
+	sp, err := spool.Create(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := strtab.New()
+	street := table.Add("Named street")
+	for _, p := range []spool.Point{
+		{X: 0, Y: 0, NodeKey: 42, ClaimSeq: 1},
+		{X: 0, Y: 0, NodeKey: 42, ClaimSeq: 2, StreetID: street},
+		{X: 0, Y: 0, NodeKey: 42, ClaimSeq: 3},
+	} {
+		if err := sp.WritePoint(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := sp.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sr, err := spool.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, _, err := canonicalizePoints(sr, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, occ := range []int{0, 1, 2} {
+		if canonical[occ] != 1 {
+			t.Fatalf("occurrence %d canonicalized to %d, want named occurrence 1", occ, canonical[occ])
+		}
+	}
+}
+
 func roadInfo(street, city, region string) cachemodel.Info {
 	return cachemodel.Info{
 		Name:        unique.Make(""),

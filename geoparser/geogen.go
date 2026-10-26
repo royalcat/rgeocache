@@ -42,9 +42,6 @@ type GeoGen struct {
 	// synthKeySeq assigns unique node keys to interpolated road points. The
 	// high bit is set so they can never collide with a real OSM node id.
 	synthKeySeq atomic.Uint64
-	// claimSeq is the parser's encounter order for road points. It decides
-	// which way's attributes win at a node shared by several ways.
-	claimSeq atomic.Uint32
 
 	parsedItems chan parseItem
 
@@ -62,8 +59,8 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 		osmdb:  db,
 		config: config,
 
-		placeIndex:        bordertree.NewBorderTree[string](),
-		regionIndex:       bordertree.NewBorderTree[string](),
+		placeIndex:        bordertree.NewBorderTreeWithSelection[string](bordertree.Largest),
+		regionIndex:       bordertree.NewBorderTreeWithSelection[string](bordertree.Smallest),
 		localizationCache: xsync.NewMapOf[string, string](),
 
 		parsedWays:      idset.New(),
@@ -77,8 +74,8 @@ func NewGeoGen(db osmpbfdb.OsmDB, config Config) (*GeoGen, error) {
 }
 
 func (f *GeoGen) ResetCache() error {
-	f.placeIndex = bordertree.NewBorderTree[string]()
-	f.regionIndex = bordertree.NewBorderTree[string]()
+	f.placeIndex = bordertree.NewBorderTreeWithSelection[string](bordertree.Largest)
+	f.regionIndex = bordertree.NewBorderTreeWithSelection[string](bordertree.Smallest)
 	f.localizationCache = xsync.NewMapOf[string, string]()
 	runtime.GC()
 

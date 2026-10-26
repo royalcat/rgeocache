@@ -56,7 +56,7 @@ func (f *GeoGen) cacheRelPlace(rel *osm.Relation) {
 
 		f.cacheLocalization(rel.Tags)
 
-		f.placeIndex.InsertBorder(name, mpoly)
+		f.placeIndex.InsertBorderKeyed(name, name, mpoly)
 	}
 }
 
@@ -83,6 +83,6 @@ func (f *GeoGen) cacheRelRegion(rel *osm.Relation) {
 		}
 
 		f.cacheLocalization(rel.Tags)
-		f.regionIndex.InsertBorder(name, mpoly)
+		f.regionIndex.InsertBorderKeyed(name, name, mpoly)
 	}
 }

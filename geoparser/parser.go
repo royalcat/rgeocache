@@ -2,6 +2,7 @@ package geoparser
 
 import (
 	"log/slog"
+	"math/rand"
 	"strings"
 	"unique"
 
@@ -15,7 +16,7 @@ import (
 	"github.com/paulmach/osm"
 )
 
-func (f *GeoGen) parseObject(o osm.Object) {
+func (f *GeoGen) parseObject(o osm.Object, claimSeq uint32) {
 	switch obj := o.(type) {
 	case *osm.Node:
 		f.seenNodes.Add(1)
@@ -24,7 +25,7 @@ func (f *GeoGen) parseObject(o osm.Object) {
 		}
 	case *osm.Way:
 		f.seenWays.Add(1)
-		f.send(f.parseWay(obj))
+		f.send(f.parseWay(obj, claimSeq))
 	case *osm.Relation:
 		f.seenRelations.Add(1)
 		for _, item := range f.parseRelation(obj) {
@@ -71,8 +72,8 @@ type geoPoint struct {
 	// NodeKey identifies the OSM node shared by road shape points. It is a
 	// unique synthetic key for interpolated points and 0 for non-road points.
 	NodeKey uint64 `json:"node_key"`
-	// ClaimSeq is the parser's encounter order, used to pick which way's
-	// attributes win at a shared node.
+	// ClaimSeq is the way's deterministic input order, used to pick which
+	// way's attributes win at a shared node.
 	ClaimSeq uint32 `json:"claim_seq"`
 }
 
@@ -106,7 +107,7 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 	return geoPoint{}, false
 }
 
-func (f *GeoGen) parseWay(way *osm.Way) parseItem {
+func (f *GeoGen) parseWay(way *osm.Way, claimSeq uint32) parseItem {
 	if !f.parsedWays.Add(int64(way.ID)) {
 		f.parsedWaysDupes.Add(1)
 		return parseItem{}
@@ -116,7 +117,7 @@ func (f *GeoGen) parseWay(way *osm.Way) parseItem {
 		return parseItem{Points: f.parseWayBuilding(way)}
 	}
 	if _, ok := highwayClasses[way.Tags.Find("highway")]; ok {
-		return f.parseWayHighway(way)
+		return f.parseWayHighway(way, claimSeq)
 	}
 
 	return parseItem{}
@@ -169,7 +170,7 @@ var highwayClasses = map[string]uint8{
 // points get unique synthetic node keys, so they are never merged with anything
 // else; the graph simplifier drops them again wherever the span is short
 // enough.
-func (f *GeoGen) parseWayHighway(way *osm.Way) parseItem {
+func (f *GeoGen) parseWayHighway(way *osm.Way, claimSeq uint32) parseItem {
 	class, ok := highwayClasses[way.Tags.Find("highway")]
 	if !ok {
 		return parseItem{}
@@ -205,7 +206,6 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) parseItem {
 
 		local := len(out.Points)
 		point := orb.Point{lon, lat}
-		claimSeq := f.claimSeq.Add(1)
 		out.Points = append(out.Points, geoPoint{
 			Point:       point,
 			Name:        name,
@@ -228,7 +228,6 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) parseItem {
 
 			for _, p := range interpolateRoadSegment(prevLon, prevLat, lon, lat) {
 				synthLocal := len(out.Points)
-				synthSeq := f.claimSeq.Add(1)
 				out.Points = append(out.Points, geoPoint{
 					Point:       p,
 					Name:        name,
@@ -239,7 +238,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way) parseItem {
 					Weight:      weightRoad,
 					Type:        cachemodel.GeoObjectRoad,
 					NodeKey:     f.syntheticNodeKey(),
-					ClaimSeq:    synthSeq,
+					ClaimSeq:    claimSeq,
 				})
 				out.Edges = append(out.Edges, edgeRef{
 					FromLocal: uint32(fromLocal),
@@ -398,7 +397,11 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []parseItem {
 			continue
 		}
 
-		item := f.parseWay(way)
+		// Route-member ways are normally already parsed by the main way pass,
+		// so this is a no-op. If one is missing from that pass there is no
+		// stable input-order claim for it; 0 keeps the canonicalization
+		// deterministic (and the way is still emitted).
+		item := f.parseWay(way, 0)
 		if len(item.Points) > 0 || len(item.Edges) > 0 {
 			out = append(out, item)
 		}
@@ -420,7 +423,7 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 		return []geoPoint{}
 	}
 
-	points := fillPolygonWithPoints(poly, 0.01/2)
+	points := fillPolygonWithPoints(poly, 0.01/2, int64(rel.ID))
 
 	out := make([]geoPoint, 0, len(points))
 	for _, p := range points {
@@ -489,10 +492,18 @@ func (f *GeoGen) parseRelationCountry(rel *osm.Relation) {
 	})
 }
 
-func fillPolygonWithPoints(poly orb.MultiPolygon, distance float64) []orb.Point {
+func fillPolygonWithPoints(poly orb.MultiPolygon, distance float64, seed int64) []orb.Point {
 	// 1. Get the bounding box of the polygon
 	bound := poly.Bound()
-	points := poissondisc.Sample(bound.Min.X(), bound.Min.Y(), bound.Max.X(), bound.Max.Y(), distance, 10, nil)
+	points := poissondisc.Sample(
+		bound.Min.X(),
+		bound.Min.Y(),
+		bound.Max.X(),
+		bound.Max.Y(),
+		distance,
+		10,
+		rand.New(rand.NewSource(seed)),
+	)
 
 	// 2. Filter points inside the polygon
 	pointsInside := make([]orb.Point, 0)
