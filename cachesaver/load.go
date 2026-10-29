@@ -61,7 +61,7 @@ func LoadFromReader(reader io.Reader, log *slog.Logger) ([]kdbush.Point[cachemod
 	switch compatibilityLevel {
 	case savev1.COMPATIBILITY_LEVEL:
 		log.Info("Loading v1 cache format")
-		points, zones, metadata, err := loadV1Cache(reader)
+		points, zones, metadata, err := loadV1Cache(reader, log)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("error loading v1 cache: %s", err.Error())
 		}
