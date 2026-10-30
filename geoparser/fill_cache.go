@@ -17,7 +17,7 @@ func (f *GeoGen) fillRelCache() error {
 	pool := pool.New().WithMaxGoroutines(f.config.Threads)
 	defer pool.Wait()
 
-	for rel, err := range iterWithProgress(f.osmdb.IterRelations(), int(f.osmdb.CountRelations()), "3/4 filling relations cache") {
+	for rel, err := range iterWithProgress(f.osmdb.IterRelations(), int(f.osmdb.CountRelations()), "3/5 filling relations cache") {
 		if err != nil {
 			return err
 		}
@@ -65,12 +65,12 @@ func (f *GeoGen) parseDatabase() error {
 		castIterToObject(f.osmdb.IterNodes()),
 		castIterToObject(f.osmdb.IterWays()),
 	)
-	consume(nodesWays, int(f.osmdb.CountNodes()+f.osmdb.CountWays()), "4/4 generating nodes and ways")
+	consume(nodesWays, int(f.osmdb.CountNodes()+f.osmdb.CountWays()), "4/5 generating nodes and ways")
 
 	// Relations are a separate pass. Running three sources concurrently made
 	// the OSM window cache drop relation windows under collector backpressure;
 	// the relation set is small enough that a dedicated pass costs little.
-	consume(castIterToObject(f.osmdb.IterRelations()), int(f.osmdb.CountRelations()), "4/4 generating relations")
+	consume(castIterToObject(f.osmdb.IterRelations()), int(f.osmdb.CountRelations()), "5/5 generating relations")
 
 	pool.Wait()
 	if parseErr != nil {
