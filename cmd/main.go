@@ -155,6 +155,18 @@ func main() {
 						TakesFile: true,
 						Usage:     "directory for the on-disk generation spool (defaults to <output-v2>.spool; removed on success)",
 					},
+					&cli.StringFlag{
+						Name:        "v1-roads",
+						Value:       string(cachesaver.V1RoadsMajor),
+						DefaultText: "major",
+						Usage:       "road points kept in the v1 cache: major (motorway..tertiary), all, none",
+					},
+					&cli.Float64Flag{
+						Name:        "v1-road-spacing",
+						Value:       cachesaver.V1RoadSpacingMeters,
+						DefaultText: "150",
+						Usage:       "thin v1 road points to one per street per this many metres (0 disables thinning)",
+					},
 				},
 				Action: generate,
 			},
@@ -173,6 +185,18 @@ func main() {
 						Aliases:   []string{"o"},
 						Required:  true,
 						TakesFile: true,
+					},
+					&cli.StringFlag{
+						Name:        "v1-roads",
+						Value:       string(cachesaver.V1RoadsMajor),
+						DefaultText: "major",
+						Usage:       "road points kept in the v1 cache: major (motorway..tertiary), all, none",
+					},
+					&cli.Float64Flag{
+						Name:        "v1-road-spacing",
+						Value:       cachesaver.V1RoadSpacingMeters,
+						DefaultText: "150",
+						Usage:       "thin v1 road points to one per street per this many metres (0 disables thinning)",
 					},
 				},
 				Action: convertV1,
@@ -278,6 +302,12 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 		spoolDir = v2Path + ".spool"
 	}
 
+	// Validate the v1 options before the (long) generation starts.
+	v1Opts, err := v1ConvertOptions(cmd)
+	if err != nil {
+		return err
+	}
+
 	if pprofListen := cmd.String("pprof.listen"); pprofListen != "" {
 		go func() {
 			log.Info("Starting pprof server", "address", pprofListen)
@@ -373,7 +403,7 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 		if err != nil {
 			return err
 		}
-		err = cachesaver.ConvertV2ToV1(v2Path, v1File)
+		err = cachesaver.ConvertV2ToV1WithOptions(v2Path, v1File, v1Opts)
 		if closeErr := v1File.Close(); err == nil {
 			err = closeErr
 		}
@@ -420,15 +450,38 @@ func normalizeCachePath(path string) string {
 }
 
 func convertV1(_ context.Context, cmd *cli.Command) error {
+	opts, err := v1ConvertOptions(cmd)
+	if err != nil {
+		return err
+	}
 	out, err := os.OpenFile(cmd.String("output"), os.O_CREATE|os.O_TRUNC|os.O_RDWR, os.ModePerm)
 	if err != nil {
 		return err
 	}
-	err = cachesaver.ConvertV2ToV1(cmd.String("points"), out)
+	err = cachesaver.ConvertV2ToV1WithOptions(cmd.String("points"), out, opts)
 	if closeErr := out.Close(); err == nil {
 		err = closeErr
 	}
 	return err
+}
+
+// v1ConvertOptions parses the v1 point-filter flags shared by generate and
+// convert.
+func v1ConvertOptions(cmd *cli.Command) (cachesaver.ConvertOptions, error) {
+	spacing := cmd.Float64("v1-road-spacing")
+	if spacing < 0 {
+		return cachesaver.ConvertOptions{}, fmt.Errorf("v1-road-spacing must not be negative: %v", spacing)
+	}
+	roads := cachesaver.V1RoadMode(cmd.String("v1-roads"))
+	switch roads {
+	case cachesaver.V1RoadsMajor, cachesaver.V1RoadsAll, cachesaver.V1RoadsNone:
+	default:
+		return cachesaver.ConvertOptions{}, fmt.Errorf(
+			"invalid v1-roads %q (want %q, %q or %q)",
+			roads, cachesaver.V1RoadsMajor, cachesaver.V1RoadsAll, cachesaver.V1RoadsNone,
+		)
+	}
+	return cachesaver.ConvertOptions{Roads: roads, RoadSpacingMeters: spacing}, nil
 }
 
 const defaultSearchRadius = 0.01

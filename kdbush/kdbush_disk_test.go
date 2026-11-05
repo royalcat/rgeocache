@@ -433,6 +433,49 @@ func TestDisk_WrittenSize(t *testing.T) {
 	}
 }
 
+// TestDisk_ForEachPos verifies that ForEachPos visits every point exactly once
+// in ascending sorted-position order, matching ForEach and CoordAt.
+func TestDisk_ForEachPos(t *testing.T) {
+	const n = 1000
+	pts := generateTestPoints(n)
+	disk := buildAndOpen(t, pts, 32)
+
+	var forEach []int
+	if err := disk.ForEach(func(p Point[testData]) bool {
+		forEach = append(forEach, p.Data.Value)
+		return true
+	}); err != nil {
+		t.Fatalf("ForEach: %v", err)
+	}
+
+	var forEachPos []int
+	next := 0
+	if err := disk.ForEachPos(func(pos int, p Point[testData]) bool {
+		if pos != next {
+			t.Fatalf("position: got %d, want %d", pos, next)
+		}
+		next++
+		x, y, err := disk.CoordAt(pos)
+		if err != nil {
+			t.Fatalf("CoordAt(%d): %v", pos, err)
+		}
+		if x != p.X || y != p.Y {
+			t.Fatalf("coords at %d: got (%v,%v), want (%v,%v)", pos, x, y, p.X, p.Y)
+		}
+		forEachPos = append(forEachPos, p.Data.Value)
+		return true
+	}); err != nil {
+		t.Fatalf("ForEachPos: %v", err)
+	}
+
+	if next != n {
+		t.Fatalf("visited %d points, want %d", next, n)
+	}
+	if !slices.Equal(forEach, forEachPos) {
+		t.Fatalf("ForEach and ForEachPos orders differ")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Benchmarks
 // ---------------------------------------------------------------------------

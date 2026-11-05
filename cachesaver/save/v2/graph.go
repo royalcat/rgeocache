@@ -191,6 +191,59 @@ func FindGraphSection(r io.ReaderAt, size int64) (*GraphSection, error) {
 	return g, nil
 }
 
+// graphEdgeChunk is the number of edge records read per chunk by ForEachEdge.
+// One chunk is 8192*18 = 144 KiB plus the offset pairs.
+const graphEdgeChunk = 8192
+
+// ForEachEdge calls fn for every edge in original index order. Records are read
+// in chunks (unlike calling Edge per index, which does three reads each), while
+// still validating every record's length against the offset table. Iteration
+// stops early when fn returns false.
+func (g *GraphSection) ForEachEdge(r io.ReaderAt, fn func(GraphEdgeRecord) bool) error {
+	if g.EdgeCount == 0 {
+		return nil
+	}
+
+	recordBuf := make([]byte, graphEdgeChunk*graphEdgeRecordSize)
+	offsetBuf := make([]byte, (graphEdgeChunk+1)*8)
+	for start := uint64(0); start < g.EdgeCount; start += graphEdgeChunk {
+		count := min(g.EdgeCount-start, graphEdgeChunk)
+
+		if _, err := r.ReadAt(offsetBuf[:(count+1)*8], g.dataOffsets+int64(start)*8); err != nil {
+			return fmt.Errorf("savev2: graph edges[%d:%d]: reading offsets: %w", start, start+count, err)
+		}
+		first := binary.LittleEndian.Uint64(offsetBuf[0:8])
+		last := binary.LittleEndian.Uint64(offsetBuf[count*8 : count*8+8])
+		if last-first != count*graphEdgeRecordSize {
+			return fmt.Errorf("savev2: graph edges[%d:%d]: invalid record sizes", start, start+count)
+		}
+		for i := uint64(0); i < count; i++ {
+			a := binary.LittleEndian.Uint64(offsetBuf[i*8:])
+			b := binary.LittleEndian.Uint64(offsetBuf[(i+1)*8:])
+			if b-a != graphEdgeRecordSize {
+				return fmt.Errorf("savev2: graph edge[%d]: invalid record size %d", start+i, b-a)
+			}
+		}
+
+		data := recordBuf[:count*graphEdgeRecordSize]
+		if _, err := r.ReadAt(data, g.dataBlobs+int64(first)); err != nil {
+			return fmt.Errorf("savev2: graph edges[%d:%d]: reading records: %w", start, start+count, err)
+		}
+
+		for i := uint64(0); i < count; i++ {
+			begin := i * graphEdgeRecordSize
+			var rec graphEdgeRecord
+			if err := rec.UnmarshalBinary(data[begin : begin+graphEdgeRecordSize]); err != nil {
+				return fmt.Errorf("savev2: graph edge[%d]: %w", start+i, err)
+			}
+			if !fn(GraphEdgeRecord(rec)) {
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
 // Edge returns the graph edge at original index orig.
 func (g *GraphSection) Edge(r io.ReaderAt, orig uint64) (GraphEdgeRecord, error) {
 	if orig >= g.EdgeCount {

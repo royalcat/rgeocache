@@ -351,6 +351,81 @@ func TestGraphSectionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestGraphSectionForEachEdge(t *testing.T) {
+	roadInfo := cachemodel.Info{
+		Name:        unique.Make(""),
+		Street:      unique.Make("Road"),
+		HouseNumber: unique.Make(""),
+		City:        unique.Make(""),
+		Region:      unique.Make(""),
+		Weight:      5,
+		Type:        cachemodel.GeoObjectRoad,
+	}
+	points := []cachemodel.Point{
+		{X: 0, Y: 0, Data: roadInfo},
+		{X: 0.001, Y: 0.001, Data: roadInfo},
+		{X: 0.002, Y: 0, Data: roadInfo},
+	}
+	edges := []cachemodel.GraphEdge{
+		{
+			FromNode: 1, ToNode: 2,
+			Street: unique.Make("First Street"), Name: unique.Make(""),
+			Class: cachemodel.GraphClassPrimary, Oneway: cachemodel.GraphOnewayForward,
+		},
+		{
+			FromNode: 2, ToNode: 3,
+			Street: unique.Make("Second Street"), Name: unique.Make(""),
+			Class: cachemodel.GraphClassSecondary, Oneway: cachemodel.GraphOnewayBoth,
+		},
+	}
+
+	var buf bytes.Buffer
+	writeCacheFilePrefix(&buf)
+	if err := Save(&buf, graphItems(points, edges), sliceToSeq([]cachemodel.Zone{}), makeTestMetadata()); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	r := bytes.NewReader(buf.Bytes())
+	section, err := FindGraphSection(r, int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("FindGraphSection failed: %v", err)
+	}
+	if section.EdgeCount != uint64(len(edges)) {
+		t.Fatalf("edge count: got %d, want %d", section.EdgeCount, len(edges))
+	}
+
+	var got []GraphEdgeRecord
+	if err := section.ForEachEdge(r, func(e GraphEdgeRecord) bool {
+		got = append(got, e)
+		return true
+	}); err != nil {
+		t.Fatalf("ForEachEdge: %v", err)
+	}
+	if len(got) != len(edges) {
+		t.Fatalf("visited %d edges, want %d", len(got), len(edges))
+	}
+	for i := range got {
+		want, err := section.Edge(r, uint64(i))
+		if err != nil {
+			t.Fatalf("Edge(%d): %v", i, err)
+		}
+		if got[i] != want {
+			t.Errorf("edge %d: got %+v, want %+v", i, got[i], want)
+		}
+	}
+
+	visited := 0
+	if err := section.ForEachEdge(r, func(GraphEdgeRecord) bool {
+		visited++
+		return false
+	}); err != nil {
+		t.Fatalf("ForEachEdge early stop: %v", err)
+	}
+	if visited != 1 {
+		t.Fatalf("early stop visited %d edges, want 1", visited)
+	}
+}
+
 func TestNoGraphSection(t *testing.T) {
 	var buf bytes.Buffer
 	writeCacheFilePrefix(&buf)

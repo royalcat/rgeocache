@@ -119,6 +119,13 @@ const diskIterateBatchSize = 4096
 // Coordinates are read in leaf-sized batches; data blobs are read one point at
 // a time. Iteration stops early when fn returns false.
 func (d *DiskKDBush[V, VP]) ForEach(fn func(Point[V]) bool) error {
+	return d.ForEachPos(func(_ int, p Point[V]) bool { return fn(p) })
+}
+
+// ForEachPos is [DiskKDBush.ForEach], additionally passing the point's sorted
+// position (the same position CoordAt and graph edge endpoints use). Positions
+// are visited in ascending order.
+func (d *DiskKDBush[V, VP]) ForEachPos(fn func(pos int, p Point[V]) bool) error {
 	if d.numPoints == 0 {
 		return nil
 	}
@@ -134,7 +141,7 @@ func (d *DiskKDBush[V, VP]) ForEach(fn func(Point[V]) bool) error {
 			if err != nil {
 				return err
 			}
-			if !fn(Point[V]{X: coords[2*i], Y: coords[2*i+1], Data: data}) {
+			if !fn(left+i, Point[V]{X: coords[2*i], Y: coords[2*i+1], Data: data}) {
 				return nil
 			}
 		}

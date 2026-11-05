@@ -15,11 +15,13 @@ Usage examples:
 - ### Cache generation
 
 ```bash
-go run cmd/main.go generate --input russia.osm.pbf --input ./europe/belarus.osm.pbf --points cis_points
+go run cmd/main.go generate --input russia.osm.pbf --input ./europe/belarus.osm.pbf \
+  --output-v2 cis_points_v2.rgc --output cis_points.rgc
 ```
 
-where russia_points is the name of the cache file (will be saved with the .gob postfix)  
-russia.osm.pbf and ./europe/belarus.osm.pbf are input files
+where cis_points_v2.rgc is the v2 cache and cis_points.rgc is the derived v1 cache (optional).
+
+russia.osm.pbf and ./europe/belarus.osm.pbf are input files.
 
 Generating a cache of Russia will take about ~50GB of RAM. There is a possibility to shift the load from memory to disk by specifying the parameter --cache /tmp/rgeo_cache (you can specify any directory as the path), in this case, the generation process may significantly slow down
 
@@ -29,6 +31,19 @@ lies within 1e-7° (about a centimetre) of the straight run and at least one
 vertex per 150 m survives wherever OSM provides one — and additionally produce a
 road graph section appended to the v2 cache; the Rust server serves it through
 `/roadgraph/box`.
+
+- ### v1 cache conversion
+
+```bash
+go run cmd/main.go convert -p cis_points_v2.rgc -o cis_points.rgc
+```
+
+The v1 format has no road graph, so the converter writes only address-bearing
+points: every building and area, plus road points of the classes the legacy v1
+cache had (motorway through tertiary), thinned to one point per street per 150 m.
+`--v1-roads=all` keeps residential and unclassified roads too, `--v1-roads=none`
+drops all road points, and `--v1-road-spacing=0` disables thinning. `generate`
+applies the same defaults when it writes a v1 cache next to the v2 one.
 
 - ### HTTP Api
 

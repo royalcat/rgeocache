@@ -10,10 +10,10 @@ import (
 	"github.com/royalcat/rgeocache/kdbush"
 )
 
-// graphOnlyRoadWeight is the generator weight of road shape points (weightRoad
-// in geoparser). The v1 format has no geo type byte, so the weight is the only
+// roadPointWeight is the generator weight of road shape points (weightRoad in
+// geoparser). The v1 format has no geo type byte, so the weight is the only
 // road marker a loaded cache carries.
-const graphOnlyRoadWeight = 5
+const roadPointWeight = 5
 
 // skipGraphOnlyRoad reports whether a v1 point exists only to carry the v2 road
 // graph. Such a point is a road shape point with neither a street nor a name,
@@ -22,7 +22,7 @@ const graphOnlyRoadWeight = 5
 // City is ignored on purpose: a road point without a street or name is graph
 // geometry even when the settlement polygon it lies in was recorded on it.
 func skipGraphOnlyRoad(info cachemodel.Info) bool {
-	return info.Weight == graphOnlyRoadWeight &&
+	return info.Weight == roadPointWeight &&
 		info.Street.Value() == "" &&
 		info.Name.Value() == ""
 }
