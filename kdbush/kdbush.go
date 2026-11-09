@@ -165,7 +165,7 @@ func (bush *KDBush[T]) buildIndex(points []Point[T], nodeSize int) {
 	sort(bush.idxs, bush.coords, bush.nodeSize, 0, len(bush.idxs)-1, 0)
 }
 
-func sort(idxs []int, coords []float64, nodeSize int, left, right, depth int) {
+func sort[I ~int | ~uint32](idxs []I, coords []float64, nodeSize int, left, right, depth int) {
 	if (right - left) <= nodeSize {
 		return
 	}
@@ -179,7 +179,7 @@ func sort(idxs []int, coords []float64, nodeSize int, left, right, depth int) {
 
 }
 
-func sselect(idxs []int, coords []float64, k, left, right, inc int) {
+func sselect[I ~int | ~uint32](idxs []I, coords []float64, k, left, right, inc int) {
 	//whatever you want
 	for right > left {
 		if (right - left) > 600 {
@@ -235,7 +235,7 @@ func sselect(idxs []int, coords []float64, k, left, right, inc int) {
 	}
 }
 
-func swapItem(idxs []int, coords []float64, i, j int) {
+func swapItem[I ~int | ~uint32](idxs []I, coords []float64, i, j int) {
 	swapi(idxs, i, j)
 	swapf(coords, 2*i, 2*j)
 	swapf(coords, 2*i+1, 2*j+1)
@@ -247,7 +247,7 @@ func swapf(a []float64, i, j int) {
 	a[j] = t
 }
 
-func swapi(a []int, i, j int) {
+func swapi[I ~int | ~uint32](a []I, i, j int) {
 	t := a[i]
 	a[i] = a[j]
 	a[j] = t

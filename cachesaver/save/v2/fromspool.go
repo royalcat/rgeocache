@@ -7,9 +7,10 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"math/bits"
 	"os"
 	"path/filepath"
-	"runtime"
+	"runtime/debug"
 	"time"
 
 	cachemodel "github.com/royalcat/rgeocache/cachesaver/model"
@@ -57,6 +58,7 @@ func writeSpoolBody(
 		return fmt.Errorf("savev2: too many points: %d", n)
 	}
 	slog.Info("Writing v2 cache from spool", "points", n, "edges", sp.NumEdges())
+	warnIfWriterTooLarge(n, sp.NumEdges())
 
 	// 1. Canonicalize road node occurrences by OSM node key. The occurrence
 	// with the lowest ClaimSeq wins; ClaimSeq is assigned from the way input
@@ -67,22 +69,26 @@ func writeSpoolBody(
 	}
 
 	// 2. Assign dense graph node ids to canonical road points and collect their
-	// coordinates.
-	denseOfOcc := make([]uint32, n)
-	for i := range denseOfOcc {
-		denseOfOcc[i] = invalidNode
-	}
+	// coordinates. The dense id of a canonical occurrence is its rank in the
+	// canonical bitset, so no per-occurrence id table is kept.
+	canon := newRankSet(n)
 	coords := make([]graphPoint, 0, nodeCount)
+	plainPoints := 0 // points with no OSM node key; all are kept
 	if err := sp.IteratePoints(func(occ int, p spool.Point) error {
-		if p.NodeKey != 0 && canonical[occ] == uint32(occ) {
-			denseOfOcc[occ] = uint32(len(coords))
+		if p.NodeKey == 0 {
+			plainPoints++
+			return nil
+		}
+		if canonical[occ] == uint32(occ) {
+			canon.Set(uint32(occ))
 			coords = append(coords, graphPoint{x: p.X, y: p.Y})
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
-	if len(coords) != nodeCount {
+	canon.Finish()
+	if len(coords) != nodeCount || canon.Count() != nodeCount {
 		return fmt.Errorf("savev2: collected %d road node coordinates, expected %d", len(coords), nodeCount)
 	}
 	slog.Info("Canonicalized road nodes", "graph_nodes", nodeCount)
@@ -94,7 +100,7 @@ func writeSpoolBody(
 		keepNode    []uint64
 	)
 	if sp.NumEdges() > 0 {
-		simpleEdges, keepNode, err = simplifySpoolEdges(sp, canonical, denseOfOcc, coords, nodeCount, workDir)
+		simpleEdges, keepNode, err = simplifySpoolEdges(sp, canonical, canon, coords, nodeCount, workDir)
 		if err != nil {
 			return err
 		}
@@ -104,39 +110,52 @@ func writeSpoolBody(
 		for i := range keepNode {
 			keepNode[i] = ^uint64(0)
 		}
+		// Bits past nodeCount in the last word must not be counted below.
+		if rem := nodeCount % 64; rem != 0 {
+			keepNode[len(keepNode)-1] = 1<<rem - 1
+		}
 	}
 	canonical = nil
 	coords = nil
-	runtime.GC()
+	debug.FreeOSMemory()
 
 	// 4. Build the point index: filter dropped/duplicate road points and keep
-	// their coordinates for the KDBH sort.
-	sortIdxs := make([]int, 0, n)
-	sortCoords := make([]float64, 0, 2*n)
-	nodeFiltered := make([]uint32, nodeCount)
-	count := 0
-	if err := sp.IteratePoints(func(occ int, p spool.Point) error {
-		if !pointKept(p, occ, denseOfOcc, keepNode) {
-			return nil
-		}
-		if p.NodeKey != 0 {
-			nodeFiltered[denseOfOcc[occ]] = uint32(count)
-		}
-		sortIdxs = append(sortIdxs, count)
-		sortCoords = append(sortCoords, p.X, p.Y)
-		count++
-		return nil
-	}); err != nil {
-		return err
+	// their coordinates for the KDBH sort. The kept count is known up front
+	// (every plain point plus every surviving road node), so the arrays are
+	// allocated exactly.
+	count := plainPoints
+	for _, w := range keepNode {
+		count += bits.OnesCount64(w)
 	}
 	if count > math.MaxUint32 {
 		return fmt.Errorf("savev2: too many points after simplification: %d", count)
 	}
+	sortIdxs := make([]uint32, 0, count)
+	sortCoords := make([]float64, 0, 2*count)
+	nodeFiltered := make([]uint32, nodeCount) // later reused as node -> KDBH position
+	filtered := 0
+	if err := sp.IteratePoints(func(occ int, p spool.Point) error {
+		if !pointKept(p, occ, canon, keepNode) {
+			return nil
+		}
+		if p.NodeKey != 0 {
+			nodeFiltered[canon.Rank(uint32(occ))] = uint32(filtered)
+		}
+		sortIdxs = append(sortIdxs, uint32(filtered))
+		sortCoords = append(sortCoords, p.X, p.Y)
+		filtered++
+		return nil
+	}); err != nil {
+		return err
+	}
+	if filtered != count {
+		return fmt.Errorf("savev2: kept %d points, expected %d", filtered, count)
+	}
 	slog.Info("Built point filter", "points", count)
-	kdbush.Sort(sortIdxs, sortCoords, defaultNodeSize)
+	kdbush.Sort32(sortIdxs, sortCoords, defaultNodeSize)
 
 	// 5. Header, metadata, string table and zones.
-	offsetIndex, stringData, err := table.Build()
+	offsetIndex, stringDataSize, err := table.Index()
 	if err != nil {
 		return err
 	}
@@ -158,7 +177,7 @@ func writeSpoolBody(
 	header := &savev2proto.V2Header{
 		MetadataSize:     uint32(len(metadataBytes)),
 		StringsIndexSize: uint32(len(offsetIndex) * 4),
-		StringsDataSize:  uint32(len(stringData)),
+		StringsDataSize:  uint32(stringDataSize),
 		ZonesSize:        uint32(len(zonesBytes)),
 	}
 	headerBytes, err := proto.Marshal(header)
@@ -178,7 +197,8 @@ func writeSpoolBody(
 	if err := binary.Write(w, binary.LittleEndian, offsetIndex); err != nil {
 		return err
 	}
-	if _, err := w.Write(stringData); err != nil {
+	offsetIndex = nil
+	if err := table.WriteData(w); err != nil {
 		return err
 	}
 	if _, err := w.Write(zonesBytes); err != nil {
@@ -186,7 +206,7 @@ func writeSpoolBody(
 	}
 
 	// 6. Point KDBH: index in tree order, data blobs in filtered order.
-	if _, err := kdbush.WriteIndex(w, sortIdxs, sortCoords, defaultNodeSize); err != nil {
+	if _, err := kdbush.WriteIndex32(w, sortIdxs, sortCoords, defaultNodeSize); err != nil {
 		return err
 	}
 	if _, err := kdbush.WriteFixedOffsets(w, count, v2PointDataSize); err != nil {
@@ -195,7 +215,7 @@ func writeSpoolBody(
 	written := 0
 	var rec [v2PointDataSize]byte
 	if err := sp.IteratePoints(func(occ int, p spool.Point) error {
-		if !pointKept(p, occ, denseOfOcc, keepNode) {
+		if !pointKept(p, occ, canon, keepNode) {
 			return nil
 		}
 		encodeSpoolPoint(rec[:], p)
@@ -211,23 +231,22 @@ func writeSpoolBody(
 		return fmt.Errorf("savev2: wrote %d point records, expected %d", written, count)
 	}
 
-	origToPos := make([]uint32, count)
-	for pos, orig := range sortIdxs {
-		origToPos[orig] = uint32(pos)
+	// The graph needs each node's KDBH position. sortIdxs maps position ->
+	// filtered index; inverting it in place gives filtered index -> position,
+	// and nodeFiltered is then rewritten in place to node -> position.
+	invertPermutation(sortIdxs)
+	for dense, f := range nodeFiltered {
+		nodeFiltered[dense] = sortIdxs[f]
 	}
-	nodePos := make([]uint32, nodeCount)
-	for dense := range nodePos {
-		nodePos[dense] = origToPos[nodeFiltered[dense]]
-	}
+	nodePos := nodeFiltered
 
 	// The graph only needs the tree-order coordinates, node positions and the
 	// simplified edge spool.
 	nodeFiltered = nil
-	origToPos = nil
-	denseOfOcc = nil
-	keepNode = nil
 	sortIdxs = nil
-	runtime.GC()
+	canon = nil
+	keepNode = nil
+	debug.FreeOSMemory()
 
 	if simpleEdges != nil && simpleEdges.NumEdges() > 0 {
 		if err := writeSpoolGraph(w, simpleEdges, sortCoords, nodePos); err != nil {
@@ -294,7 +313,8 @@ func canonicalizePoints(sp *spool.Reader, workDir string) ([]uint32, int, error)
 // graph and returns the simplified edge spool plus the keep bitmap.
 func simplifySpoolEdges(
 	sp *spool.Reader,
-	canonical, denseOfOcc []uint32,
+	canonical []uint32,
+	canon *rankSet,
 	coords []graphPoint,
 	nodeCount int,
 	workDir string,
@@ -305,11 +325,11 @@ func simplifySpoolEdges(
 		return nil, nil, err
 	}
 	if err := sp.IterateEdges(func(i int, e spool.Edge) error {
-		from := denseOfOcc[canonical[e.From]]
-		to := denseOfOcc[canonical[e.To]]
-		if from == invalidNode || to == invalidNode {
+		cf, ct := canonical[e.From], canonical[e.To]
+		if !canon.Has(cf) || !canon.Has(ct) {
 			return fmt.Errorf("savev2: edge %d references a non-canonical road point", i)
 		}
+		from, to := canon.Rank(cf), canon.Rank(ct)
 		return dw.WriteEdge(spool.Edge{
 			From:     from,
 			To:       to,
@@ -367,14 +387,14 @@ func simplifySpoolEdges(
 	return simpleReader, keep, nil
 }
 
-func pointKept(p spool.Point, occ int, denseOfOcc []uint32, keepNode []uint64) bool {
+func pointKept(p spool.Point, occ int, canon *rankSet, keepNode []uint64) bool {
 	if p.NodeKey == 0 {
 		return true
 	}
-	dense := denseOfOcc[occ]
-	if dense == invalidNode {
+	if !canon.Has(uint32(occ)) {
 		return false
 	}
+	dense := canon.Rank(uint32(occ))
 	return keepNode[dense>>6]&(1<<(dense&63)) != 0
 }
 
@@ -397,13 +417,16 @@ func writeSpoolGraph(w io.Writer, edges *spool.Reader, pointCoords []float64, no
 	}
 
 	ecoords := make([]float64, 0, 2*m)
-	eidxs := make([]int, 0, m)
+	if uint64(m) > math.MaxUint32 {
+		return fmt.Errorf("savev2: too many graph edges: %d", m)
+	}
+	eidxs := make([]uint32, 0, m)
 	maxHalfExtent := 0.0
 	if err := edges.IterateEdges(func(i int, e spool.Edge) error {
 		ax, ay := pointCoords[2*nodePos[e.From]], pointCoords[2*nodePos[e.From]+1]
 		bx, by := pointCoords[2*nodePos[e.To]], pointCoords[2*nodePos[e.To]+1]
 		ecoords = append(ecoords, (ax+bx)/2, (ay+by)/2)
-		eidxs = append(eidxs, i)
+		eidxs = append(eidxs, uint32(i))
 		if h := 0.5 * math.Hypot(bx-ax, by-ay); h > maxHalfExtent {
 			maxHalfExtent = h
 		}
@@ -411,7 +434,7 @@ func writeSpoolGraph(w io.Writer, edges *spool.Reader, pointCoords []float64, no
 	}); err != nil {
 		return err
 	}
-	kdbush.Sort(eidxs, ecoords, defaultNodeSize)
+	kdbush.Sort32(eidxs, ecoords, defaultNodeSize)
 
 	indexSize := graphEdgeIndexSize(uint64(m)) // full KDBH block: header + tree + offsets + records
 	treeSize := int64(32 + int64(m)*8 + int64(m)*16)
@@ -427,7 +450,7 @@ func writeSpoolGraph(w io.Writer, edges *spool.Reader, pointCoords []float64, no
 		return fmt.Errorf("savev2: writing graph header: %w", err)
 	}
 
-	written, err := kdbush.WriteIndex(w, eidxs, ecoords, defaultNodeSize)
+	written, err := kdbush.WriteIndex32(w, eidxs, ecoords, defaultNodeSize)
 	if err != nil {
 		return fmt.Errorf("savev2: writing graph edge index: %w", err)
 	}
@@ -493,3 +516,33 @@ func (s *spoolEdgeSource) At(i int) (graphEdge, error) {
 }
 
 func (s *spoolEdgeSource) Close() error { return s.ra.Close() }
+
+// writerPeakBytes upper-bounds the writer's live heap for n point occurrences
+// and e spooled edges, taking every road node and every point as distinct
+// (real data is ~15% below that). Phases, in the order they run:
+//
+//	canonicalize  canonical 4n + sort buffer
+//	graph         canonical 4n + rank 0.14n + coords 16v + simplifier 16v + 8e
+//	point index   rank 0.14n + sortIdxs 4p + sortCoords 16p + nodePos 4v
+//
+// so the peak is the larger of the graph and point-index phases.
+func writerPeakBytes(n, e int) uint64 {
+	const sortBuffer = 16 * 1024 * 1024 * 16 // spool.DefaultSortPairs * 16 B
+	rank := uint64(n) * 15 / 100
+	graph := 4*uint64(n) + rank + 32*uint64(n) + 8*uint64(e)
+	index := rank + 24*uint64(n) + 4*uint64(n)
+	return max(graph, index, 4*uint64(n)+sortBuffer)
+}
+
+// warnIfWriterTooLarge logs the projected peak against the Go memory limit so
+// an undersized machine is flagged before the writer is OOM-killed.
+func warnIfWriterTooLarge(n, e int) {
+	peak := writerPeakBytes(n, e)
+	limit := debug.SetMemoryLimit(-1)
+	if limit > 0 && limit < math.MaxInt64 && peak > uint64(limit) {
+		slog.Warn("Writer may exceed the memory limit; split the input into smaller regions",
+			"projected_peak_mib", peak>>20, "memory_limit_mib", uint64(limit)>>20)
+		return
+	}
+	slog.Info("Writer memory projection", "projected_peak_mib", peak>>20)
+}

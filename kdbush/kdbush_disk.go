@@ -236,10 +236,28 @@ func Sort(idxs []int, coords []float64, nodeSize int) {
 	}
 }
 
+// Sort32 is [Sort] for a uint32 index array (half the memory of Sort). It
+// produces exactly the same ordering.
+func Sort32(idxs []uint32, coords []float64, nodeSize int) {
+	if len(idxs) > 0 {
+		sort(idxs, coords, nodeSize, 0, len(idxs)-1, 0)
+	}
+}
+
 // WriteIndex writes a KDBH header, the sorted index array and the sorted
 // coordinates. idxs and coords must already be in KD-tree order (see Sort).
 // It returns the number of bytes written.
 func WriteIndex(w io.Writer, idxs []int, coords []float64, nodeSize int) (int64, error) {
+	return writeIndex(w, idxs, coords, nodeSize)
+}
+
+// WriteIndex32 is [WriteIndex] for a uint32 index array. The bytes written are
+// identical: indices are still stored as int64 on disk.
+func WriteIndex32(w io.Writer, idxs []uint32, coords []float64, nodeSize int) (int64, error) {
+	return writeIndex(w, idxs, coords, nodeSize)
+}
+
+func writeIndex[I ~int | ~uint32](w io.Writer, idxs []I, coords []float64, nodeSize int) (int64, error) {
 	n := len(idxs)
 	if len(coords) != 2*n {
 		return 0, fmt.Errorf("kdbush: %d coords for %d points", len(coords), n)
@@ -633,7 +651,7 @@ func (d *DiskKDBush[V, VP]) readPointData(origIdx int) (V, error) {
 
 const diskWriteChunkSize = 4096 // elements per write ≈ 32 KiB buffer
 
-func diskWriteInts(w io.Writer, ints []int) (int64, error) {
+func diskWriteInts[I ~int | ~uint32](w io.Writer, ints []I) (int64, error) {
 	var written int64
 	if len(ints) == 0 {
 		return 0, nil

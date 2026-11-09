@@ -156,6 +156,9 @@ func (f *GeoGen) ParseOSMData(outputs []ParseOutput) error {
 
 	// The border trees and duplicate sets are parse-only and large. Release
 	// them before the writer allocates its index arrays.
+	// The lookup map is the bulk of the string table's RAM; the writer only
+	// reads the table by id.
+	table.Freeze()
 	f.placeIndex = nil
 	f.regionIndex = nil
 	f.localizationCache = nil

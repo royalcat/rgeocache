@@ -548,3 +548,42 @@ func BenchmarkDisk(b *testing.B) {
 		}
 	})
 }
+
+func TestSort32MatchesSort(t *testing.T) {
+	const n = 5000
+	rnd := rand.New(rand.NewSource(3))
+	coords := make([]float64, 2*n)
+	for i := range coords {
+		coords[i] = float64(rnd.Intn(500)) // many ties on purpose
+	}
+	c1 := slices.Clone(coords)
+	c2 := slices.Clone(coords)
+	i1 := make([]int, n)
+	i2 := make([]uint32, n)
+	for i := range i1 {
+		i1[i], i2[i] = i, uint32(i)
+	}
+
+	Sort(i1, c1, 16)
+	Sort32(i2, c2, 16)
+
+	if !slices.Equal(c1, c2) {
+		t.Fatal("coords differ between Sort and Sort32")
+	}
+	for i := range i1 {
+		if i1[i] != int(i2[i]) {
+			t.Fatalf("idx %d differs: %d vs %d", i, i1[i], i2[i])
+		}
+	}
+
+	var b1, b2 bytes.Buffer
+	if _, err := WriteIndex(&b1, i1, c1, 16); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WriteIndex32(&b2, i2, c2, 16); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(b1.Bytes(), b2.Bytes()) {
+		t.Fatal("WriteIndex and WriteIndex32 produced different bytes")
+	}
+}

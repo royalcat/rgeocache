@@ -1,20 +1,32 @@
 // Package strtab interns strings and builds the v2 cache string table.
 package strtab
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+	"math"
+)
+
+// MaxDataSize is the largest string data block the v2 format can address
+// (string offsets are uint32).
+const MaxDataSize = math.MaxUint32
 
 // Table assigns sequential ids to unique strings. Id 0 is reserved for the
 // empty string. Tables are not safe for concurrent use.
 type Table struct {
 	m    map[string]uint32
 	byID []string
+	// dataBytes is the size of the string data block, NUL terminators included.
+	dataBytes uint64
+	frozen    bool
 }
 
 // New returns a table containing only the empty string at id 0.
 func New() *Table {
 	return &Table{
-		m:    map[string]uint32{"": 0},
-		byID: []string{""},
+		m:         map[string]uint32{"": 0},
+		byID:      []string{""},
+		dataBytes: 1,
 	}
 }
 
@@ -23,9 +35,13 @@ func (t *Table) Add(s string) uint32 {
 	if id, ok := t.m[s]; ok {
 		return id
 	}
+	if t.frozen {
+		panic("strtab: Add on a frozen table")
+	}
 	id := uint32(len(t.byID))
 	t.m[s] = id
 	t.byID = append(t.byID, s)
+	t.dataBytes += uint64(len(s)) + 1
 	return id
 }
 
@@ -35,6 +51,18 @@ func (t *Table) String(id uint32) string {
 		return ""
 	}
 	return t.byID[id]
+}
+
+// DataSize returns the size in bytes of the string data block, which the v2
+// format caps at MaxDataSize.
+func (t *Table) DataSize() uint64 { return t.dataBytes }
+
+// Freeze drops the lookup map. A frozen table can still be read and written
+// out, but Add panics: the map is the bulk of the table's RAM once parsing is
+// done.
+func (t *Table) Freeze() {
+	t.m = nil
+	t.frozen = true
 }
 
 // Len returns the number of stored strings, including the empty string.
@@ -71,4 +99,33 @@ func (t *Table) Build() ([]uint32, []byte, error) {
 		data[index[id]+uint32(len(s))] = 0
 	}
 	return index, data, nil
+}
+
+// Index returns the v2 string offset index and the size of the data block.
+func (t *Table) Index() ([]uint32, uint64, error) {
+	if t.dataBytes > MaxDataSize {
+		return nil, 0, fmt.Errorf("strtab: string table exceeds 4 GiB")
+	}
+	index := make([]uint32, len(t.byID))
+	pos := uint64(0)
+	for id, s := range t.byID {
+		index[id] = uint32(pos)
+		pos += uint64(len(s)) + 1
+	}
+	return index, pos, nil
+}
+
+// WriteData streams the null-terminated string data block to w, without
+// materializing a second copy of it.
+func (t *Table) WriteData(w io.Writer) error {
+	zero := []byte{0}
+	for _, s := range t.byID {
+		if _, err := io.WriteString(w, s); err != nil {
+			return err
+		}
+		if _, err := w.Write(zero); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
@@ -22,6 +23,7 @@ import (
 	"github.com/royalcat/rgeocache/fgeocode"
 	"github.com/royalcat/rgeocache/geocoder"
 	"github.com/royalcat/rgeocache/geoparser"
+	"github.com/royalcat/rgeocache/internal/diskcheck"
 	"github.com/royalcat/rgeocache/internal/stats"
 	"github.com/royalcat/rgeocache/internal/telemetry"
 	"github.com/royalcat/rgeocache/server"
@@ -166,6 +168,10 @@ func main() {
 						Value:       cachesaver.V1RoadSpacingMeters,
 						DefaultText: "150",
 						Usage:       "thin v1 road points to one per street per this many metres (0 disables thinning)",
+					},
+					&cli.BoolFlag{
+						Name:  "skip-disk-check",
+						Usage: "do not check free disk space before generating",
 					},
 				},
 				Action: generate,
@@ -334,6 +340,12 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 
 	inputs := cmd.StringSlice("input")
 	log.Info("Input maps", "maps", inputs)
+
+	if !cmd.Bool("skip-disk-check") {
+		if err := checkDiskSpace(log, inputs, spoolDir, v2Path); err != nil {
+			return err
+		}
+	}
 
 	inputsReaders := make([]io.ReaderAt, 0, len(inputs))
 	for _, input := range inputs {
@@ -607,5 +619,42 @@ func tuneGC() error {
 	// collection pacing and a soft limit below the host RAM: with GOGC=off the
 	// heap grew to tens of gigabytes and the process was OOM-killed on CI.
 	debug.SetGCPercent(100)
+	return nil
+}
+
+// Free-space thresholds, as multiples of the total input size. Measured on a
+// 4-input extract: the spool and sort runs come to roughly 2x the input and the
+// v2 output to 1.6x, so 4x covers a run on one filesystem with some margin;
+// below 2x it cannot complete.
+const (
+	diskWarnFactor = 4
+	diskFailFactor = 2
+)
+
+func checkDiskSpace(log *slog.Logger, inputs []string, spoolDir, outputPath string) error {
+	var total uint64
+	for _, in := range inputs {
+		st, err := os.Stat(in)
+		if err != nil {
+			return err
+		}
+		total += uint64(st.Size())
+	}
+	for _, dir := range []string{spoolDir, filepath.Dir(outputPath)} {
+		free, ok := diskcheck.Free(dir)
+		if !ok {
+			continue
+		}
+		switch {
+		case free < total*diskFailFactor:
+			return fmt.Errorf(
+				"not enough free disk space on %s: %d MiB free, need at least %d MiB (%dx the %d MiB input); use --skip-disk-check to override",
+				dir, free>>20, (total*diskFailFactor)>>20, diskFailFactor, total>>20,
+			)
+		case free < total*diskWarnFactor:
+			log.Warn("Free disk space may be too low for generation",
+				"dir", dir, "free_mib", free>>20, "input_mib", total>>20)
+		}
+	}
 	return nil
 }

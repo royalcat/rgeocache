@@ -25,9 +25,15 @@ func (f *GeoGen) collectWorker(sp *spool.Writer, table *strtab.Table) (err error
 		}
 	}()
 
+	warned := false
 	for item := range f.parsedItems {
-		if int64(sp.NumPoints())+int64(len(item.Points)) > int64(math.MaxUint32) {
-			return fmt.Errorf("geoparser: point occurrences exceed the uint32 cache limit")
+		occurrences := int64(sp.NumPoints()) + int64(len(item.Points))
+		if occurrences > int64(math.MaxUint32) {
+			return fmt.Errorf("geoparser: point occurrences exceed the uint32 cache limit (%d); split the input into smaller regions", math.MaxUint32)
+		}
+		if !warned && occurrences > int64(math.MaxUint32)/10*9 {
+			warned = true
+			f.log.Warn("Point occurrences passed 90% of the uint32 cache limit", "occurrences", occurrences)
 		}
 		base := uint32(sp.NumPoints())
 
@@ -68,6 +74,10 @@ func (f *GeoGen) collectWorker(sp *spool.Writer, table *strtab.Table) (err error
 			if err := sp.WriteEdge(rec); err != nil {
 				return err
 			}
+		}
+
+		if table.DataSize() > strtab.MaxDataSize {
+			return fmt.Errorf("geoparser: string table exceeds the 4 GiB v2 limit (%d bytes); split the input into smaller regions", table.DataSize())
 		}
 	}
 	return nil

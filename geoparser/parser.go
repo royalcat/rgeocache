@@ -2,6 +2,7 @@ package geoparser
 
 import (
 	"log/slog"
+	"math"
 	"math/rand"
 	"strings"
 	"unique"
@@ -492,9 +493,53 @@ func (f *GeoGen) parseRelationCountry(rel *osm.Relation) {
 	})
 }
 
+// maxPoissonCandidates bounds the Poisson-disc grid of one relation. The
+// sampler covers the whole bounding box before points are filtered by the
+// polygon, so a continent-sized protected area or marine reserve would
+// otherwise allocate tens of millions of points per worker.
+const maxPoissonCandidates = 2_000_000
+
+// poissonCandidates is the number of Poisson-disc cells needed to cover bound
+// at the given spacing.
+func poissonCandidates(bound orb.Bound, distance float64) float64 {
+	w, h := bound.Max.X()-bound.Min.X(), bound.Max.Y()-bound.Min.Y()
+	return (w / distance) * (h / distance)
+}
+
+// fillPolygonWithPoints scatters Poisson-disc points inside poly.
+//
+// A relation whose bounding box fits the candidate budget is sampled over the
+// whole box, exactly as before. A larger one is sampled per polygon (so the
+// empty space between islands costs nothing) with a uniformly coarser spacing
+// that brings the total candidate count back under the budget. The coarsening
+// keeps coverage of the whole area; it only lowers density.
 func fillPolygonWithPoints(poly orb.MultiPolygon, distance float64, seed int64) []orb.Point {
-	// 1. Get the bounding box of the polygon
 	bound := poly.Bound()
+	if poissonCandidates(bound, distance) <= maxPoissonCandidates {
+		return samplePolygons(bound, poly, distance, seed)
+	}
+
+	total := 0.0
+	for _, p := range poly {
+		total += poissonCandidates(p.Bound(), distance)
+	}
+	if total > maxPoissonCandidates {
+		scale := math.Sqrt(total / maxPoissonCandidates)
+		slog.Warn("Poisson fill budget exceeded, coarsening spacing",
+			"candidates", int64(total), "scale", scale)
+		distance *= scale
+	}
+
+	var out []orb.Point
+	for i, p := range poly {
+		out = append(out, samplePolygons(p.Bound(), orb.MultiPolygon{p}, distance, seed+int64(i))...)
+	}
+	return out
+}
+
+// samplePolygons samples the box and keeps the points inside inside.
+func samplePolygons(bound orb.Bound, inside orb.MultiPolygon, distance float64, seed int64) []orb.Point {
+	// 1. Sample the bounding box.
 	points := poissondisc.Sample(
 		bound.Min.X(),
 		bound.Min.Y(),
@@ -509,7 +554,7 @@ func fillPolygonWithPoints(poly orb.MultiPolygon, distance float64, seed int64) 
 	pointsInside := make([]orb.Point, 0)
 	for _, p := range points {
 		point := orb.Point{p.X, p.Y}
-		if planar.MultiPolygonContains(poly, point) {
+		if planar.MultiPolygonContains(inside, point) {
 			pointsInside = append(pointsInside, point)
 		}
 	}
