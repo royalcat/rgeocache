@@ -4,9 +4,9 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unique"
@@ -39,17 +39,14 @@ type GeoGen struct {
 	seenWays             atomic.Int64
 	seenRelations        atomic.Int64
 
-	// synthKeySeq assigns unique node keys to interpolated road points. The
-	// high bit is set so they can never collide with a real OSM node id.
-	synthKeySeq atomic.Uint64
+	// localizationConflicts counts official names that two relations translate
+	// differently; the first relation in input order wins.
+	localizationConflicts int
 
-	parsedItems chan parseItem
-
-	regionsMu sync.Mutex
+	// regions and countries are appended by the way/relation collector, in
+	// input order, and read after it has finished.
 	regions   []geomodel.Zone
-
-	countriesMu sync.Mutex
-	countries   []geomodel.Zone
+	countries []geomodel.Zone
 
 	log *slog.Logger
 }
@@ -80,11 +77,6 @@ func (f *GeoGen) ResetCache() error {
 	runtime.GC()
 
 	return nil
-}
-
-// syntheticNodeKey returns a node key that is unique across the whole run.
-func (f *GeoGen) syntheticNodeKey() uint64 {
-	return 1<<63 | f.synthKeySeq.Add(1)
 }
 
 type ParseOutput struct {
@@ -133,24 +125,57 @@ func (f *GeoGen) ParseOSMData(outputs []ParseOutput) error {
 	}
 	table := strtab.New()
 
-	f.parsedItems = make(chan parseItem, 10)
+	// Address nodes are collected into a spool of their own: they are read
+	// concurrently with the ways, so their interleaving with the way points is
+	// not deterministic. They are appended after the main spool below.
+	nodeDir := filepath.Join(spoolDir, "nodes")
+	nodeSp, err := spool.Create(nodeDir)
+	if err != nil {
+		_ = sp.Close()
+		return err
+	}
+	nodeTable := strtab.New()
+
+	wayItems := make(chan parseItem, 10)
+	nodeItems := make(chan parseItem, 10)
 
 	var wg errgroup.Group
 	wg.Go(func() error {
-		return f.collectWorker(sp, table)
+		return f.collectWorker(wayItems, sp, table, true)
 	})
 	wg.Go(func() error {
-		defer close(f.parsedItems)
+		return f.collectWorker(nodeItems, nodeSp, nodeTable, false)
+	})
+	wg.Go(func() error {
+		defer close(wayItems)
+		defer close(nodeItems)
 		if err := f.fillRelCache(); err != nil {
 			return err
 		}
-		return f.parseDatabase()
+		return f.parseDatabase(wayItems, nodeItems)
 	})
 	if err := wg.Wait(); err != nil {
+		_ = sp.Close()
+		_ = nodeSp.Close()
+		return err
+	}
+	if err := nodeSp.Close(); err != nil {
 		_ = sp.Close()
 		return err
 	}
 	if err := sp.Close(); err != nil {
+		return err
+	}
+
+	nodeReader, err := spool.Open(nodeDir)
+	if err != nil {
+		return err
+	}
+	if err := appendNodePoints(spoolDir, table, nodeReader, nodeTable); err != nil {
+		return err
+	}
+	nodeTable = nil
+	if err := os.RemoveAll(nodeDir); err != nil {
 		return err
 	}
 
@@ -171,10 +196,13 @@ func (f *GeoGen) ParseOSMData(outputs []ParseOutput) error {
 		return err
 	}
 
+	if f.config.DateCreated.IsZero() {
+		f.config.DateCreated = time.Now()
+	}
 	meta := cachemodel.Metadata{
 		Version:     f.config.Version,
 		Locale:      f.config.PreferredLocalization,
-		DateCreated: time.Now().UTC(),
+		DateCreated: f.config.DateCreated.UTC(),
 	}
 	zones := f.buildZones()
 

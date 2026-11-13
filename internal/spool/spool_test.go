@@ -101,3 +101,70 @@ func TestPointEdgeRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAppendPoints(t *testing.T) {
+	mainDir, srcDir := t.TempDir(), t.TempDir()
+
+	w, err := Create(mainDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WritePoint(Point{X: 1, Y: 2, NameID: 7, NodeKey: 42, ClaimSeq: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	sw, err := Create(srcDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := sw.WritePoint(Point{X: float64(10 + i), Y: 20, NameID: uint32(i + 1), StreetID: 1, Weight: 10}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := sw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	src, err := Open(srcDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := AppendPoints(mainDir, src, func(p *Point) {
+		p.NameID += 100
+		p.StreetID += 200
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Fatalf("appended %d points, want 3", n)
+	}
+
+	r, err := Open(mainDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.NumPoints() != 4 {
+		t.Fatalf("got %d points, want 4", r.NumPoints())
+	}
+	var got []Point
+	if err := r.IteratePoints(func(_ int, p Point) error {
+		got = append(got, p)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got[0].NameID != 7 || got[0].NodeKey != 42 || got[0].ClaimSeq != 3 {
+		t.Fatalf("existing point changed: %+v", got[0])
+	}
+	for i := 1; i < 4; i++ {
+		want := Point{X: float64(10 + i - 1), Y: 20, NameID: uint32(i) + 100, StreetID: 201, Weight: 10}
+		if got[i] != want {
+			t.Fatalf("appended point %d: got %+v, want %+v", i, got[i], want)
+		}
+	}
+}

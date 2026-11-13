@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"time"
 
@@ -172,6 +173,10 @@ func main() {
 					&cli.BoolFlag{
 						Name:  "skip-disk-check",
 						Usage: "do not check free disk space before generating",
+					},
+					&cli.StringFlag{
+						Name:  "date-created",
+						Usage: "creation timestamp for the cache metadata (RFC3339); defaults to $SOURCE_DATE_EPOCH, then the current time. Pin it for a byte-reproducible cache",
 					},
 				},
 				Action: generate,
@@ -381,6 +386,11 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 	config.PreferredLocalization = preferredLocalization
 	config.Version = uint32(version)
 	config.SpoolDir = spoolDir
+	dateCreated, err := parseDateCreated(cmd.String("date-created"), os.Getenv("SOURCE_DATE_EPOCH"))
+	if err != nil {
+		return err
+	}
+	config.DateCreated = dateCreated
 
 	geoGen, err := geoparser.NewGeoGen(osmdb, config)
 	if err != nil {
@@ -440,6 +450,26 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	return nil
+}
+
+// parseDateCreated resolves the cache creation time: the flag (RFC3339) wins,
+// then SOURCE_DATE_EPOCH (Unix seconds), and a zero time means "now".
+func parseDateCreated(flag, epoch string) (time.Time, error) {
+	if flag != "" {
+		t, err := time.Parse(time.RFC3339, flag)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid --date-created %q: %w", flag, err)
+		}
+		return t, nil
+	}
+	if epoch != "" {
+		sec, err := strconv.ParseInt(epoch, 10, 64)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid SOURCE_DATE_EPOCH %q: %w", epoch, err)
+		}
+		return time.Unix(sec, 0), nil
+	}
+	return time.Time{}, nil
 }
 
 func writeHeapProfile(name string) error {

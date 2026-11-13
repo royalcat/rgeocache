@@ -290,6 +290,45 @@ func TestSimplifyPreservesDirectedOrientation(t *testing.T) {
 	}
 }
 
+// Two one-way ways that meet head to head (1 -> 2 and 3 -> 2) have opposite
+// travel directions at node 2. They must never be merged into one edge, which
+// would reverse one of them; each keeps its own stored direction no matter in
+// which order the edges are read.
+func TestSimplifyDoesNotMergeOpposingDirectedEdges(t *testing.T) {
+	points := []rawPoint{
+		testPoint(1, 0.0, 0.0),
+		testPoint(2, 0.0001, 0.0),
+		testPoint(3, 0.0002, 0.0),
+	}
+	orders := map[string][]rawEdge{
+		"meeting":    {testEdge(1, 2, "A", 3, 1), testEdge(3, 2, "A", 3, 1)},
+		"meeting-r":  {testEdge(3, 2, "A", 3, 1), testEdge(1, 2, "A", 3, 1)},
+		"diverging":  {testEdge(2, 1, "A", 3, 1), testEdge(2, 3, "A", 3, 1)},
+		"diverging2": {testEdge(2, 3, "A", 3, 1), testEdge(2, 1, "A", 3, 1)},
+		// Backward-tagged (oneway=2) edges are directed too.
+		"backward": {testEdge(1, 2, "A", 3, 2), testEdge(3, 2, "A", 3, 2)},
+	}
+
+	for name, edges := range orders {
+		_, newEdges, _, err := simplifyGraph(points, edges, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(newEdges) != 2 {
+			t.Fatalf("%s: opposing directed edges must stay separate, got %d edges", name, len(newEdges))
+		}
+		got := map[[2]uint32]bool{}
+		for _, e := range newEdges {
+			got[[2]uint32{e.fromNode, e.toNode}] = true
+		}
+		for _, e := range edges {
+			if !got[[2]uint32{e.fromNode, e.toNode}] {
+				t.Fatalf("%s: edge %d -> %d lost or reversed: %+v", name, e.fromNode, e.toNode, newEdges)
+			}
+		}
+	}
+}
+
 func TestSimplifyClosedLoop(t *testing.T) {
 	// A rectangle (111 m per side, under the edge cap) with one collinear
 	// midpoint per side.

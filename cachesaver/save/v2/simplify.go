@@ -122,8 +122,16 @@ func simplifyGraphCore(
 	}
 
 	// continuation returns the unused edge that continues a chain through the
-	// degree-two node `at` and shares the chain's properties.
-	continuation := func(at, current uint32, key edgeKey) (uint32, bool, error) {
+	// degree-two node `at` and shares the chain's properties. forward is true
+	// when the chain is extended past its end (the next edge must leave `at`
+	// in the walking direction) and false when it is extended before its head
+	// (the next edge must arrive at `at`).
+	//
+	// A directed edge only continues a chain whose stored orientation it
+	// shares. Two one-way ways meeting head to head have opposite travel
+	// directions, so merging them would reverse one of them — and which one
+	// would depend on the order the edges are read.
+	continuation := func(at, current uint32, key edgeKey, forward bool) (uint32, bool, error) {
 		if deg[at] != 2 {
 			return 0, false, nil
 		}
@@ -138,6 +146,15 @@ func simplifyGraphCore(
 			if ee.streetID != key.street || ee.nameID != key.name ||
 				ee.class != key.class || ee.oneway != key.oneway {
 				return 0, false, nil
+			}
+			if key.oneway != 0 {
+				aligned := ee.from == at
+				if !forward {
+					aligned = ee.to == at
+				}
+				if !aligned {
+					return 0, false, nil
+				}
 			}
 			return e, true, nil
 		}
@@ -178,7 +195,7 @@ func simplifyGraphCore(
 			if !last.dir {
 				at = lastEdge.from
 			}
-			next, ok, err := continuation(at, last.edge, key)
+			next, ok, err := continuation(at, last.edge, key, true)
 			if err != nil {
 				return nil, err
 			}
@@ -206,7 +223,7 @@ func simplifyGraphCore(
 			if !head.dir {
 				at = headEdge.to
 			}
-			next, ok, err := continuation(at, head.edge, key)
+			next, ok, err := continuation(at, head.edge, key, false)
 			if err != nil {
 				return nil, err
 			}

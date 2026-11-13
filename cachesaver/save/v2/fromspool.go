@@ -20,7 +20,6 @@ import (
 	"github.com/royalcat/rgeocache/internal/strtab"
 	"github.com/royalcat/rgeocache/kdbush"
 	"golang.org/x/exp/mmap"
-	"google.golang.org/protobuf/proto"
 )
 
 const invalidNode = math.MaxUint32
@@ -160,7 +159,7 @@ func writeSpoolBody(
 		return err
 	}
 
-	zonesBytes, err := proto.Marshal(buildZonesSection(zones))
+	zonesBytes, err := marshalOpts.Marshal(buildZonesSection(zones))
 	if err != nil {
 		return err
 	}
@@ -169,7 +168,7 @@ func writeSpoolBody(
 		DateCreated: meta.DateCreated.UTC().Format(time.RFC3339),
 		Locale:      meta.Locale,
 	}
-	metadataBytes, err := proto.Marshal(metadataProto)
+	metadataBytes, err := marshalOpts.Marshal(metadataProto)
 	if err != nil {
 		return err
 	}
@@ -180,7 +179,7 @@ func writeSpoolBody(
 		StringsDataSize:  uint32(stringDataSize),
 		ZonesSize:        uint32(len(zonesBytes)),
 	}
-	headerBytes, err := proto.Marshal(header)
+	headerBytes, err := marshalOpts.Marshal(header)
 	if err != nil {
 		return err
 	}

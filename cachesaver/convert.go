@@ -129,13 +129,13 @@ func ConvertV2ToV1WithOptions(v2Path string, w io.Writer, opts ConvertOptions) e
 		Cities:  strings,
 		Regions: regions,
 	}
-	stringsBytes, err := proto.Marshal(stringsCache)
+	stringsBytes, err := marshalOpts.Marshal(stringsCache)
 	if err != nil {
 		return err
 	}
 
 	meta := res.Metadata
-	metadataBytes, err := proto.Marshal(&savev1proto.CacheMetadata{
+	metadataBytes, err := marshalOpts.Marshal(&savev1proto.CacheMetadata{
 		Version:     meta.Version,
 		DateCreated: meta.DateCreated.UTC().Format(time.RFC3339),
 		Locale:      meta.Locale,
@@ -211,7 +211,7 @@ func ConvertV2ToV1WithOptions(v2Path string, w io.Writer, opts ConvertOptions) e
 		PointsBlobSizes:  pointSizes,
 		ZonesBlobSizes:   zoneSizes,
 	}
-	headerBytes, err := proto.Marshal(header)
+	headerBytes, err := marshalOpts.Marshal(header)
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func ConvertV2ToV1WithOptions(v2Path string, w io.Writer, opts ConvertOptions) e
 		}
 		chunk = append(chunk, sp)
 		if len(chunk) == v1BlobChunk {
-			b, err := proto.Marshal(&savev1proto.PointsBlob{Points: chunk})
+			b, err := marshalOpts.Marshal(&savev1proto.PointsBlob{Points: chunk})
 			if err != nil {
 				cbErr = err
 				return false
@@ -261,7 +261,7 @@ func ConvertV2ToV1WithOptions(v2Path string, w io.Writer, opts ConvertOptions) e
 		return cbErr
 	}
 	if len(chunk) > 0 {
-		b, err := proto.Marshal(&savev1proto.PointsBlob{Points: chunk})
+		b, err := marshalOpts.Marshal(&savev1proto.PointsBlob{Points: chunk})
 		if err != nil {
 			return err
 		}
@@ -504,7 +504,7 @@ func marshalV1Zones(zones []cachemodel.Zone, regionID map[string]uint32) ([][]by
 			if len(chunk) == 0 {
 				return nil
 			}
-			b, err := proto.Marshal(&savev1proto.ZonesBlob{
+			b, err := marshalOpts.Marshal(&savev1proto.ZonesBlob{
 				Type:  savev1.ZoneTypeProto(zoneType),
 				Zones: chunk,
 			})

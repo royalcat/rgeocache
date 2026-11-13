@@ -17,39 +17,61 @@ import (
 	"github.com/paulmach/osm"
 )
 
-func (f *GeoGen) parseObject(o osm.Object, claimSeq uint32) {
+// parseObject turns one OSM object into its output batches. It is a pure
+// function of the object and the (read-only) border indexes: it never touches
+// shared mutable state, so it is safe to run concurrently and the caller can
+// emit the results in input order. Duplicate way/relation ids are filtered by
+// the caller, in input order, before the object is dispatched.
+func (f *GeoGen) parseObject(o osm.Object, claimSeq uint32) []parseItem {
 	switch obj := o.(type) {
 	case *osm.Node:
-		f.seenNodes.Add(1)
 		if point, ok := f.parseNode(obj); ok {
-			f.send(parseItem{Points: []geoPoint{point}})
+			return []parseItem{{Points: []geoPoint{point}}}
 		}
 	case *osm.Way:
-		f.seenWays.Add(1)
-		f.send(f.parseWay(obj, claimSeq))
+		return itemsOf(f.parseWay(obj, claimSeq))
 	case *osm.Relation:
-		f.seenRelations.Add(1)
-		for _, item := range f.parseRelation(obj) {
-			f.send(item)
-		}
+		return f.parseRelation(obj)
 	}
+	return nil
 }
 
-// send hands one batch to the collector. Empty batches are dropped.
-func (f *GeoGen) send(item parseItem) {
-	if len(item.Points) == 0 && len(item.Edges) == 0 {
-		return
+// itemsOf wraps one batch, dropping it when it is empty.
+func itemsOf(item parseItem) []parseItem {
+	if item.empty() {
+		return nil
 	}
-	f.parsedItems <- item
+	return []parseItem{item}
 }
 
 // parseItem is one batch of parse output: the points of one OSM object (or
 // relation member way) and the graph edges between them. Edge endpoints are
 // indexes into Points; the collector translates them to point occurrences.
+//
+// A batch can instead carry an administrative zone, which the collector
+// appends in input order.
 type parseItem struct {
 	Points []geoPoint
 	Edges  []edgeRef
+
+	// Region and Country carry a zone found in a boundary relation.
+	Region, Country *geomodel.Zone
+
+	// WayID is set on batches of ways pulled in through a route relation. Two
+	// relations can share a member way; the relation stage keeps only the first
+	// batch per way in input order.
+	WayID osm.WayID
 }
+
+func (i parseItem) empty() bool {
+	return len(i.Points) == 0 && len(i.Edges) == 0 && i.Region == nil && i.Country == nil
+}
+
+// syntheticNodeKey marks a road point that was interpolated and has no OSM
+// node. The collector replaces it with a unique key in input order, so the
+// spool does not depend on worker scheduling. Real OSM ids never have the high
+// bit set.
+const syntheticNodeKey uint64 = 1 << 63
 
 // edgeRef is a graph edge whose endpoints are local point indexes.
 type edgeRef struct {
@@ -109,11 +131,6 @@ func (f *GeoGen) parseNode(node *osm.Node) (geoPoint, bool) {
 }
 
 func (f *GeoGen) parseWay(way *osm.Way, claimSeq uint32) parseItem {
-	if !f.parsedWays.Add(int64(way.ID)) {
-		f.parsedWaysDupes.Add(1)
-		return parseItem{}
-	}
-
 	if isBuilding(way.Tags) {
 		return parseItem{Points: f.parseWayBuilding(way)}
 	}
@@ -238,7 +255,7 @@ func (f *GeoGen) parseWayHighway(way *osm.Way, claimSeq uint32) parseItem {
 					Region:      f.localizedRegion(p),
 					Weight:      weightRoad,
 					Type:        cachemodel.GeoObjectRoad,
-					NodeKey:     f.syntheticNodeKey(),
+					NodeKey:     syntheticNodeKey,
 					ClaimSeq:    claimSeq,
 				})
 				out.Edges = append(out.Edges, edgeRef{
@@ -309,11 +326,6 @@ func parseOneway(tags osm.Tags) uint8 {
 }
 
 func (f *GeoGen) parseRelation(rel *osm.Relation) []parseItem {
-	if !f.parsedRelations.Add(int64(rel.ID)) {
-		f.parsedRelationsDupes.Add(1)
-		return nil
-	}
-
 	switch rel.Tags.Find("type") {
 	case "multipolygon", "boundary":
 		switch rel.Tags.Find("landuse") {
@@ -329,10 +341,14 @@ func (f *GeoGen) parseRelation(rel *osm.Relation) []parseItem {
 		if rel.Tags.Find("boundary") == "administrative" {
 			switch rel.Tags.Find("admin_level") {
 			case "4":
-				f.parseRelationRegion(rel)
+				if zone := f.parseRelationRegion(rel); zone != nil {
+					return []parseItem{{Region: zone}}
+				}
 				return nil
 			case "2":
-				f.parseRelationCountry(rel)
+				if zone := f.parseRelationCountry(rel); zone != nil {
+					return []parseItem{{Country: zone}}
+				}
 				return nil
 			}
 		}
@@ -398,14 +414,21 @@ func (f *GeoGen) parseRelationHighway(rel *osm.Relation) []parseItem {
 			continue
 		}
 
-		// Route-member ways are normally already parsed by the main way pass,
-		// so this is a no-op. If one is missing from that pass there is no
-		// stable input-order claim for it; 0 keeps the canonicalization
-		// deterministic (and the way is still emitted).
-		item := f.parseWay(way, 0)
-		if len(item.Points) > 0 || len(item.Edges) > 0 {
-			out = append(out, item)
+		// Route-member ways are normally already parsed by the main way pass
+		// (which is complete before the relation pass starts, so this check is
+		// stable), making this a no-op. If one is missing from that pass there
+		// is no stable input-order claim for it; 0 keeps the canonicalization
+		// deterministic. The way is tagged so the relation stage drops it when
+		// an earlier relation already contributed it.
+		if f.parsedWays.Contains(int64(way.ID)) {
+			continue
 		}
+		item := f.parseWay(way, 0)
+		if item.empty() {
+			continue
+		}
+		item.WayID = way.ID
+		out = append(out, item)
 	}
 	return out
 }
@@ -443,54 +466,36 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 	return out
 }
 
-func (f *GeoGen) parseRelationRegion(rel *osm.Relation) {
-	log := f.log.With("func", "parseRelationRegion", "type", "relation", "id", rel.ID)
-	name := f.localizedName(rel.Tags)
-	if name == "" {
-		return
-	}
-
-	poly, err := f.buildPolygon(rel.Members)
-	if err != nil {
-		log.Error("Error building polygon", "error", err.Error())
-		return
-	}
-
-	poly = simplify.DouglasPeucker(0.01).MultiPolygon(poly)
-
-	f.regionsMu.Lock()
-	defer f.regionsMu.Unlock()
-
-	f.regions = append(f.regions, geomodel.Zone{
-		Name:    name,
-		Bounds:  poly.Bound(),
-		Polygon: poly,
-	})
+func (f *GeoGen) parseRelationRegion(rel *osm.Relation) *geomodel.Zone {
+	return f.parseRelationZone(rel, "parseRelationRegion")
 }
 
-func (f *GeoGen) parseRelationCountry(rel *osm.Relation) {
-	log := f.log.With("func", "parseRelationCountry", "type", "relation", "id", rel.ID)
+func (f *GeoGen) parseRelationCountry(rel *osm.Relation) *geomodel.Zone {
+	return f.parseRelationZone(rel, "parseRelationCountry")
+}
+
+// parseRelationZone builds the simplified polygon of a boundary relation, or
+// nil when the relation has no usable name or geometry.
+func (f *GeoGen) parseRelationZone(rel *osm.Relation, fn string) *geomodel.Zone {
+	log := f.log.With("func", fn, "type", "relation", "id", rel.ID)
 	name := f.localizedName(rel.Tags)
 	if name == "" {
-		return
+		return nil
 	}
 
 	poly, err := f.buildPolygon(rel.Members)
 	if err != nil {
 		log.Error("Error building polygon", "error", err.Error())
-		return
+		return nil
 	}
 
 	poly = simplify.DouglasPeucker(0.01).MultiPolygon(poly)
 
-	f.countriesMu.Lock()
-	defer f.countriesMu.Unlock()
-
-	f.countries = append(f.countries, geomodel.Zone{
+	return &geomodel.Zone{
 		Name:    name,
 		Bounds:  poly.Bound(),
 		Polygon: poly,
-	})
+	}
 }
 
 // maxPoissonCandidates bounds the Poisson-disc grid of one relation. The

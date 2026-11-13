@@ -91,9 +91,7 @@ func (w *Writer) NumPoints() int { return w.numPoints }
 // NumEdges returns the number of edges written so far.
 func (w *Writer) NumEdges() int { return w.numEdges }
 
-// WritePoint appends p.
-func (w *Writer) WritePoint(p Point) error {
-	var b [PointRecordSize]byte
+func encodePoint(b *[PointRecordSize]byte, p Point) {
 	binary.LittleEndian.PutUint64(b[0:8], math.Float64bits(p.X))
 	binary.LittleEndian.PutUint64(b[8:16], math.Float64bits(p.Y))
 	binary.LittleEndian.PutUint32(b[16:20], p.NameID)
@@ -105,6 +103,43 @@ func (w *Writer) WritePoint(p Point) error {
 	b[37] = p.GeoType
 	binary.LittleEndian.PutUint64(b[38:46], p.NodeKey)
 	binary.LittleEndian.PutUint32(b[46:50], p.ClaimSeq)
+}
+
+// AppendPoints appends every point of src to the closed spool in dir, after
+// letting remap rewrite it (typically to translate string ids). The appended
+// points get the occurrence ids that follow the existing ones. It returns the
+// number of points appended.
+func AppendPoints(dir string, src *Reader, remap func(*Point)) (int, error) {
+	f, err := os.OpenFile(filepath.Join(dir, pointsFile), os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return 0, fmt.Errorf("spool: opening points file for append: %w", err)
+	}
+	bw := bufio.NewWriterSize(f, bufSize)
+
+	n := 0
+	var b [PointRecordSize]byte
+	err = src.IteratePoints(func(_ int, p Point) error {
+		remap(&p)
+		encodePoint(&b, p)
+		if _, err := bw.Write(b[:]); err != nil {
+			return fmt.Errorf("spool: appending point %d: %w", n, err)
+		}
+		n++
+		return nil
+	})
+	if e := bw.Flush(); err == nil {
+		err = e
+	}
+	if e := f.Close(); err == nil {
+		err = e
+	}
+	return n, err
+}
+
+// WritePoint appends p.
+func (w *Writer) WritePoint(p Point) error {
+	var b [PointRecordSize]byte
+	encodePoint(&b, p)
 	if _, err := w.pw.Write(b[:]); err != nil {
 		return fmt.Errorf("spool: writing point %d: %w", w.numPoints, err)
 	}

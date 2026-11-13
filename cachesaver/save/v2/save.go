@@ -12,7 +12,6 @@ import (
 	savev1proto "github.com/royalcat/rgeocache/cachesaver/save/v1/proto"
 	savev2proto "github.com/royalcat/rgeocache/cachesaver/save/v2/proto"
 	"github.com/royalcat/rgeocache/kdbush"
-	"google.golang.org/protobuf/proto"
 )
 
 const defaultNodeSize = kdbush.DefaultNodeSize
@@ -139,7 +138,7 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 		zoneList = append(zoneList, z)
 	}
 	zonesSection := buildZonesSection(zoneList)
-	zonesBytes, err := proto.Marshal(zonesSection)
+	zonesBytes, err := marshalOpts.Marshal(zonesSection)
 	if err != nil {
 		return err
 	}
@@ -150,7 +149,7 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 		DateCreated: meta.DateCreated.UTC().Format(time.RFC3339),
 		Locale:      meta.Locale,
 	}
-	metadataBytes, err := proto.Marshal(metadataProto)
+	metadataBytes, err := marshalOpts.Marshal(metadataProto)
 	if err != nil {
 		return err
 	}
@@ -162,7 +161,7 @@ func Save(w io.Writer, items iter.Seq[cachemodel.Item], zones iter.Seq[cachemode
 		StringsDataSize:  uint32(len(stringData)),
 		ZonesSize:        uint32(len(zonesBytes)),
 	}
-	headerBytes, err := proto.Marshal(header)
+	headerBytes, err := marshalOpts.Marshal(header)
 	if err != nil {
 		return err
 	}

@@ -13,49 +13,66 @@ import (
 	"github.com/sourcegraph/conc/pool"
 )
 
+// Generation is deterministic: the output depends only on the input and the
+// configuration, never on thread count or scheduling. Workers compute results
+// concurrently, but every result goes through a sequencer that releases it in
+// input order, and every decision that depends on "who came first" (duplicate
+// ids, claim sequence numbers) is taken in the single-threaded loop that reads
+// the input.
+
+// sequencerWindow is the number of results one stage may have in flight.
+func (f *GeoGen) sequencerWindow() int {
+	return max(256, 64*f.config.Threads)
+}
+
 func (f *GeoGen) fillRelCache() error {
-	pool := pool.New().WithMaxGoroutines(f.config.Threads)
-	defer pool.Wait()
+	seq := newSequencer(f.sequencerWindow(), f.applyRelCache)
+	workers := pool.New().WithMaxGoroutines(f.config.Threads)
 
 	for rel, err := range iterWithProgress(f.osmdb.IterRelations(), int(f.osmdb.CountRelations()), "3/5 filling relations cache") {
 		if err != nil {
+			workers.Wait()
 			return err
 		}
-		pool.Go(func() {
-			f.cacheRel(rel)
+		seq.submit(workers, func() relCacheResult {
+			return f.cacheRel(rel)
 		})
 	}
 
+	workers.Wait()
+	if f.localizationConflicts > 0 {
+		f.log.Warn("Conflicting name localizations, kept the first in relation order",
+			"conflicts", f.localizationConflicts)
+	}
 	return nil
 }
 
-func (f *GeoGen) parseDatabase() error {
-	pool := pool.New().WithMaxGoroutines(f.config.Threads)
-
-	var parseErr error
-	consume := func(source iter.Seq2[osm.Object, error], total int, name string) {
-		if parseErr != nil {
-			return
-		}
-		// Assign claim sequence in the single-threaded consume loop, not in
-		// the worker, so a shared node always canonicalizes to the same way
-		// regardless of goroutine scheduling.
-		var waySeq uint32
-		for obj, err := range iterWithProgress(source, total, name) {
-			if err != nil {
-				parseErr = err
-				return
+// emitter returns a sequencer sink that forwards batches to ch.
+func emitter(ch chan<- parseItem) func([]parseItem) {
+	return func(items []parseItem) {
+		for _, item := range items {
+			if !item.empty() {
+				ch <- item
 			}
-			seq := waySeq
-			if _, ok := obj.(*osm.Way); ok {
-				waySeq++
-				seq = waySeq
-			}
-			pool.Go(func() {
-				f.parseObject(obj, seq)
-			})
 		}
 	}
+}
+
+// parseDatabase reads nodes, ways and relations and feeds the two collectors:
+//
+//   - wayItems receives the ways, then the relations, each in input order;
+//   - nodeItems receives the address nodes in input order.
+//
+// The streams are separate because nodes and ways are read concurrently (see
+// below): their interleaving is not deterministic, so they must not share an
+// output order. The nodes are appended after everything else (see
+// ParseOSMData); they never take part in the road graph, so that is safe.
+func (f *GeoGen) parseDatabase(wayItems, nodeItems chan<- parseItem) error {
+	window := f.sequencerWindow()
+
+	nodeSeq := newSequencer(window, emitter(nodeItems))
+	waySeq := newSequencer(window, emitter(wayItems))
+	workers := pool.New().WithMaxGoroutines(f.config.Threads)
 
 	// Nodes and ways have to be read together: while the node iterator keeps
 	// the OSM window cache warm, way-node lookups hit it. Reading nodes first
@@ -65,14 +82,83 @@ func (f *GeoGen) parseDatabase() error {
 		castIterToObject(f.osmdb.IterNodes()),
 		castIterToObject(f.osmdb.IterWays()),
 	)
-	consume(nodesWays, int(f.osmdb.CountNodes()+f.osmdb.CountWays()), "4/5 generating nodes and ways")
+
+	// The claim sequence number picks which way's attributes win at a shared
+	// node. It is assigned here, in the single-threaded loop, to the ways that
+	// survive the duplicate check, so it follows the way input order.
+	var claimSeq uint32
+	var parseErr error
+	for obj, err := range iterWithProgress(nodesWays, int(f.osmdb.CountNodes()+f.osmdb.CountWays()), "4/5 generating nodes and ways") {
+		if err != nil {
+			parseErr = err
+			break
+		}
+		switch o := obj.(type) {
+		case *osm.Node:
+			f.seenNodes.Add(1)
+			// Only address nodes produce output. Filtering here keeps the
+			// hundreds of millions of plain nodes out of the worker pool and
+			// the sequencer.
+			if !isBuilding(o.Tags) {
+				continue
+			}
+			nodeSeq.submit(workers, func() []parseItem { return f.parseObject(o, 0) })
+		case *osm.Way:
+			f.seenWays.Add(1)
+			if !f.parsedWays.Add(int64(o.ID)) {
+				f.parsedWaysDupes.Add(1)
+				continue
+			}
+			claimSeq++
+			claim := claimSeq
+			waySeq.submit(workers, func() []parseItem { return f.parseObject(o, claim) })
+		}
+	}
+
+	// Barrier: relation parsing consults the set of parsed ways, which must be
+	// final (and every way batch emitted) before the first relation starts.
+	workers.Wait()
+	if parseErr != nil {
+		return parseErr
+	}
 
 	// Relations are a separate pass. Running three sources concurrently made
 	// the OSM window cache drop relation windows under collector backpressure;
 	// the relation set is small enough that a dedicated pass costs little.
-	consume(castIterToObject(f.osmdb.IterRelations()), int(f.osmdb.CountRelations()), "5/5 generating relations")
+	//
+	// A route relation can pull in a way that no other relation has emitted
+	// yet; two relations can share one. The first in input order keeps it, which
+	// the ordered sink below enforces.
+	relWays := map[osm.WayID]struct{}{}
+	relSink := emitter(wayItems)
+	relSeq := newSequencer(window, func(items []parseItem) {
+		kept := items[:0:0]
+		for _, item := range items {
+			if item.WayID != 0 {
+				if _, dup := relWays[item.WayID]; dup {
+					continue
+				}
+				relWays[item.WayID] = struct{}{}
+			}
+			kept = append(kept, item)
+		}
+		relSink(kept)
+	})
+	workers = pool.New().WithMaxGoroutines(f.config.Threads)
+	for rel, err := range iterWithProgress(f.osmdb.IterRelations(), int(f.osmdb.CountRelations()), "5/5 generating relations") {
+		if err != nil {
+			parseErr = err
+			break
+		}
+		f.seenRelations.Add(1)
+		if !f.parsedRelations.Add(int64(rel.ID)) {
+			f.parsedRelationsDupes.Add(1)
+			continue
+		}
+		relSeq.submit(workers, func() []parseItem { return f.parseObject(rel, 0) })
+	}
 
-	pool.Wait()
+	workers.Wait()
 	if parseErr != nil {
 		return parseErr
 	}

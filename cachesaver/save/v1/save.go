@@ -10,6 +10,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// marshalOpts makes protobuf encoding byte-stable between runs.
+var marshalOpts = proto.MarshalOptions{Deterministic: true}
+
 func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemodel.Zone], metadata cachemodel.Metadata) error {
 	cache := cacheFromPoints(points, zones, metadata)
 
@@ -19,7 +22,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 		Cities:  cache.CitiesNames,
 		Regions: cache.ZonesNames,
 	}
-	stringsCacheBytes, err := proto.Marshal(stringsCache)
+	stringsCacheBytes, err := marshalOpts.Marshal(stringsCache)
 	if err != nil {
 		return err
 	}
@@ -29,7 +32,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 		DateCreated: cache.DateCreated,
 		Locale:      cache.Locale,
 	}
-	metadataBytes, err := proto.Marshal(protoMetadata)
+	metadataBytes, err := marshalOpts.Marshal(protoMetadata)
 	if err != nil {
 		return err
 	}
@@ -54,7 +57,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 			Points: slicePtr(cache.Points[i:end]),
 		}
 
-		blobBytes, err := proto.Marshal(pointsBlob)
+		blobBytes, err := marshalOpts.Marshal(pointsBlob)
 		if err != nil {
 			return err
 		}
@@ -92,7 +95,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 
 	var zoneBlobs [][]byte
 	for zoneProto := range zoneProtos {
-		blobBytes, err := proto.Marshal(zoneProto)
+		blobBytes, err := marshalOpts.Marshal(zoneProto)
 		if err != nil {
 			return err
 		}
@@ -102,7 +105,7 @@ func Save(w io.Writer, points iter.Seq[cachemodel.Point], zones iter.Seq[cachemo
 	}
 
 	// Serialize header
-	headerBytes, err := proto.Marshal(header)
+	headerBytes, err := marshalOpts.Marshal(header)
 	if err != nil {
 		return err
 	}
