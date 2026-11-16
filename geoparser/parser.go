@@ -203,6 +203,11 @@ func (f *GeoGen) parseWayHighway(way *osm.Way, claimSeq uint32) parseItem {
 	nameHandle := unique.Make(name)
 	oneway := parseOneway(way.Tags)
 
+	// The city from the way's tags is the same for every node of the way.
+	// Resolve it once; only ways without a tag-only city need the per-point
+	// place lookup.
+	city, cityFromTags := f.cityAddrFromTags(way.Tags)
+
 	out := parseItem{
 		Points: make([]geoPoint, 0, len(way.Nodes)),
 		Edges:  make([]edgeRef, 0, len(way.Nodes)),
@@ -228,8 +233,8 @@ func (f *GeoGen) parseWayHighway(way *osm.Way, claimSeq uint32) parseItem {
 			Point:       point,
 			Name:        name,
 			Street:      street,
-			HouseNumber: unique.Make(""),
-			City:        f.localizedCityAddr(way.Tags, point),
+			HouseNumber: emptyHandle,
+			City:        f.cityAt(city, cityFromTags, way.Tags, point),
 			Region:      f.localizedRegion(point),
 			Weight:      weightRoad,
 			Type:        cachemodel.GeoObjectRoad,
@@ -250,8 +255,8 @@ func (f *GeoGen) parseWayHighway(way *osm.Way, claimSeq uint32) parseItem {
 					Point:       p,
 					Name:        name,
 					Street:      street,
-					HouseNumber: unique.Make(""),
-					City:        f.localizedCityAddr(way.Tags, p),
+					HouseNumber: emptyHandle,
+					City:        f.cityAt(city, cityFromTags, way.Tags, p),
 					Region:      f.localizedRegion(p),
 					Weight:      weightRoad,
 					Type:        cachemodel.GeoObjectRoad,
@@ -449,6 +454,8 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 
 	points := fillPolygonWithPoints(poly, 0.01/2, int64(rel.ID))
 
+	city, cityFromTags := f.cityAddrFromTags(rel.Tags)
+
 	out := make([]geoPoint, 0, len(points))
 	for _, p := range points {
 		out = append(out, geoPoint{
@@ -457,9 +464,9 @@ func (f *GeoGen) parseRelationArea(rel *osm.Relation, weight uint8) []geoPoint {
 			Weight:      weight,
 			Type:        cachemodel.GeoObjectArea,
 			Name:        name,
-			Street:      unique.Make(""),
-			HouseNumber: unique.Make(""),
-			City:        f.localizedCityAddr(rel.Tags, p),
+			Street:      emptyHandle,
+			HouseNumber: emptyHandle,
+			City:        f.cityAt(city, cityFromTags, rel.Tags, p),
 			Region:      f.localizedRegion(p),
 		})
 	}
@@ -556,7 +563,7 @@ func samplePolygons(bound orb.Bound, inside orb.MultiPolygon, distance float64, 
 	)
 
 	// 2. Filter points inside the polygon
-	pointsInside := make([]orb.Point, 0)
+	pointsInside := make([]orb.Point, 0, len(points))
 	for _, p := range points {
 		point := orb.Point{p.X, p.Y}
 		if planar.MultiPolygonContains(inside, point) {

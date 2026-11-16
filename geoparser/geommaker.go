@@ -8,7 +8,7 @@ import (
 )
 
 func (f *GeoGen) makeLineString(nodes osm.WayNodes) orb.LineString {
-	ls := orb.LineString{}
+	ls := make(orb.LineString, 0, len(nodes))
 	for _, node := range nodes {
 
 		if node.Lat != 0 && node.Lon != 0 {
