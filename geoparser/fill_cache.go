@@ -10,6 +10,7 @@ import (
 
 	"github.com/cheggaaa/pb/v3"
 	"github.com/paulmach/osm"
+	"github.com/royalcat/osmpbfdb"
 	"github.com/sourcegraph/conc/pool"
 )
 
@@ -161,6 +162,14 @@ func (f *GeoGen) parseDatabase(wayItems, nodeItems chan<- parseItem) error {
 	workers.Wait()
 	if parseErr != nil {
 		return parseErr
+	}
+
+	if st, ok := f.osmdb.(osmpbfdb.CoordCacheStatser); ok {
+		s := st.CoordCacheStats()
+		f.log.Info("Node coordinate cache",
+			"hits", s.Hits, "probation_hits", s.ProbationHits, "misses", s.Misses,
+			"ghost_admits", s.GhostAdmits, "evictions", s.Evictions,
+			"entries", s.Entries, "bytes", s.Bytes)
 	}
 
 	fmt.Printf("Seen nodes: %d (index %d)\n", f.seenNodes.Load(), f.osmdb.CountNodes())

@@ -8,26 +8,14 @@ import (
 )
 
 func (f *GeoGen) makeLineString(nodes osm.WayNodes) orb.LineString {
+	scratch := getNodeScratch()
+	defer putNodeScratch(scratch)
+
 	ls := make(orb.LineString, 0, len(nodes))
-	for _, node := range nodes {
-
-		if node.Lat != 0 && node.Lon != 0 {
-			ls = append(ls, orb.Point{node.Lon, node.Lat})
-		} else {
-			p, err := f.osmdb.GetNode(node.ID)
-			if err != nil {
-				f.log.Error("failed to get node", "id", node.ID, "error", err.Error())
-				continue
-			}
-
-			if p.Lat == 0 && p.Lon == 0 {
-				f.log.Error("node has no coordinates")
-				continue
-			}
-
-			ls = append(ls, orb.Point{p.Lon, p.Lat})
+	for _, n := range f.resolveNodes(nodes, scratch) {
+		if n.ok {
+			ls = append(ls, orb.Point{n.lon, n.lat})
 		}
-
 	}
 	return ls
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -173,6 +174,16 @@ func main() {
 					&cli.BoolFlag{
 						Name:  "skip-disk-check",
 						Usage: "do not check free disk space before generating",
+					},
+					&cli.IntFlag{
+						Name:        "osm-cache-mb",
+						DefaultText: "auto",
+						Usage:       "memory budget in MiB of the node coordinate cache used to place way nodes (0 = 8% of the memory limit, between 128 MiB and 4 GiB; negative disables it)",
+					},
+					&cli.StringFlag{
+						Name:  "osm-cache-policy",
+						Value: string(osmpbfdb.CoordCachePolicy2Q),
+						Usage: "admission policy of the node coordinate cache: 2q (scan resistant) or lru",
 					},
 					&cli.StringFlag{
 						Name:  "date-created",
@@ -371,6 +382,9 @@ func generate(ctx context.Context, cmd *cli.Command) error {
 	osmdb, err := osmpbfdb.OpenMultiDB(inputsReaders, osmpbfdb.Config{
 		SkipInfo:  true,
 		CacheType: osmpbfdb.CacheTypeWeak,
+
+		CoordCacheBytes:  coordCacheBytes(cmd.Int("osm-cache-mb")),
+		CoordCachePolicy: osmpbfdb.CoordCachePolicy(cmd.String("osm-cache-policy")),
 	})
 	if err != nil {
 		return err
@@ -470,6 +484,27 @@ func parseDateCreated(flag, epoch string) (time.Time, error) {
 		return time.Unix(sec, 0), nil
 	}
 	return time.Time{}, nil
+}
+
+// coordCacheBytes converts the --osm-cache-mb flag to a byte budget. Zero
+// derives it from the soft memory limit (set by tuneGC), where the cache is a
+// small share of what generation may use.
+func coordCacheBytes(mb int) int64 {
+	if mb != 0 {
+		if mb < 0 {
+			return -1
+		}
+		return int64(mb) << 20
+	}
+	const (
+		minBytes = 128 << 20
+		maxBytes = 4 << 30
+	)
+	limit := debug.SetMemoryLimit(-1)
+	if limit <= 0 || limit == math.MaxInt64 {
+		return minBytes
+	}
+	return min(max(limit/100*8, minBytes), maxBytes)
 }
 
 func writeHeapProfile(name string) error {

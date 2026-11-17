@@ -221,8 +221,12 @@ func (f *GeoGen) parseWayHighway(way *osm.Way, claimSeq uint32) parseItem {
 		havePrev   bool
 	)
 
-	for _, node := range way.Nodes {
-		lon, lat, ok := f.resolveWayNode(node)
+	scratch := getNodeScratch()
+	defer putNodeScratch(scratch)
+	resolved := f.resolveNodes(way.Nodes, scratch)
+
+	for i, node := range way.Nodes {
+		lon, lat, ok := resolved[i].lon, resolved[i].lat, resolved[i].ok
 		if !ok {
 			continue
 		}
@@ -291,25 +295,6 @@ func (f *GeoGen) parseWayHighway(way *osm.Way, claimSeq uint32) parseItem {
 	}
 
 	return out
-}
-
-// resolveWayNode returns the coordinates of a way node, falling back to the
-// node database when the way member does not carry them.
-func (f *GeoGen) resolveWayNode(node osm.WayNode) (lon, lat float64, ok bool) {
-	if node.Lat != 0 && node.Lon != 0 {
-		return node.Lon, node.Lat, true
-	}
-
-	p, err := f.osmdb.GetNode(node.ID)
-	if err != nil {
-		f.log.Error("failed to get node", "id", node.ID, "error", err.Error())
-		return 0, 0, false
-	}
-	if p.Lat == 0 && p.Lon == 0 {
-		f.log.Error("node has no coordinates", "id", node.ID)
-		return 0, 0, false
-	}
-	return p.Lon, p.Lat, true
 }
 
 // parseOneway maps OSM oneway tagging to the graph direction enum. Roundabouts
