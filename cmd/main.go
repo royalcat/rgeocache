@@ -182,8 +182,8 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:  "osm-cache-policy",
-						Value: string(osmpbfdb.CoordCachePolicy2Q),
-						Usage: "admission policy of the node coordinate cache: 2q (scan resistant) or lru",
+						Value: string(osmpbfdb.CoordCachePolicyLRU),
+						Usage: "admission policy of the node coordinate cache: lru or 2q (scan resistant; measured no better than lru)",
 					},
 					&cli.StringFlag{
 						Name:  "date-created",
