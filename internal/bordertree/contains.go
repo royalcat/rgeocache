@@ -61,10 +61,22 @@ func ringContains(r orb.Ring, b orb.Bound, p orb.Point) bool {
 }
 
 // rayIntersect is copied from github.com/paulmach/orb/planar (MIT), where it is
-// unexported. It is the same implementation planar.RingContains uses.
+// unexported. It is the same implementation planar.RingContains uses, plus two
+// exact early rejections below.
 //
 // Original implementation: http://rosettacode.org/wiki/Ray-casting_algorithm#Go
 func rayIntersect(p, s, e orb.Point) (intersects, on bool) {
+	// A ray going right from p cannot cross a segment whose x-range is
+	// strictly to one side of p.x, nor a segment entirely below p. Both are
+	// cases where the full implementation returns (false, false), but here
+	// they avoid the x swap, the endpoint switch and the Nextafter work that
+	// dominated generation CPU time. The inequalities are strict so the
+	// endpoint cases that can return on=true still take the original path.
+	if (p[0] < s[0] && p[0] < e[0]) || (p[0] > s[0] && p[0] > e[0]) ||
+		(p[1] > s[1] && p[1] > e[1]) {
+		return false, false
+	}
+
 	if s[0] > e[0] {
 		s, e = e, s
 	}

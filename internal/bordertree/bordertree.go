@@ -55,6 +55,10 @@ type border[D any] struct {
 	OversimplifiedBounds  [][]orb.Bound
 	Polygon               orb.MultiPolygon
 	Bounds                [][]orb.Bound
+	// Index indexes the full-resolution Polygon's rings by x-range. The
+	// oversimplified polygon has at most 10 vertices per ring and is not
+	// worth indexing.
+	Index indexedMultiPolygon
 }
 
 func (bt *BorderTree[Data]) InsertBorder(data Data, b orb.MultiPolygon) {
@@ -72,6 +76,7 @@ func (bt *BorderTree[Data]) InsertBorderKeyed(data Data, key string, b orb.Multi
 
 	oversimplified := simplify.VisvalingamKeep(10).MultiPolygon(b.Clone())
 	polygon := b.Clone()
+	polygonBounds := ringBounds(polygon)
 	bt.borders = append(bt.borders, border[Data]{
 		Data:                  data,
 		Key:                   key,
@@ -79,7 +84,8 @@ func (bt *BorderTree[Data]) InsertBorderKeyed(data Data, key string, b orb.Multi
 		OversimplifiedPolygon: oversimplified,
 		OversimplifiedBounds:  ringBounds(oversimplified),
 		Polygon:               polygon,
-		Bounds:                ringBounds(polygon),
+		Bounds:                polygonBounds,
+		Index:                 buildIndexedMultiPolygon(polygon, polygonBounds),
 	})
 	bt.qt.Insert(bound.Min, bound.Max, bt.idCounter)
 	bt.idCounter++
@@ -104,7 +110,7 @@ func (bt *BorderTree[Data]) QueryPoint(point orb.Point) (Data, bool) {
 		if !multiPolygonContains(b.OversimplifiedPolygon, b.OversimplifiedBounds, point) {
 			return true
 		}
-		if !multiPolygonContains(b.Polygon, b.Bounds, point) {
+		if !multiPolygonContainsIndexed(b.Polygon, b.Bounds, b.Index, point) {
 			return true
 		}
 
