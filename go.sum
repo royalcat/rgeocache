@@ -160,6 +160,8 @@ github.com/royalcat/osmpbfdb v0.0.0-20261109131933-7a5e361aeac4 h1:tHiHN+jz5RVPM
 github.com/royalcat/osmpbfdb v0.0.0-20261109131933-7a5e361aeac4/go.mod h1:TW1W0G7LrKFoxAGx8avqOZmr8eTwmK1rd8CqdHxRnUg=
 github.com/royalcat/osmpbfdb v0.0.0-20261117150250-5f9b01b27911 h1:Km65jLcgU/VF2t4Q2+HFKlgJHyYEdc6DvZAtdgwoNyY=
 github.com/royalcat/osmpbfdb v0.0.0-20261117150250-5f9b01b27911/go.mod h1:TW1W0G7LrKFoxAGx8avqOZmr8eTwmK1rd8CqdHxRnUg=
+github.com/royalcat/osmpbfdb v0.0.0-20261118175112-2758ff8042b5 h1:+VUz/woJe039/SkveJX2zI2+08h6G/Mrg71INvAGx0g=
+github.com/royalcat/osmpbfdb v0.0.0-20261118175112-2758ff8042b5/go.mod h1:TW1W0G7LrKFoxAGx8avqOZmr8eTwmK1rd8CqdHxRnUg=
 github.com/samber/lo v1.53.0 h1:t975lj2py4kJPQ6haz1QMgtId2gtmfktACxIXArw3HM=
 github.com/samber/lo v1.53.0/go.mod h1:4+MXEGsJzbKGaUEQFKBq2xtfuznW9oz/WrgyzMzRoM0=
 github.com/samber/slog-common v0.22.0 h1:WyPxYRg/c5xUmxZJbtd0QgysHlLBhRA+MngKdJieHxE=
